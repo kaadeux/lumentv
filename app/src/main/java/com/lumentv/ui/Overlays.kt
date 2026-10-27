@@ -138,7 +138,7 @@ fun UpdateHost(vm: MainViewModel) {
         listOf(
             com.lumentv.ui.components.MenuOption("Installer maintenant") {
                 if (!updater.canInstall()) {
-                    vm.show("Autorisez Lumen TV à installer des applications, puis revenez et choisissez à nouveau « Installer ».")
+                    vm.show("Dans la liste, activez « Lumen TV », appuyez sur Retour, puis choisissez à nouveau « Installer maintenant ».")
                     updater.askInstallPermission(activity)
                     scope.launch { updater.check() }
                 } else scope.launch {

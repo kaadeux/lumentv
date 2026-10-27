@@ -37,6 +37,8 @@ $apkUrl = $props['lumen.updateUrl'] -replace 'version\.json$', 'LumenTV.apk'
 $json = [ordered]@{ versionCode = $code; versionName = $name; apk = $apkUrl; sha256 = $sha; notes = $Notes } | ConvertTo-Json
 [IO.File]::WriteAllText($jsonPath, $json, (New-Object System.Text.UTF8Encoding $false))
 
+# git writes its progress to stderr, which Windows PowerShell would turn into a terminating error.
+$ErrorActionPreference = "Continue"
 git -C $releases add LumenTV.apk version.json
 git -C $releases commit -m "Lumen TV $name"
 git -C $releases push
