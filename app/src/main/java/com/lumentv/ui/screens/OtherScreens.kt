@@ -36,6 +36,7 @@ import androidx.tv.material3.Text
 import com.lumentv.core.normalize
 import com.lumentv.data.db.ChannelRow
 import com.lumentv.data.db.EpgChannelEntity
+import com.lumentv.data.db.HistoryEntity
 import com.lumentv.data.db.HistoryKind
 import com.lumentv.data.db.MovieRow
 import com.lumentv.data.db.SeriesRow
@@ -226,6 +227,7 @@ fun HistoryScreen(vm: MainViewModel) {
     val scope = rememberCoroutineScope()
     val history by vm.graph.library.observeHistory(150).collectAsStateWithLifecycle(null)
     var confirm by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<HistoryEntity?>(null) }
     // Films and series only (live channels are not history), one line per series: its last episode watched.
     val h = remember(history) {
         history?.filter { it.kind != HistoryKind.CHANNEL }?.distinctBy { if (it.kind == HistoryKind.EPISODE) "s:${it.playlistId}:${it.parentUid ?: it.uid}" else it.key }
@@ -246,7 +248,7 @@ fun HistoryScreen(vm: MainViewModel) {
                         }
                     }
                 },
-                onLongClick = { scope.launch { vm.graph.library.deleteHistory(e.key) } },
+                onLongClick = { removing = e },
                 modifier = Modifier.fillMaxWidth(), focusedScale = 1.01f,
             ) {
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -266,6 +268,10 @@ fun HistoryScreen(vm: MainViewModel) {
     }
     if (confirm) ConfirmDialog("Effacer l'historique ?", "Les positions de reprise des films et épisodes seront aussi effacées.", "Effacer",
         onConfirm = { scope.launch { vm.graph.library.clearHistory() } }, onDismiss = { confirm = false })
+    removing?.let { e ->
+        ConfirmDialog("Retirer de l'historique ?", listOfNotNull(e.title, e.subtitle).joinToString(" · ") + "\nSa position de reprise sera aussi effacée.", "Retirer",
+            onConfirm = { scope.launch { vm.graph.library.deleteHistory(e.key) } }, onDismiss = { removing = null })
+    }
 }
 
 /** Manual EPG correction: pick the XMLTV channel a playlist channel should use. */
