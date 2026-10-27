@@ -7,7 +7,10 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import javax.swing.SwingUtilities
 
-/** Dev only (PLAYER_SMOKE=1): opens the real player window on the first channel of the cached playlist for 20 s. */
+/**
+ * Dev only (PLAYER_SMOKE=1): opens the real player window for PLAYER_SECONDS on PLAYER_SERIES (first unfinished
+ * episode) or else on the first channel named PLAYER_CHANNEL (default TF1).
+ */
 class PlayerSmokeTest {
     @Test fun window() = runBlocking {
         assumeTrue(System.getenv("PLAYER_SMOKE") == "1")
@@ -15,10 +18,18 @@ class PlayerSmokeTest {
         val key = state.playlists.keys.first()
         val c = Store.loadCatalog(key)!!
         state.open(key)
-        Thread.sleep(3000)
-        val ch = c.channels.first { it.name.startsWith(System.getenv("PLAYER_CHANNEL") ?: "TF1") }
-        SwingUtilities.invokeAndWait { state.playChannel(ch) }
-        Thread.sleep(20_000)
+        Thread.sleep(4000)
+        val seriesName = System.getenv("PLAYER_SERIES")
+        if (seriesName != null) {
+            val s = c.series.first { it.name.equals(seriesName, true) }
+            val eps = state.library.episodes(state.active!!, c, s)
+            val i = eps.indexOfFirst { !state.isWatched(Kind.EPISODE, it.uid) }.coerceAtLeast(0)
+            SwingUtilities.invokeAndWait { PlayerWindow.open(state, state.episodeItem(s, eps, i)) }
+        } else {
+            val ch = c.channels.first { it.name.startsWith(System.getenv("PLAYER_CHANNEL") ?: "TF1") }
+            SwingUtilities.invokeAndWait { state.playChannel(ch) }
+        }
+        Thread.sleep((System.getenv("PLAYER_SECONDS")?.toLong() ?: 20) * 1000)
         SwingUtilities.invokeAndWait { PlayerWindow.release() }
     }
 }

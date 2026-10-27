@@ -34,7 +34,11 @@ import java.util.zip.GZIPInputStream
 @Serializable data class Se(val uid: String, val name: String, val category: String, val cover: String? = null, val seriesId: Long = 0,
                             val plot: String? = null, val year: String? = null, val rating: String? = null) { val norm by lazy { normalize(name) } }
 @Serializable data class Ep(val uid: String, val title: String, val season: Int, val episode: Int, val url: String = "", val streamId: Long = 0,
-                            val ext: String? = null, val image: String? = null, val plot: String? = null, val durationSecs: Int = 0)
+                            val ext: String? = null, val image: String? = null, val plot: String? = null, val durationSecs: Int = 0, val rating: String? = null)
+
+/** What a series / film page shows beyond the list entry (Xtream only). */
+data class Details(val plot: String? = null, val genre: String? = null, val cast: String? = null, val director: String? = null,
+                   val rating: String? = null, val release: String? = null, val backdrop: String? = null, val durationSecs: Int = 0)
 
 @Serializable
 data class Catalog(
@@ -106,11 +110,53 @@ class Library(private val http: OkHttpClient) {
         return Catalog(System.currentTimeMillis(), channels, movies, series.values.toList(), episodes, p.epgUrl.ifBlank { epgUrl.orEmpty() }.ifBlank { null })
     }
 
-    suspend fun episodes(p: SyncPlaylist, c: Catalog, s: Se): List<Ep> = withContext(Dispatchers.IO) {
-        if (p.type != "xtream") return@withContext c.episodes[s.uid].orEmpty().sortedWith(compareBy({ it.season }, { it.episode }))
-        xtream(p).seriesInfo(s.seriesId).map { Ep("x:${it.id}", it.title, it.season, it.episode, streamId = it.id, ext = it.ext, image = it.image, plot = it.plot, durationSecs = it.durationSecs) }
-            .sortedWith(compareBy({ it.season }, { it.episode }))
+    suspend fun episodes(p: SyncPlaylist, c: Catalog, s: Se): List<Ep> = seriesDetails(p, c, s).second
+
+    private val seriesCache = HashMap<String, Pair<Details?, List<Ep>>>()
+
+    /** Series page: details and episodes (with their rating), kept for the session. */
+    suspend fun seriesDetails(p: SyncPlaylist, c: Catalog, s: Se): Pair<Details?, List<Ep>> = withContext(Dispatchers.IO) {
+        if (p.type != "xtream") return@withContext null to c.episodes[s.uid].orEmpty().sortedWith(compareBy({ it.season }, { it.episode }))
+        seriesCache[s.uid]?.let { return@withContext it }
+        val root = getJson(p, "get_series_info&series_id=${s.seriesId}")
+        val info = (root as? kotlinx.serialization.json.JsonObject)?.get("info") as? kotlinx.serialization.json.JsonObject
+        val ratings = HashMap<String, String>()
+        ((root as? kotlinx.serialization.json.JsonObject)?.get("episodes"))?.let { eps ->
+            val lists = when (eps) { is kotlinx.serialization.json.JsonObject -> eps.values; is kotlinx.serialization.json.JsonArray -> eps; else -> emptyList() }
+            lists.forEach { l -> (l as? kotlinx.serialization.json.JsonArray)?.forEach { e ->
+                val o = e as? kotlinx.serialization.json.JsonObject ?: return@forEach
+                val id = o.s("id") ?: return@forEach
+                ((o["info"] as? kotlinx.serialization.json.JsonObject)?.s("rating"))?.takeIf { it != "0" && it.isNotBlank() }?.let { ratings[id] = it }
+            } }
+        }
+        val episodes = XtreamApi.parseSeriesEpisodes(root).map {
+            Ep("x:${it.id}", it.title, it.season, it.episode, streamId = it.id, ext = it.ext, image = it.image, plot = it.plot, durationSecs = it.durationSecs,
+                rating = ratings[it.id.toString()]?.toDoubleOrNull()?.let { r -> "%.1f".format(r).replace(',', '.') })
+        }.sortedWith(compareBy({ it.season }, { it.episode }))
+        val d = info?.let { Details(it.s("plot"), it.s("genre"), it.s("cast"), it.s("director"), it.s("rating"), it.s("releaseDate") ?: it.s("release_date"),
+            (it["backdrop_path"] as? kotlinx.serialization.json.JsonArray)?.firstOrNull()?.let { b -> (b as? kotlinx.serialization.json.JsonPrimitive)?.content }) }
+        (d to episodes).also { seriesCache[s.uid] = it }
     }
+
+    /** Film page: plot, genre, cast, director, duration (Xtream only). */
+    suspend fun movieDetails(p: SyncPlaylist, m: Mv): Details? = withContext(Dispatchers.IO) {
+        if (p.type != "xtream") return@withContext null
+        val root = getJson(p, "get_vod_info&vod_id=${m.streamId}") as? kotlinx.serialization.json.JsonObject
+        val info = root?.get("info") as? kotlinx.serialization.json.JsonObject ?: return@withContext null
+        Details(info.s("plot") ?: info.s("description"), info.s("genre"), info.s("cast") ?: info.s("actors"), info.s("director"), info.s("rating"),
+            info.s("releasedate") ?: info.s("release_date"),
+            (info["backdrop_path"] as? kotlinx.serialization.json.JsonArray)?.firstOrNull()?.let { b -> (b as? kotlinx.serialization.json.JsonPrimitive)?.content },
+            info.s("duration_secs")?.toIntOrNull() ?: XtreamApi.parseDuration(info.s("duration")))
+    }
+
+    private fun getJson(p: SyncPlaylist, action: String): kotlinx.serialization.json.JsonElement {
+        fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
+        val url = XtreamApi.normalizeServer(p.source) + "/player_api.php?username=${enc(p.username)}&password=${enc(p.password)}&action=$action"
+        open(url, p.userAgent).use { return kotlinx.serialization.json.Json.parseToJsonElement(it.reader().readText()) }
+    }
+
+    private fun kotlinx.serialization.json.JsonObject.s(k: String): String? =
+        (this[k] as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != "null" }
 
     fun channelUrl(p: SyncPlaylist, c: Ch) = if (p.type == "xtream") xtream(p).liveUrl(c.streamId, p.liveFormat) else c.url
     fun movieUrl(p: SyncPlaylist, m: Mv) = if (p.type == "xtream") xtream(p).movieUrl(m.streamId, m.ext) else m.url

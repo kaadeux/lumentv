@@ -150,7 +150,7 @@ fun LiveScreen(state: AppState) {
     var filter by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Ch?>(null) }
     val groups = remember(c) { c.channels.groupBy { it.group }.map { (g, l) -> g to "$g  (${l.size})" } }
-    val favUids = state.favorites(Kind.CHANNEL).map { it.uid }
+    val favUids = remember(state.doc.favorites, state.activeKey) { state.favorites(Kind.CHANNEL).map { it.uid } }
     val list = remember(c, group, filter, favUids) {
         val base = when (group) { ALL -> c.channels; FAVS -> favUids.mapNotNull { u -> c.channels.firstOrNull { it.uid == u } }; else -> c.channels.filter { it.group == group } }
         val f = normalize(filter)
@@ -215,9 +215,10 @@ fun MoviesScreen(state: AppState) {
     val c = state.catalog!!
     var cat by remember { mutableStateOf(RECENT) }
     var filter by remember { mutableStateOf("") }
-    var open by remember { mutableStateOf<Mv?>(null) }
+    var open by remember { mutableStateOf(System.getenv("LUMEN_OPEN")?.let { n -> c.movies.firstOrNull { it.name.contains(n, true) } }) }
+    open?.let { m -> MovieDetail(state, m) { open = null }; return }
     val cats = remember(c) { c.movies.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" } }
-    val favUids = state.favorites(Kind.MOVIE).map { it.uid }
+    val favUids = remember(state.doc.favorites, state.activeKey) { state.favorites(Kind.MOVIE).map { it.uid } }
     val list = remember(c, cat, filter, favUids) {
         val base = when (cat) {
             RECENT -> c.movies.sortedByDescending { it.added }.take(300)
@@ -239,32 +240,6 @@ fun MoviesScreen(state: AppState) {
             }
         }
     }
-    open?.let { m -> MovieDialog(state, m) { open = null } }
-}
-
-@Composable
-fun MovieDialog(state: AppState, m: Mv, onClose: () -> Unit) {
-    val h = state.progress(Kind.MOVIE, m.uid)
-    val resumable = h != null && h.positionMs > 60_000 && (h.durationMs == 0L || h.positionMs < h.durationMs - 120_000)
-    AlertDialog(onDismissRequest = onClose, containerColor = Pal.panel,
-        title = { Text(m.name, color = Pal.text) },
-        text = {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                AsyncImage(m.poster, null, Modifier.width(160.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(listOfNotNull(m.category, m.year, m.rating?.let { "★ $it" }).joinToString(" · "), color = Pal.dim)
-                    if (resumable) Text("Déjà vu jusqu'à ${h!!.positionMs / 60_000} min", color = Pal.accent)
-                }
-            }
-        },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton({ state.toggleFavorite(Kind.MOVIE, m.uid) }) { Text(if (state.isFavorite(Kind.MOVIE, m.uid)) "Retirer des favoris" else "★ Favori") }
-                if (resumable) OutlinedButton({ state.playMovie(m, fromStart = true); onClose() }) { Text("Depuis le début") }
-                Button({ state.playMovie(m); onClose() }) { Text(if (resumable) "▶ Reprendre" else "▶ Lire") }
-            }
-        },
-        dismissButton = { TextButton(onClose) { Text("Fermer") } })
 }
 
 // ---- Séries -------------------------------------------------------------------------------------------------
@@ -274,10 +249,11 @@ fun SeriesScreen(state: AppState) {
     val c = state.catalog!!
     var cat by remember { mutableStateOf(ALL) }
     var filter by remember { mutableStateOf("") }
-    var open by remember { mutableStateOf<Se?>(null) }
+    // LUMEN_OPEN=<name> opens that series at launch (used for screenshots).
+    var open by remember { mutableStateOf(System.getenv("LUMEN_OPEN")?.let { n -> c.series.firstOrNull { it.name.equals(n, true) } }) }
     open?.let { s -> SeriesDetail(state, s) { open = null }; return }
     val cats = remember(c) { c.series.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" } }
-    val favUids = state.favorites(Kind.SERIES).map { it.uid }
+    val favUids = remember(state.doc.favorites, state.activeKey) { state.favorites(Kind.SERIES).map { it.uid } }
     val list = remember(c, cat, filter, favUids) {
         val base = when (cat) { ALL -> c.series; FAVS -> favUids.mapNotNull { u -> c.series.firstOrNull { it.uid == u } }; else -> c.series.filter { it.category == cat } }
         val f = normalize(filter); if (f.isEmpty()) base else base.filter { it.norm.contains(f) }
@@ -295,55 +271,6 @@ fun SeriesScreen(state: AppState) {
     }
 }
 
-@Composable
-fun SeriesDetail(state: AppState, s: Se, onBack: () -> Unit) {
-    val c = state.catalog!!
-    val eps by produceState<Result<List<Ep>>?>(null, s.uid) { value = runCatching { state.library.episodes(state.active!!, c, s) } }
-    var season by remember { mutableStateOf<Int?>(null) }
-    Column(Modifier.fillMaxSize()) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour", tint = Pal.text) }
-            Text(s.name, style = MaterialTheme.typography.headlineSmall, color = Pal.text, modifier = Modifier.weight(1f))
-            IconButton({ state.toggleFavorite(Kind.SERIES, s.uid) }) {
-                Icon(if (state.isFavorite(Kind.SERIES, s.uid)) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "Favori", tint = Pal.accent)
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(top = 12.dp)) {
-            AsyncImage(s.cover, null, Modifier.width(200.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop)
-            Column(Modifier.weight(1f)) {
-                s.plot?.let { Text(it, color = Pal.dim, maxLines = 5, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 12.dp)) }
-                when (val r = eps) {
-                    null -> Text("Chargement des épisodes…", color = Pal.dim)
-                    else -> r.onFailure { Text(userMessage(it), color = Pal.danger) }.onSuccess { all ->
-                        val seasons = all.map { it.season }.distinct()
-                        val sel = season ?: all.lastOrNull { e -> state.progress(Kind.EPISODE, e.uid) != null }?.season ?: seasons.firstOrNull()
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(seasons) { n -> FilterChip(n == sel, { season = n }, label = { Text("Saison $n") }) }
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(all.filter { it.season == sel }, key = { it.uid }) { e ->
-                                val h = state.progress(Kind.EPISODE, e.uid)
-                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Pal.panel)
-                                    .combinedClickable { PlayerWindow.open(state, state.episodeItem(s, all, all.indexOf(e))) }.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text("E${e.episode}", color = Pal.accent, modifier = Modifier.width(44.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(e.title, color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        ratio(h)?.let { LinearProgressIndicator({ it }, Modifier.width(240.dp).height(3.dp).padding(top = 4.dp)) }
-                                    }
-                                    if (e.durationSecs > 0) Text("${e.durationSecs / 60} min", color = Pal.dim)
-                                    Icon(Icons.Filled.PlayArrow, null, tint = Pal.text)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 // ---- Recherche, favoris, historique -------------------------------------------------------------------------
 
 @Composable
@@ -353,6 +280,7 @@ fun SearchScreen(state: AppState) {
     var openMovie by remember { mutableStateOf<Mv?>(null) }
     var openSeries by remember { mutableStateOf<Se?>(null) }
     openSeries?.let { s -> SeriesDetail(state, s) { openSeries = null }; return }
+    openMovie?.let { m -> MovieDetail(state, m) { openMovie = null }; return }
     val f = normalize(q)
     Column(Modifier.fillMaxSize()) {
         Filter(q, "Chaîne, film ou série…") { q = it }
@@ -383,7 +311,6 @@ fun SearchScreen(state: AppState) {
             }
         }
     }
-    openMovie?.let { m -> MovieDialog(state, m) { openMovie = null } }
 }
 
 @Composable
@@ -392,6 +319,7 @@ fun FavoritesScreen(state: AppState) {
     var openMovie by remember { mutableStateOf<Mv?>(null) }
     var openSeries by remember { mutableStateOf<Se?>(null) }
     openSeries?.let { s -> SeriesDetail(state, s) { openSeries = null }; return }
+    openMovie?.let { m -> MovieDetail(state, m) { openMovie = null }; return }
     val chs = state.favorites(Kind.CHANNEL).mapNotNull { f -> c.channels.firstOrNull { it.uid == f.uid } }
     val mvs = state.favorites(Kind.MOVIE).mapNotNull { f -> c.movies.firstOrNull { it.uid == f.uid } }
     val ses = state.favorites(Kind.SERIES).mapNotNull { f -> c.series.firstOrNull { it.uid == f.uid } }
@@ -412,7 +340,6 @@ fun FavoritesScreen(state: AppState) {
         if (ses.isNotEmpty()) item { Text("Séries", style = MaterialTheme.typography.titleMedium, color = Pal.text) }
         if (ses.isNotEmpty()) item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(ses, key = { it.uid }) { s -> Box(Modifier.width(140.dp)) { Poster(s.name, s.cover, s.year, null, true) { openSeries = s } } } } }
     }
-    openMovie?.let { m -> MovieDialog(state, m) { openMovie = null } }
 }
 
 @Composable

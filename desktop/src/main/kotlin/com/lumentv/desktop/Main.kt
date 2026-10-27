@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LiveTv
@@ -50,6 +51,7 @@ import androidx.compose.ui.window.rememberWindowState
 enum class Section(val label: String, val icon: ImageVector) {
     Live("Direct", Icons.Filled.LiveTv), Movies("Films", Icons.Filled.Movie), Series("Séries", Icons.Filled.VideoLibrary),
     Search("Recherche", Icons.Filled.Search), Favorites("Favoris", Icons.Filled.Favorite), History("Historique", Icons.Filled.History),
+    Downloads("Téléchargés", Icons.Filled.Download),
     Settings("Paramètres", Icons.Filled.Settings),
 }
 
@@ -100,6 +102,7 @@ fun Shell(state: AppState) {
         Box(Modifier.weight(1f).fillMaxHeight().padding(20.dp)) {
             when {
                 section == Section.Settings -> SettingsScreen(state)
+                section == Section.Downloads -> DownloadsScreen(state)
                 state.active == null -> Empty("Aucune playlist", "Ajoutez votre compte Xtream ou votre playlist M3U dans Paramètres, ou connectez votre profil en ligne.")
                 state.catalog == null && state.loading -> Empty("Chargement de la playlist…", "La première fois, cela peut prendre une minute.")
                 state.catalog == null -> Empty("Playlist indisponible", state.loadError ?: "")
@@ -110,7 +113,7 @@ fun Shell(state: AppState) {
                     Section.Search -> SearchScreen(state)
                     Section.Favorites -> FavoritesScreen(state)
                     Section.History -> HistoryScreen(state)
-                    Section.Settings -> Unit
+                    Section.Settings, Section.Downloads -> Unit
                 }
             }
             state.toast?.let { t ->

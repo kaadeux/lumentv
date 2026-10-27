@@ -46,6 +46,30 @@ class AppState(private val scope: CoroutineScope) {
         "PC " + (System.getenv("COMPUTERNAME") ?: "Windows"))
     fun presenceKey(): String? = active?.let { com.lumentv.data.xtream.Presence.key(it.type, it.source, it.username, it.password) }
 
+    val downloads = Downloads(scope, http, presence) { key -> doc.playlists[key]?.let { com.lumentv.data.xtream.Presence.key(it.type, it.source, it.username, it.password) } }
+
+    /** Queues a film or an episode in the downloads. */
+    fun download(item: PlayItem) {
+        val k = activeKeyOrFirst ?: return
+        downloads.add(item.kind, item.uid, k, item.title, item.subtitle, item.image, item.parentUid, item.url, item.userAgent)
+        show("Ajouté aux téléchargements")
+    }
+
+    /** "Marquer comme vu" (or not) for several films / episodes at once. */
+    fun markWatched(items: List<PlayItem>, durations: List<Long>, watched: Boolean) {
+        val k = activeKeyOrFirst ?: return
+        val now = now()
+        change { d ->
+            d.copy(history = d.history + items.mapIndexed { i, it ->
+                val dur = durations[i].coerceAtLeast(1)
+                ProfileMerge.itemKey(k, it.kind, it.uid) to SyncHistory(k, it.kind, it.uid, it.title, it.subtitle, it.image, it.parentUid,
+                    now - (items.size - i), if (watched) dur else 0, if (watched) dur else 0, deleted = !watched, at = now)
+            })
+        }
+    }
+
+    fun isWatched(kind: String, uid: String): Boolean = progress(kind, uid)?.let { it.durationMs > 0 && it.positionMs >= minOf(it.durationMs * 92 / 100, it.durationMs - 60_000) } == true
+
     var doc by mutableStateOf(Store.loadDoc()); private set
     var profileName by mutableStateOf(Store.loadKeys()?.name); private set
     var syncing by mutableStateOf(false); private set
