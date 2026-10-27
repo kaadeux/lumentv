@@ -34,6 +34,8 @@ data class Team(val name: String, val short: String?, val abbr: String?, val log
             val stripped = x.split(' ').filter { it !in noise }.joinToString(" ")
             if (stripped.length >= 3) out += stripped
             stripped.split(' ').filter { it.length >= 5 }.maxByOrNull { it.length }?.let { out += it }
+            // Short club prefixes dropped: "SU Agen Lot-et-Garonne" → "agen", "ASM Clermont Auvergne" → "clermont".
+            x.split(' ').dropWhile { it.length <= 3 }.firstOrNull()?.takeIf { it.length >= 4 && it !in noise }?.let { out += it }
             // City + initials, as guides write it: "Paris Saint-Germain" → "paris sg".
             stripped.split(' ').takeIf { it.size >= 3 }?.let { w -> out += w[0] + " " + w.drop(1).joinToString("") { it.take(1) } }
         }

@@ -38,6 +38,8 @@ class FixturesTest {
         assertTrue(FrenchTvGuide.channelKey("CANAL+ SPORT360 FHD") == FrenchTvGuide.channelKey("Canal+ Sport 360"))
         assertFalse(FrenchTvGuide.channelKey("CANAL+ SPORT+") == FrenchTvGuide.channelKey("Canal+ Sport"))
         assertTrue(FrenchTvGuide.channelKey("FR | CANAL+ SPORT [H265]") == FrenchTvGuide.channelKey("Canal+ Sport"))
+        val pro = Fixture("2", FixtureClient.league("prod2")!!, game.start, "pre", "", Team("Colomiers", null, null, null), Team("SU Agen Lot-et-Garonne", null, null, null), "")
+        assertTrue(FrenchTvGuide.broadcast(pro, listOf(Listing("Canal+ Sport 360", game.start, normalize("Colomiers / Agen")))) != null)
     }
 
     /** Live check of the public calendar: SPORTS_LIVE=1. */
