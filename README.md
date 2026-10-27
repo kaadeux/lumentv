@@ -223,3 +223,31 @@ sur la clé de debug (utile pour développer, mais un tel APK ne peut pas mettre
 - Première installation (Downloader) : `https://raw.githubusercontent.com/kaadeux/lumentv-releases/main/LumenTV.apk`.
   À la première mise à jour, Android demande d'autoriser « Lumen TV » dans « Installation d'applis inconnues ».
 - Changer `lumen.accessCode` puis publier redemande le code sur tous les appareils.
+
+### Branches et canaux : tester chez soi avant la famille
+
+| Branche du code | Canal | Qui le reçoit | Nom de version |
+|---|---|---|---|
+| `dev` | `dev` (branche `dev` du dépôt public) | votre boîtier | `1.2.2-dev` |
+| `main` | `main` (branche `main` du dépôt public) | vos parents / proches | `1.2.2` |
+
+`publish.ps1` et `deploy.ps1` choisissent le canal d'après la branche en cours. Chaque appareil suit le canal de
+l'APK installé : une version dev ne reçoit que des mises à jour dev, une version main que des mises à jour main.
+
+Tester une nouveauté (plusieurs jours si besoin) :
+```powershell
+git checkout dev
+# … modifications, puis augmenter versionCode / versionName dans app\build.gradle.kts
+git commit -am "Ce qui change"
+.\publish.ps1 -Notes "Ce qui change"      # votre boîtier la propose au prochain démarrage
+```
+
+Valider et envoyer à la famille :
+```powershell
+git checkout main
+git merge dev
+.\publish.ps1 -Notes "Ce qui change"      # les TV de la famille la proposent au prochain démarrage
+git push
+git checkout dev                          # retour sur la branche de test
+```
+Chaque version publiée a un tag `vX.Y.Z` (ou `vX.Y.Z-dev`) qui pointe sur son commit.
