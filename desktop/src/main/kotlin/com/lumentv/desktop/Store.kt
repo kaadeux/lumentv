@@ -32,6 +32,12 @@ object Store {
         set(v) = File(dir, "render.txt").writeText(v)
     val RENDER_APIS = listOf("OPENGL", "DIRECT3D", "SOFTWARE")
 
+    /** VLC audio output (directsound, mmdevice = WASAPI, waveout). On this PC only: it depends on its sound card. */
+    var audioOut: String
+        get() = File(dir, "audio.txt").takeIf { it.exists() }?.readText()?.trim()?.takeIf { it in AUDIO_OUTS } ?: "directsound"
+        set(v) = File(dir, "audio.txt").writeText(v)
+    val AUDIO_OUTS = listOf("directsound", "mmdevice", "waveout")
+
     fun loadKeys(): StoredKeys? = readSecret("profile.bin")?.let { runCatching { json.decodeFromString<StoredKeys>(it) }.getOrNull() }
     fun saveKeys(k: StoredKeys?) { if (k == null) File(dir, "profile.bin").delete() else writeSecret("profile.bin", json.encodeToString(k)) }
 

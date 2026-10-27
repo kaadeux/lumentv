@@ -108,12 +108,18 @@ fun SettingsScreen(state: AppState) {
         }
 
         item {
-            Card("Affichage") {
+            Card("Affichage et son") {
                 var api by remember { mutableStateOf(Store.renderApi) }
                 Choice("Moteur d'affichage", api, listOf("OPENGL" to "OpenGL (recommandé)", "DIRECT3D" to "DirectX", "SOFTWARE" to "Logiciel (le plus sûr, plus lent)")) {
                     Store.renderApi = it; api = it
                 }
                 Text("À changer si vous voyez des traits noirs ou des clignotements. Pris en compte au prochain lancement, sur ce PC seulement.",
+                    color = Pal.dim, style = MaterialTheme.typography.bodySmall)
+                var aout by remember { mutableStateOf(Store.audioOut) }
+                Choice("Sortie audio", aout, listOf("directsound" to "DirectSound (recommandé)", "mmdevice" to "WASAPI", "waveout" to "WaveOut (ancien)")) {
+                    Store.audioOut = it; aout = it
+                }
+                Text("À changer si le son grésille ou se hache. Pris en compte au prochain lancement, sur ce PC seulement.",
                     color = Pal.dim, style = MaterialTheme.typography.bodySmall)
             }
         }

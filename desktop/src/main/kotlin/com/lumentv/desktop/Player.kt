@@ -51,8 +51,10 @@ object Vlc {
     val factory: MediaPlayerFactory by lazy {
         NativeLibrary.addSearchPath(RuntimeUtil.getLibVlcCoreLibraryName(), dir.absolutePath)
         NativeLibrary.addSearchPath(RuntimeUtil.getLibVlcLibraryName(), dir.absolutePath)
+        // Audio: DirectSound by default (WASAPI crackles with some sound cards / mixers such as the GoXLR) and the
+        // high-quality resampler, which VLC also uses to follow the clock of live streams.
         MediaPlayerFactory("--no-video-title-show", "--quiet", "--network-caching=3000", "--live-caching=3000", "--no-snapshot-preview",
-            "--avcodec-hw=any")
+            "--avcodec-hw=any", "--aout=${System.getenv("LUMEN_AOUT") ?: Store.audioOut}", "--audio-resampler=samplerate")
     }
 }
 
