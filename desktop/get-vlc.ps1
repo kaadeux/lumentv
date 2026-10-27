@@ -1,4 +1,4 @@
-# Downloads the official VLC 3.0.21 (64-bit) and keeps only the playback engine for Lumen TV for Windows.
+﻿# Downloads the official VLC 3.0.21 (64-bit) and keeps only the playback engine for Lumen TV for Windows.
 # The checksum is verified against the one published by VideoLAN. Run once before building the Windows app.
 $ErrorActionPreference = "Stop"
 $dest = Join-Path $PSScriptRoot "resources\windows\vlc"
@@ -15,4 +15,6 @@ Copy-Item "$src\libvlc.dll", "$src\libvlccore.dll" $dest
 Copy-Item "$src\COPYING.txt" (Join-Path $dest "COPYING-VLC.txt")
 Copy-Item "$src\plugins" $dest -Recurse
 foreach ($d in 'gui', 'lua', 'visualization', 'video_splitter', 'control', 'services_discovery', 'stream_out') { Remove-Item (Join-Path $dest "plugins\$d") -Recurse -Force -ErrorAction SilentlyContinue }
+# Plugin cache: without plugins.dat VLC opens its ~300 plugin files one by one at every start (slow first playback).
+& (Join-Path $src "vlc-cache-gen.exe") (Join-Path $dest "plugins")
 Write-Host "VLC prêt dans $dest"

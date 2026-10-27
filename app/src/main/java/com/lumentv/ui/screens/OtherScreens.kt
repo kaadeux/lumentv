@@ -226,8 +226,11 @@ fun HistoryScreen(vm: MainViewModel) {
     val scope = rememberCoroutineScope()
     val history by vm.graph.library.observeHistory(150).collectAsStateWithLifecycle(null)
     var confirm by remember { mutableStateOf(false) }
-    val h = history ?: return Loading()
-    if (h.isEmpty()) return EmptyState("Historique vide", "Les chaînes, films et épisodes que vous regardez apparaîtront ici.")
+    // Films and series only (live channels are not history), one line per series: its last episode watched.
+    val h = remember(history) {
+        history?.filter { it.kind != HistoryKind.CHANNEL }?.distinctBy { if (it.kind == HistoryKind.EPISODE) "s:${it.playlistId}:${it.parentUid ?: it.uid}" else it.key }
+    } ?: return Loading()
+    if (h.isEmpty()) return EmptyState("Historique vide", "Les films et les séries que vous regardez apparaîtront ici.")
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item { ScreenTitle("Historique") { TvButton("Effacer l'historique", { confirm = true }) } }
         items(h, key = { it.key }) { e ->

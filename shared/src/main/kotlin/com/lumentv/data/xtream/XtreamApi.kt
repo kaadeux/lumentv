@@ -39,7 +39,8 @@ data class XtreamAccount(
 
 data class XLive(val streamId: Long, val name: String, val categoryId: String?, val icon: String?, val epgId: String?, val num: Int?, val archiveDays: Int)
 data class XMovie(val streamId: Long, val name: String, val categoryId: String?, val icon: String?, val ext: String?, val rating: String?, val added: Long, val year: String?)
-data class XSeries(val seriesId: Long, val name: String, val categoryId: String?, val cover: String?, val plot: String?, val rating: String?, val year: String?)
+data class XSeries(val seriesId: Long, val name: String, val categoryId: String?, val cover: String?, val plot: String?, val rating: String?, val year: String?,
+                   val tmdb: String? = null)
 data class XEpisode(val id: Long, val title: String, val season: Int, val episode: Int, val ext: String?, val image: String?, val plot: String?, val durationSecs: Int)
 data class XVodInfo(val plot: String?, val durationSecs: Int, val genre: String?, val cast: String?, val director: String?, val releaseDate: String?)
 
@@ -101,7 +102,8 @@ class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredent
     fun series(onItem: (XSeries) -> Unit) = each(api("get_series")) { o ->
         val id = o.long("series_id") ?: return@each
         onItem(XSeries(id, o.str("name").orEmpty(), o.str("category_id"), o.str("cover"), o.str("plot"),
-            o.str("rating")?.takeIf { it != "0" && it.isNotBlank() }, o.str("releaseDate")?.take(4) ?: o.str("year")))
+            o.str("rating")?.takeIf { it != "0" && it.isNotBlank() }, o.str("releaseDate")?.take(4) ?: o.str("year"),
+            (o.str("tmdb_id") ?: o.str("tmdb"))?.takeIf { it.isNotBlank() && it != "0" }))
     }
 
     fun seriesInfo(seriesId: Long): List<XEpisode> {

@@ -74,6 +74,11 @@ class PlayerWindow private constructor(private val state: AppState) {
     private var learnIntroAt = 0L
     private var speedIndex = 2
     private var overlayOn = false
+    /** A live channel that was paused plays behind live until "Revenir au direct". */
+    private var behindLive = false
+    /** Recap / intro / credits of the current episode (TheIntroDB), or null: then the learned markers are used. */
+    @Volatile private var segments: Segments? = null
+    private var skippedRecap = false
     private val speeds = listOf(0.75f, 0.9f, 1f, 1.25f, 1.5f, 2f)
 
     // ---- Widgets ----------------------------------------------------------------------------------------------
@@ -95,6 +100,7 @@ class PlayerWindow private constructor(private val state: AppState) {
     private val nextBtn = Bubble(Ui.NEXT, tooltip = "Épisode suivant (N)") { playNext() }
     private val skipIntro = Bubble(label = "Passer le récap / l'intro", subtle = true, size = 38) { skipIntro() }
     private val nextCard = Bubble(Ui.NEXT, "Épisode suivant", subtle = true, size = 38) { playNext() }
+    private val backToLive = Bubble(label = "Revenir au direct", subtle = true, size = 38) { goLive() }
     private val nextClose = Bubble(Ui.CLOSE, tooltip = "Finir celui-ci", subtle = true, size = 38) { nextDismissed = true; refreshActions() }
     private val top = ShadePanel(fromTop = true).apply { layout = BorderLayout() }
     private val bottom = ShadePanel(fromTop = false)
@@ -166,7 +172,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         bottom.border = EmptyBorder(50, 16, 14, 16)
         // Skip intro / next episode stay on screen (discreet) even when the bars are hidden.
         dark(actions).border = EmptyBorder(0, 0, 8, 18)
-        actions.add(message); actions.add(skipIntro); actions.add(nextClose); actions.add(nextCard)
+        actions.add(message); actions.add(backToLive); actions.add(skipIntro); actions.add(nextClose); actions.add(nextCard)
         dark(seekRow).border = EmptyBorder(6, 0, 4, 0)
         seekRow.add(timeNow, BorderLayout.WEST); seekRow.add(seek, BorderLayout.CENTER); seekRow.add(timeEnd, BorderLayout.EAST)
         seek.hoverText = { f -> val len = player.status().length(); if (len > 0) fmt((len * f).toLong()) else "" }
@@ -190,7 +196,13 @@ class PlayerWindow private constructor(private val state: AppState) {
         if (item == null) { ScreenGuard.started(); presenceKey = state.presenceKey(); lastBeat = 0 }
         item = it
         lastSaved = System.currentTimeMillis()
-        nextDismissed = false; skipped = false; learnIntroAt = 0
+        nextDismissed = false; skipped = false; learnIntroAt = 0; behindLive = false; skippedRecap = false
+        segments = null
+        if (it.kind == Kind.EPISODE && it.tmdb != null) {
+            val wanted = it
+            Thread { val seg = runBlocking { state.library.segments(wanted.tmdb!!, wanted.season, wanted.episode) }
+                SwingUtilities.invokeLater { if (item === wanted) { segments = seg; refreshActions() } } }.start()
+        }
         frame.title = "Lumen TV — " + it.title + (it.subtitle?.let { s -> " · $s" } ?: "")
         title.text = it.title
         subtitle.text = it.subtitle ?: if (it.live) "En direct" else ""
@@ -238,7 +250,19 @@ class PlayerWindow private constructor(private val state: AppState) {
     }
 
     private fun skip(ms: Long) { if (item?.live == false) player.controls().skipTime(ms) }
-    private fun togglePause() = player.controls().pause()
+    private fun togglePause() {
+        if (item?.live == true && player.status().isPlaying) behindLive = true
+        player.controls().pause()
+        refreshActions()
+    }
+
+    /** Reopens the channel: back to what is on now. */
+    private fun goLive() {
+        val it = item ?: return
+        behindLive = false
+        player.media().play(it.url, *(if (it.userAgent.isNotBlank()) arrayOf(":http-user-agent=${it.userAgent}") else emptyArray()))
+        refreshActions()
+    }
     private fun setVolume(v: Int) { volume.value = v.coerceIn(0, 100); volume.repaint(); player.audio().setVolume(volume.value); muteBtn.set(icon = if (volume.value == 0) Ui.MUTE else Ui.VOLUME) }
     private fun toggleMute() { player.audio().mute(); muteBtn.set(icon = if (player.audio().isMute) Ui.MUTE else Ui.VOLUME) }
     private fun cycleSpeed() { speedIndex = (speedIndex + 1) % speeds.size; player.controls().setRate(speeds[speedIndex]); speedBtn.set(label = "${speeds[speedIndex]}x") }
@@ -258,6 +282,11 @@ class PlayerWindow private constructor(private val state: AppState) {
     private fun seriesKey() = item?.takeIf { it.kind == Kind.EPISODE }?.parentUid
 
     private fun skipIntro() {
+        val seg = segments
+        val pos = player.status().time()
+        // Known segments: jump to the end of the recap or of the intro, whichever is playing.
+        seg?.recap?.takeIf { pos in it }?.let { r -> skippedRecap = true; player.controls().setTime(r.last + 1); refreshActions(); return }
+        seg?.intro?.takeIf { pos in (it.first - 3_000)..it.last }?.let { i -> skipped = true; player.controls().setTime(i.last + 1); refreshActions(); return }
         val key = seriesKey() ?: return
         skipped = true
         val end = Markers.introEnd(key)
@@ -280,10 +309,24 @@ class PlayerWindow private constructor(private val state: AppState) {
         val key = seriesKey()
         val pos = player.status().time(); val len = player.status().length()
         val introEnd = key?.let { Markers.introEnd(it) } ?: 0
-        skipIntro.isVisible = key != null && !skipped && pos in 3_000 until (if (introEnd > 0) introEnd - 2_000 else Markers.DEFAULT_INTRO_WINDOW)
+        val seg = segments
+        if (seg != null && (seg.recap != null || seg.intro != null)) {
+            // Two distinct buttons, each only while its part plays (a recap, a scene, then the intro is common).
+            val inRecap = seg.recap?.let { pos in it && it.last - pos > 3_000 } == true && !skippedRecap
+            val inIntro = seg.intro?.let { pos in (it.first - 3_000)..it.last && it.last - pos > 3_000 } == true && !skipped
+            skipIntro.isVisible = inRecap || inIntro
+            if (inRecap) skipIntro.set(label = "Passer le récap") else if (inIntro) skipIntro.set(label = "Passer l'intro")
+        } else {
+            skipIntro.isVisible = key != null && !skipped && pos in 3_000 until (if (introEnd > 0) introEnd - 2_000 else Markers.DEFAULT_INTRO_WINDOW)
+            skipIntro.set(label = "Passer le récap / l'intro")
+        }
         val credits = key?.let { Markers.creditsLength(it) }?.takeIf { it > 0 } ?: Markers.defaultCredits(len)
-        val showNext = it?.next != null && !nextDismissed && len > 120_000 && len - pos in 1..credits
+        val creditsStart = seg?.credits?.first?.takeIf { it in 60_000 until len }
+        val showNext = it?.next != null && !nextDismissed && len > 120_000 &&
+            (if (creditsStart != null) pos >= creditsStart && pos < len else len - pos in 1..credits)
         nextCard.isVisible = showNext; nextClose.isVisible = showNext
+        backToLive.isVisible = it?.live == true && behindLive
+        backToLive.set(label = if (player.status().isPlaying) "En différé · Revenir au direct" else "En pause · Revenir au direct")
         if (showNext) nextCard.set(label = "Épisode suivant dans ${(len - pos) / 1000} s")
     }
 

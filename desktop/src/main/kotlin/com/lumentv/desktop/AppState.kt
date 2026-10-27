@@ -96,6 +96,8 @@ class AppState(private val scope: CoroutineScope) {
     // ---- Playlists ------------------------------------------------------------------------------------------
 
     fun start() {
+        // Loads the VLC engine now, in the background, so the first playback does not wait for it.
+        Thread { runCatching { Vlc.factory } }.apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
         activeKeyOrFirst?.let { open(it) }
         if (profileName != null) scope.launch { syncNow() }
         scope.launch { while (true) { delay(10 * 60_000L); if (profileName != null) syncNow() } }
@@ -125,7 +127,7 @@ class AppState(private val scope: CoroutineScope) {
             loading = true
             val cached = withContext(Dispatchers.IO) { Store.loadCatalog(key) }
             catalog = cached
-            val stale = cached == null || force || System.currentTimeMillis() - cached.loadedAt > p.refreshHours.coerceAtLeast(1) * 3_600_000L
+            val stale = cached == null || force || cached.version < CATALOG_VERSION || System.currentTimeMillis() - cached.loadedAt > p.refreshHours.coerceAtLeast(1) * 3_600_000L
             if (stale) {
                 runCatching { library.load(p) }
                     .onSuccess { c -> catalog = c; withContext(Dispatchers.IO) { Store.saveCatalog(key, c) } }
@@ -160,9 +162,11 @@ class AppState(private val scope: CoroutineScope) {
         return doc.favorites.values.filter { it.playlist == k && it.kind == kind && it.on }.sortedBy { it.order }
     }
 
+    /** Films and series only (no live channels), one line per series: its last episode watched. */
     fun history(): List<SyncHistory> {
         val k = activeKeyOrFirst ?: return emptyList()
-        return doc.history.values.filter { it.playlist == k && !it.deleted }.sortedByDescending { it.watchedAt }
+        return doc.history.values.filter { it.playlist == k && !it.deleted && it.kind != Kind.CHANNEL }.sortedByDescending { it.watchedAt }
+            .distinctBy { if (it.kind == Kind.EPISODE) "s:" + (it.parentUid ?: it.uid) else it.kind + it.uid }
     }
 
     fun progress(kind: String, uid: String): SyncHistory? {
@@ -171,6 +175,7 @@ class AppState(private val scope: CoroutineScope) {
     }
 
     fun saveProgress(item: PlayItem, positionMs: Long, durationMs: Long) {
+        if (System.getenv("LUMEN_NO_HISTORY") != null) return // tests: leave the real history alone
         val k = activeKeyOrFirst ?: return
         val key = ProfileMerge.itemKey(k, item.kind, item.uid)
         val h = SyncHistory(k, item.kind, item.uid, item.title, item.subtitle, item.image, item.parentUid, now(),
@@ -232,6 +237,8 @@ class AppState(private val scope: CoroutineScope) {
 data class PlayItem(
     val kind: String, val uid: String, val title: String, val subtitle: String?, val image: String?, val parentUid: String?,
     val url: String, val live: Boolean, val startMs: Long = 0, val userAgent: String = "",
+    /** Episodes: TMDB id of the series, season and episode, to find the recap / intro / credits. */
+    val tmdb: String? = null, val season: Int = 0, val episode: Int = 0,
     /** Episodes: the next one, for "Épisode suivant". */
     val next: (() -> PlayItem?)? = null,
 )

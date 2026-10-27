@@ -32,7 +32,7 @@ import java.util.zip.GZIPInputStream
 @Serializable data class Mv(val uid: String, val name: String, val category: String, val poster: String? = null, val url: String = "",
                             val streamId: Long = 0, val ext: String? = null, val year: String? = null, val rating: String? = null, val added: Long = 0) { val norm by lazy { normalize(name) } }
 @Serializable data class Se(val uid: String, val name: String, val category: String, val cover: String? = null, val seriesId: Long = 0,
-                            val plot: String? = null, val year: String? = null, val rating: String? = null) { val norm by lazy { normalize(name) } }
+                            val plot: String? = null, val year: String? = null, val rating: String? = null, val tmdb: String? = null) { val norm by lazy { normalize(name) } }
 @Serializable data class Ep(val uid: String, val title: String, val season: Int, val episode: Int, val url: String = "", val streamId: Long = 0,
                             val ext: String? = null, val image: String? = null, val plot: String? = null, val durationSecs: Int = 0, val rating: String? = null)
 
@@ -40,9 +40,13 @@ import java.util.zip.GZIPInputStream
 data class Details(val plot: String? = null, val genre: String? = null, val cast: String? = null, val director: String? = null,
                    val rating: String? = null, val release: String? = null, val backdrop: String? = null, val durationSecs: Int = 0)
 
+/** Bumped when the cached catalog lacks something new (v2: TMDB ids of series); an older cache is reloaded. */
+const val CATALOG_VERSION = 2
+
 @Serializable
 data class Catalog(
     val loadedAt: Long,
+    val version: Int = 1,
     val channels: List<Ch> = emptyList(),
     val movies: List<Mv> = emptyList(),
     val series: List<Se> = emptyList(),
@@ -72,9 +76,10 @@ class Library(private val http: OkHttpClient) {
         val ser = ArrayList<XSeries>(); runCatching { api.series { ser += it } }
         return Catalog(
             loadedAt = System.currentTimeMillis(),
+            version = CATALOG_VERSION,
             channels = live.mapIndexed { i, x -> Ch("x:${x.streamId}", x.name, liveCats[x.categoryId] ?: NO_GROUP, x.icon, streamId = x.streamId, epgId = x.epgId, num = x.num ?: (i + 1)) },
             movies = vod.map { x -> Mv("x:${x.streamId}", x.name, vodCats[x.categoryId] ?: NO_GROUP, x.icon, streamId = x.streamId, ext = x.ext, year = x.year, rating = x.rating, added = x.added) },
-            series = ser.map { x -> Se("x:${x.seriesId}", x.name, serCats[x.categoryId] ?: NO_GROUP, x.cover, x.seriesId, x.plot, x.year, x.rating) },
+            series = ser.map { x -> Se("x:${x.seriesId}", x.name, serCats[x.categoryId] ?: NO_GROUP, x.cover, x.seriesId, x.plot, x.year, x.rating, x.tmdb) },
             epgUrl = p.epgUrl.ifBlank { XtreamApi.xmltvUrl(XtreamCredentials(XtreamApi.normalizeServer(p.source), p.username, p.password)) },
         )
     }
@@ -107,7 +112,7 @@ class Library(private val http: OkHttpClient) {
             }
         }
         if (channels.isEmpty() && movies.isEmpty() && series.isEmpty()) throw FormatException("La playlist est vide ou illisible.")
-        return Catalog(System.currentTimeMillis(), channels, movies, series.values.toList(), episodes, p.epgUrl.ifBlank { epgUrl.orEmpty() }.ifBlank { null })
+        return Catalog(System.currentTimeMillis(), CATALOG_VERSION, channels, movies, series.values.toList(), episodes, p.epgUrl.ifBlank { epgUrl.orEmpty() }.ifBlank { null })
     }
 
     suspend fun episodes(p: SyncPlaylist, c: Catalog, s: Se): List<Ep> = seriesDetails(p, c, s).second
@@ -162,6 +167,31 @@ class Library(private val http: OkHttpClient) {
     fun movieUrl(p: SyncPlaylist, m: Mv) = if (p.type == "xtream") xtream(p).movieUrl(m.streamId, m.ext) else m.url
     fun episodeUrl(p: SyncPlaylist, e: Ep) = if (p.type == "xtream" && e.streamId > 0) xtream(p).episodeUrl(e.streamId, e.ext) else e.url
 
+    private val segmentCache = HashMap<String, Segments>()
+
+    /**
+     * Recap, intro and credits of an episode from TheIntroDB (free community database, keyed by TMDB id), so the
+     * player can offer "Passer le récap" and "Passer l'intro" at the right moments. One small request per episode.
+     */
+    suspend fun segments(tmdb: String, season: Int, episode: Int): Segments? = withContext(Dispatchers.IO) {
+        val key = "$tmdb/$season/$episode"
+        segmentCache[key]?.let { return@withContext it }
+        runCatching {
+            val req = Request.Builder().url("https://api.theintrodb.org/v3/media?tmdb_id=$tmdb&season=$season&episode=$episode").build()
+            http.newBuilder().callTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build().newCall(req).execute().use { r ->
+                if (!r.isSuccessful) return@runCatching null
+                val o = kotlinx.serialization.json.Json.parseToJsonElement(r.body!!.string()) as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
+                fun seg(name: String): LongRange? {
+                    val first = (o[name] as? kotlinx.serialization.json.JsonArray)?.firstOrNull() as? kotlinx.serialization.json.JsonObject ?: return null
+                    val start = (first["start_ms"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: return null
+                    val end = (first["end_ms"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: Long.MAX_VALUE
+                    return start until end
+                }
+                Segments(seg("recap"), seg("intro"), seg("credits")).also { segmentCache[key] = it }
+            }
+        }.getOrNull()
+    }
+
     /** Programmes from 6 h ago to 2 days ahead, by channel uid. */
     suspend fun guide(c: Catalog, offsetMinutes: Int, userAgent: String): Map<String, List<Prog>> = withContext(Dispatchers.IO) {
         val url = c.epgUrl ?: return@withContext emptyMap()
@@ -194,3 +224,6 @@ class Library(private val http: OkHttpClient) {
         return r.body!!.byteStream()
     }
 }
+
+/** Where the recap, the intro and the credits are in an episode (ms); null when unknown. */
+data class Segments(val recap: LongRange?, val intro: LongRange?, val credits: LongRange?)
