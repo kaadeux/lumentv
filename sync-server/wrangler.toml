@@ -5,5 +5,4 @@ compatibility_date = "2025-06-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "lumentv-sync"
-# Filled in by "npx wrangler d1 create lumentv-sync" (see README).
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "96a355fa-f8d5-4275-8ec0-681cf19a1144"
