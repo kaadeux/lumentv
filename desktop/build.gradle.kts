@@ -10,7 +10,7 @@ plugins {
     id("org.jetbrains.compose")
 }
 
-val appVersion = "1.3.2"
+val appVersion = "1.3.3"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -50,7 +50,9 @@ compose.desktop {
             windows {
                 menu = true
                 shortcut = true
-                perUserInstall = true
+                // Per machine (Program Files, one admin prompt): a per-user install runs without rights and fails on a
+                // drive whose system "Config.Msi" folder it may not touch ("Could not set file security… Error 5").
+                perUserInstall = false
                 menuGroup = "Lumen TV"
                 // Fixed, so a new installer upgrades the previous version instead of installing a second copy.
                 upgradeUuid = "6b1f0a52-3c1e-4d5e-9b8a-2f4c7d9e1a33"
