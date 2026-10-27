@@ -84,10 +84,11 @@ fun AppState.playMovie(m: Mv, fromStart: Boolean = false) {
 
 fun AppState.episodeItem(s: Se, eps: List<Ep>, i: Int, fromStart: Boolean = false): PlayItem {
     val p = active!!
+    val tmdb = s.tmdb ?: catalog?.series?.firstOrNull { it.uid == s.uid }?.tmdb
     val e = eps[i]
     val start = if (fromStart) 0 else progress(Kind.EPISODE, e.uid)?.let { if (it.durationMs > 0 && it.positionMs > it.durationMs - 120_000) 0 else it.positionMs } ?: 0
     return PlayItem(Kind.EPISODE, e.uid, s.name, "S${e.season} E${e.episode} · ${e.title}", s.cover, s.uid, library.episodeUrl(p, e), live = false,
-        startMs = start, userAgent = p.userAgent, tmdb = s.tmdb, season = e.season, episode = e.episode, next = if (i + 1 < eps.size) ({ episodeItem(s, eps, i + 1, fromStart = true) }) else null)
+        startMs = start, userAgent = p.userAgent, tmdb = tmdb, season = e.season, episode = e.episode, next = if (i + 1 < eps.size) ({ episodeItem(s, eps, i + 1, fromStart = true) }) else null)
 }
 
 /** Resumes a history entry: finds the channel / film / episode in the current playlist. */

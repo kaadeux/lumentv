@@ -198,9 +198,11 @@ class PlayerWindow private constructor(private val state: AppState) {
         lastSaved = System.currentTimeMillis()
         nextDismissed = false; skipped = false; learnIntroAt = 0; behindLive = false; skippedRecap = false
         segments = null
+        if (it.kind == Kind.EPISODE) trace("episode S${it.season}E${it.episode} tmdb=${it.tmdb}")
         if (it.kind == Kind.EPISODE && it.tmdb != null) {
             val wanted = it
             Thread { val seg = runBlocking { state.library.segments(wanted.tmdb!!, wanted.season, wanted.episode) }
+                trace("segments S${wanted.season}E${wanted.episode} tmdb=${wanted.tmdb} -> $seg")
                 SwingUtilities.invokeLater { if (item === wanted) { segments = seg; refreshActions() } } }.start()
         }
         frame.title = "Lumen TV — " + it.title + (it.subtitle?.let { s -> " · $s" } ?: "")

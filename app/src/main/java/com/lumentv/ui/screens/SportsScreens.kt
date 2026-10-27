@@ -174,6 +174,7 @@ fun SportsSettingsScreen(vm: MainViewModel) {
     val comps = remember { mutableStateListOf<String>().apply { addAll(settings.sportCompetitions) } }
     val teams = remember { mutableStateListOf<String>().apply { addAll(settings.sportTeams) } }
     var days by remember { mutableStateOf(settings.sportDays) }
+    val leagues = remember { mutableStateListOf<String>().apply { addAll(settings.sportLeagues) } }
     var newComp by remember { mutableStateOf("") }
     var newTeam by remember { mutableStateOf("") }
     var daysMenu by remember { mutableStateOf(false) }
@@ -181,12 +182,25 @@ fun SportsSettingsScreen(vm: MainViewModel) {
         active?.let { value = vm.graph.sports.suggestions(it.id, sports.toSet()) }
     }
     fun save() = scope.launch {
-        vm.graph.sports.save(SportPrefs(sports.toSet(), comps.toList(), teams.toList(), days))
+        vm.graph.sports.save(SportPrefs(sports.toSet(), comps.toList(), teams.toList(), days, leagues.toSet()))
         vm.show("Préférences sportives enregistrées"); vm.back()
     }
 
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { ScreenTitle("Mes sports et équipes") { TvButton("Enregistrer", { save() }, primary = true) } }
+        item { Section("Calendrier officiel : matchs en cours et à venir, sans les rediffusions") }
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.lumentv.data.sports.FixtureClient.leagues.forEach { l ->
+                    Chip((SportsCatalog.byId(l.sport)?.emoji?.let { "$it " } ?: "") + l.label, l.id in leagues) { if (l.id in leagues) leagues.remove(l.id) else leagues.add(l.id) }
+                }
+            }
+        }
+        item {
+            Text("Avec au moins une compétition cochée, le panneau ne montre que ses vrais matchs (calendrier public d'ESPN) et les chaînes " +
+                "de votre liste qui les diffusent. Sans rien coché, il lit les matchs dans le guide TV comme avant (rediffusions comprises).",
+                style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+        }
         item { Section("Sports (aucun coché = tous)") }
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -40,6 +40,8 @@ data class Settings(
     val sportCompetitions: List<String> = emptyList(),
     val sportTeams: List<String> = emptyList(),
     val sportDays: Int = 3,
+    /** Competitions of the official calendar ([com.lumentv.data.sports.FixtureClient.leagues] ids). */
+    val sportLeagues: Set<String> = emptySet(),
 )
 
 object Keys {
@@ -61,6 +63,7 @@ object Keys {
     val sportComps = stringPreferencesKey("sport_competitions")
     val sportTeams = stringPreferencesKey("sport_teams")
     val sportDays = intPreferencesKey("sport_days")
+    val sportLeagues = stringSetPreferencesKey("sport_leagues")
 }
 
 class SettingsStore(private val context: Context) {
@@ -84,6 +87,7 @@ class SettingsStore(private val context: Context) {
             sportCompetitions = p[Keys.sportComps]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList(),
             sportTeams = p[Keys.sportTeams]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList(),
             sportDays = p[Keys.sportDays] ?: 3,
+            sportLeagues = p[Keys.sportLeagues] ?: emptySet(),
         )
     }
 
@@ -99,6 +103,7 @@ class SettingsStore(private val context: Context) {
             it[Keys.sportComps] = s.competitions.joinToString("\n")
             it[Keys.sportTeams] = s.teams.joinToString("\n")
             it[Keys.sportDays] = s.days
+            it[Keys.sportLeagues] = s.leagues
         }
     }
 
@@ -141,6 +146,7 @@ class SettingsStore(private val context: Context) {
             p[Keys.sportComps]?.let { put(Keys.sportComps.name, it) }
             p[Keys.sportTeams]?.let { put(Keys.sportTeams.name, it) }
             p[Keys.sportDays]?.let { put(Keys.sportDays.name, it.toString()) }
+            p[Keys.sportLeagues]?.let { put(Keys.sportLeagues.name, it.sorted().joinToString("\n")) }
         }
     }
 
@@ -153,6 +159,7 @@ class SettingsStore(private val context: Context) {
                     Keys.subsOn.name, Keys.autoNext.name -> p[booleanPreferencesKey(k)] = v == "true"
                     Keys.epgDays.name, Keys.sportDays.name -> v.toIntOrNull()?.let { p[intPreferencesKey(k)] = it }
                     Keys.sportIds.name -> p[Keys.sportIds] = v.split('\n').filter { it.isNotBlank() }.toSet()
+                    Keys.sportLeagues.name -> p[Keys.sportLeagues] = v.split('\n').filter { it.isNotBlank() }.toSet()
                 }
             }
         }

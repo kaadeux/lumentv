@@ -181,22 +181,23 @@ class Library(private val http: OkHttpClient) {
             http.newBuilder().callTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build().newCall(req).execute().use { r ->
                 if (!r.isSuccessful) return@runCatching null
                 val o = kotlinx.serialization.json.Json.parseToJsonElement(r.body!!.string()) as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
-                fun seg(name: String): LongRange? {
+                // A recap or intro needs a real end (some entries have none, or are empty: 0 to 0); credits may run to the end.
+                fun seg(name: String, openEnd: Boolean): LongRange? {
                     val first = (o[name] as? kotlinx.serialization.json.JsonArray)?.firstOrNull() as? kotlinx.serialization.json.JsonObject ?: return null
                     val start = (first["start_ms"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: return null
-                    val end = (first["end_ms"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: Long.MAX_VALUE
-                    return start until end
+                    val end = (first["end_ms"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: if (openEnd) Long.MAX_VALUE else return null
+                    return if (end - start >= 5_000) start until end else null
                 }
-                Segments(seg("recap"), seg("intro"), seg("credits")).also { segmentCache[key] = it }
+                Segments(seg("recap", false), seg("intro", false), seg("credits", true)).also { segmentCache[key] = it }
             }
         }.getOrNull()
     }
 
-    /** Programmes from 6 h ago to 2 days ahead, by channel uid. */
+    /** Programmes from 6 h ago to 7 days ahead (what the guide offers), by channel uid. */
     suspend fun guide(c: Catalog, offsetMinutes: Int, userAgent: String): Map<String, List<Prog>> = withContext(Dispatchers.IO) {
         val url = c.epgUrl ?: return@withContext emptyMap()
         val from = System.currentTimeMillis() - 6 * 3_600_000L
-        val to = System.currentTimeMillis() + 48 * 3_600_000L
+        val to = System.currentTimeMillis() + 7 * 86_400_000L
         val shift = offsetMinutes * 60_000L
         val names = HashMap<String, String>() // channelKeyName(display name) -> lowercase XMLTV id
         val progs = HashMap<String, MutableList<Prog>>()

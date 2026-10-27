@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.SportsSoccer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LiveTv
@@ -49,7 +50,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 
 enum class Section(val label: String, val icon: ImageVector) {
-    Live("Direct", Icons.Filled.LiveTv), Movies("Films", Icons.Filled.Movie), Series("Séries", Icons.Filled.VideoLibrary),
+    Live("Direct", Icons.Filled.LiveTv), Sports("Sports", Icons.Filled.SportsSoccer), Movies("Films", Icons.Filled.Movie), Series("Séries", Icons.Filled.VideoLibrary),
     Search("Recherche", Icons.Filled.Search), Favorites("Favoris", Icons.Filled.Favorite), History("Historique", Icons.Filled.History),
     Downloads("Téléchargés", Icons.Filled.Download),
     Settings("Paramètres", Icons.Filled.Settings),
@@ -108,6 +109,7 @@ fun Shell(state: AppState) {
                 state.catalog == null -> Empty("Playlist indisponible", state.loadError ?: "")
                 else -> when (section) {
                     Section.Live -> LiveScreen(state)
+                    Section.Sports -> SportsScreen(state)
                     Section.Movies -> MoviesScreen(state)
                     Section.Series -> SeriesScreen(state)
                     Section.Search -> SearchScreen(state)

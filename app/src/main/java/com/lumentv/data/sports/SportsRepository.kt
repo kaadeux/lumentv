@@ -30,9 +30,11 @@ data class SportEvent(
     fun isLive(now: Long = System.currentTimeMillis()) = start <= now && stop > now
 }
 
-data class SportPrefs(val sports: Set<String>, val competitions: List<String>, val teams: List<String>, val days: Int) {
+data class SportPrefs(val sports: Set<String>, val competitions: List<String>, val teams: List<String>, val days: Int,
+                      /** Official calendar competitions; when some are chosen, only their real games are listed. */
+                      val leagues: Set<String> = emptySet()) {
     companion object {
-        fun of(s: Settings) = SportPrefs(s.sportIds, s.sportCompetitions, s.sportTeams, s.sportDays)
+        fun of(s: Settings) = SportPrefs(s.sportIds, s.sportCompetitions, s.sportTeams, s.sportDays, s.sportLeagues)
     }
 }
 
@@ -44,6 +46,7 @@ class SportsRepository(
     private val settings: SettingsStore,
     private val epg: EpgRepository,
     private val library: LibraryRepository,
+    private val fixtures: FixtureClient,
 ) {
     /** epg key -> channels of the playlist that show it, rebuilt when the guide changes. */
     private var channelIndex: Triple<Long, Int, Map<String, List<ChannelRow>>>? = null
@@ -73,6 +76,7 @@ class SportsRepository(
     }
 
     suspend fun events(pid: Long, prefs: SportPrefs): List<SportEvent> = withContext(Dispatchers.IO) {
+        if (prefs.leagues.isNotEmpty()) return@withContext official(pid, prefs)
         val now = System.currentTimeMillis()
         val sports = if (prefs.sports.isEmpty()) SportsCatalog.all else SportsCatalog.all.filter { it.id in prefs.sports }
         cache?.let { (k, t, list) -> if (k == Triple(pid, prefs, epg.version.value) && now - t < CACHE_MS) return@withContext list }
@@ -132,6 +136,39 @@ class SportsRepository(
     }
 
     private var cache: Triple<Triple<Long, SportPrefs, Int>, Long, List<SportEvent>>? = null
+
+    /**
+     * Official calendar: the real live and upcoming games of the chosen competitions (ESPN), each with the channels of
+     * the playlist whose guide shows it around kick-off, or whose name announces it. Replays never qualify.
+     */
+    private suspend fun official(pid: Long, prefs: SportPrefs): List<SportEvent> {
+        val now = System.currentTimeMillis()
+        val teams = prefs.teams.map { normalize(it) }.filter { it.isNotBlank() }
+        val games = fixtures.fixtures(prefs.leagues.mapNotNull { FixtureClient.league(it) }, prefs.days)
+            .filter { f -> teams.isEmpty() || listOfNotNull(f.home, f.away).any { t -> t.aliases.any { a -> teams.any { a.contains(it) || it.contains(a) } } } }
+        if (games.isEmpty()) return emptyList()
+        val progs = candidates(pid, games.flatMap { FixtureMatcher.searchWords(it) }, games.minOf { it.start } - FixtureMatcher.BEFORE_MS,
+            games.maxOf { it.start } + FixtureMatcher.AFTER_MS)
+        val index = channelsByKey(pid)
+        val named = db.channels().withDates(pid).filter { !it.isHidden }.mapNotNull { r -> EventChannelParser.parse(r.ch.name)?.let { (l, t) -> Triple(r, normalize(l), t) } }
+        val generic = SportsCatalog.byId(SportsCatalog.EVENT_ID)!!
+        return games.mapNotNull { f ->
+            val shown = progs.filter { FixtureMatcher.matches(f, it.titleNorm, it.start) }
+            val channels = (shown.flatMap { index[it.epgKey].orEmpty() } + named.filter { (_, l, t) -> FixtureMatcher.matches(f, l, t, channelName = true) }.map { it.first })
+                .distinctBy { it.ch.id }
+            if (channels.isEmpty()) return@mapNotNull null
+            val start = if (f.live) minOf(f.start, now) else f.start
+            val stop = maxOf(start + 2 * 3_600_000L, if (f.live) now + 30 * 60_000L else 0)
+            val score = if (f.live && f.homeScore != null) "${f.home?.short ?: f.home?.name} ${f.homeScore} – ${f.awayScore} ${f.away?.short ?: f.away?.name}" else f.label
+            SportEvent(
+                key = "f:${f.id}", sport = SportsCatalog.byId(f.league.sport) ?: generic, competition = f.league.label,
+                home = f.home?.name, away = f.away?.name, label = score, title = shown.firstOrNull()?.title ?: f.label,
+                description = listOfNotNull(f.detail.takeIf { it.isNotBlank() }, "Calendrier officiel").joinToString(" · "),
+                start = start, stop = stop, channels = channels,
+                program = shown.firstOrNull() ?: ProgramEntity(playlistId = pid, epgKey = "", start = start, stop = stop, title = f.label, titleNorm = normalize(f.label)),
+            )
+        }.sortedWith(compareBy({ !it.isLive(now) }, { it.start }))
+    }
 
     /** Computes the list in the background at start-up, so the panel opens without waiting. */
     suspend fun prewarm(pid: Long) { runCatching { events(pid, SportPrefs.of(settings.current())) } }

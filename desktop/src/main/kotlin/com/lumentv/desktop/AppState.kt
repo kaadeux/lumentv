@@ -36,6 +36,8 @@ class AppState(private val scope: CoroutineScope) {
     val http: OkHttpClient = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS)
         .followRedirects(true).followSslRedirects(true).retryOnConnectionFailure(true).build()
     val library = Library(http)
+    /** Official sports calendar (live and upcoming games). */
+    val fixtures = com.lumentv.data.sports.FixtureClient(http)
     private val sync = ProfileSync(http, BuildInfo.SYNC_URL)
     private val prefs = Preferences.userRoot().node("lumentv")
     private val syncLock = Mutex()
@@ -51,7 +53,7 @@ class AppState(private val scope: CoroutineScope) {
     /** Queues a film or an episode in the downloads. */
     fun download(item: PlayItem) {
         val k = activeKeyOrFirst ?: return
-        downloads.add(item.kind, item.uid, k, item.title, item.subtitle, item.image, item.parentUid, item.url, item.userAgent)
+        downloads.add(item.kind, item.uid, k, item.title, item.subtitle, item.image, item.parentUid, item.url, item.userAgent, item.tmdb, item.season, item.episode)
         show("Ajouté aux téléchargements")
     }
 

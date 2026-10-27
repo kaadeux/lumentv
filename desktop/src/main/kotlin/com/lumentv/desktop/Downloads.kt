@@ -26,6 +26,7 @@ data class DownloadTask(
     val total: Long = 0, val done: Long = 0, val status: String = DlStatus.QUEUED, val error: String? = null,
     /** Bytes per second, while running. */
     val speed: Long = 0,
+    val tmdb: String? = null, val season: Int = 0, val episode: Int = 0,
 )
 
 /**
@@ -48,13 +49,15 @@ class Downloads(private val scope: CoroutineScope, http: OkHttpClient, private v
 
     fun of(uid: String): DownloadTask? = tasks.firstOrNull { it.uid == uid }
 
-    fun add(kind: String, uid: String, playlist: String, title: String, subtitle: String?, image: String?, parentUid: String?, url: String, userAgent: String) {
+    fun add(kind: String, uid: String, playlist: String, title: String, subtitle: String?, image: String?, parentUid: String?, url: String, userAgent: String,
+            tmdb: String? = null, season: Int = 0, episode: Int = 0) {
         if (of(uid) != null) return
         val ext = url.substringBefore('?').substringAfterLast('.', "mp4").takeIf { it.length in 2..4 } ?: "mp4"
         val name = listOfNotNull(title, subtitle?.substringBefore(" · ")).joinToString(" ").replace(Regex("[\\\\/:*?\"<>|]"), " ").replace(Regex("\\s+"), " ").trim().take(120)
         var f = File(folder, "$name.$ext"); var n = 2
         while (f.exists() || tasks.any { it.file == f.path }) { f = File(folder, "$name ($n).$ext"); n++ }
-        tasks += DownloadTask(System.nanoTime().toString(), kind, uid, playlist, title, subtitle, image, parentUid, url, userAgent, f.path)
+        tasks += DownloadTask(System.nanoTime().toString(), kind, uid, playlist, title, subtitle, image, parentUid, url, userAgent, f.path,
+            tmdb = tmdb, season = season, episode = episode)
         save(); kick()
     }
 

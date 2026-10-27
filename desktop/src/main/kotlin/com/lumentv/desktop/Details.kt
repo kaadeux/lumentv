@@ -112,7 +112,11 @@ fun DownloadButton(state: AppState, uid: String, item: () -> PlayItem, compact: 
 
 fun AppState.playFile(t: DownloadTask) {
     val start = progress(t.kind, t.uid)?.let { if (it.durationMs > 0 && it.positionMs > it.durationMs - 120_000) 0 else it.positionMs } ?: 0
-    PlayerWindow.open(this, PlayItem(t.kind, t.uid, t.title, t.subtitle, t.image, t.parentUid, File(t.file).toURI().toString(), live = false, startMs = start))
+    val tmdb = t.tmdb ?: t.parentUid?.let { u -> catalog?.series?.firstOrNull { it.uid == u }?.tmdb }
+    val (season, episode) = if (t.season > 0) t.season to t.episode
+        else Regex("S(\\d+) E(\\d+)").find(t.subtitle.orEmpty())?.destructured?.let { (a, b) -> a.toInt() to b.toInt() } ?: (0 to 0)
+    PlayerWindow.open(this, PlayItem(t.kind, t.uid, t.title, t.subtitle, t.image, t.parentUid, File(t.file).toURI().toString(), live = false, startMs = start,
+        tmdb = tmdb, season = season, episode = episode))
 }
 
 @Composable
@@ -188,9 +192,10 @@ fun MovieDetail(state: AppState, m: Mv, onBack: () -> Unit) {
 // ---- Series page ----------------------------------------------------------------------------------------------
 
 @Composable
-fun SeriesDetail(state: AppState, s: Se, onBack: () -> Unit) {
+fun SeriesDetail(state: AppState, s0: Se, onBack: () -> Unit) {
     val p = state.active ?: return
     val c = state.catalog ?: return
+    val s = remember(c, s0.uid) { c.series.firstOrNull { it.uid == s0.uid } ?: s0 }
     val data by produceState<Result<Pair<Details?, List<Ep>>>?>(null, s.uid) { value = runCatching { state.library.seriesDetails(p, c, s) } }
     val details = data?.getOrNull()?.first
     val eps = data?.getOrNull()?.second.orEmpty()

@@ -1,0 +1,175 @@
+package com.lumentv.data.sports
+
+import com.lumentv.core.normalize
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
+import java.util.concurrent.TimeUnit
+
+/** A competition of the official calendar (ESPN's free scoreboard, no key). [sport] is a [SportsCatalog] id. */
+data class League(val id: String, val sport: String, val label: String, val path: String)
+
+data class Team(val name: String, val short: String?, val abbr: String?, val logo: String?) {
+    /** Names a guide may use for this team, normalised: "Paris Saint-Germain", "PSG", "Le Havre AC" → "le havre", "havre". */
+    val aliases: List<String> by lazy {
+        val out = LinkedHashSet<String>()
+        listOfNotNull(name, short, abbr?.takeIf { it.length >= 3 }).forEach { n ->
+            val x = normalize(n)
+            out += x
+            val stripped = x.split(' ').filter { it !in noise }.joinToString(" ")
+            if (stripped.length >= 3) out += stripped
+            stripped.split(' ').filter { it.length >= 5 }.maxByOrNull { it.length }?.let { out += it }
+        }
+        out.filter { it.length >= 3 }
+    }
+
+    private companion object {
+        val noise = setOf("fc", "ac", "as", "sc", "cf", "afc", "ssc", "us", "sco", "ogc", "rc", "stade", "olympique", "club", "de", "du", "la", "le", "les", "real", "sporting")
+    }
+}
+
+data class Fixture(
+    val id: String, val league: League, val start: Long,
+    /** "pre" (upcoming) or "in" (live). Finished games are not kept. */
+    val state: String, val detail: String,
+    val home: Team?, val away: Team?, val name: String,
+    val homeScore: String? = null, val awayScore: String? = null,
+) {
+    val live get() = state == "in"
+    val label get() = if (home != null && away != null) "${home.short ?: home.name} – ${away.short ?: away.name}" else name
+}
+
+/**
+ * Upcoming and live games of the chosen competitions, from ESPN's public scoreboard: a few small requests
+ * (about 15 KB per competition and day), kept 5 minutes. Replays never appear: only real games are listed.
+ */
+class FixtureClient(http: OkHttpClient) {
+    private val http = http.newBuilder().callTimeout(10, TimeUnit.SECONDS).build()
+    private val json = Json { ignoreUnknownKeys = true }
+    private val cache = HashMap<String, Pair<Long, List<Fixture>>>()
+
+    suspend fun fixtures(leagues: Collection<League>, days: Int): List<Fixture> = withContext(Dispatchers.IO) {
+        val day = SimpleDateFormat("yyyyMMdd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+        val now = System.currentTimeMillis()
+        // ESPN days are US days: start one day back so tonight's European games are not missed.
+        val dates = (-1..days.coerceIn(1, 7)).map { day.format(now + it * 86_400_000L) }
+        coroutineScope {
+            leagues.flatMap { l -> dates.map { d -> async { day(l, d) } } }.awaitAll().flatten()
+        }.distinctBy { it.id }.filter { it.state == "in" || (it.state == "pre" && it.start > now - 3 * 3_600_000L) }
+            .sortedWith(compareBy({ !it.live }, { it.start }))
+    }
+
+    private fun day(l: League, date: String): List<Fixture> {
+        val key = "${l.path}/$date"
+        synchronized(cache) { cache[key]?.let { (t, list) -> if (System.currentTimeMillis() - t < 5 * 60_000) return list } }
+        val list = runCatching {
+            val req = Request.Builder().url("https://site.api.espn.com/apis/site/v2/sports/${l.path}/scoreboard?dates=$date").build()
+            http.newCall(req).execute().use { r -> if (!r.isSuccessful) emptyList() else parse(l, r.body!!.string()) }
+        }.getOrDefault(emptyList())
+        synchronized(cache) { cache[key] = System.currentTimeMillis() to list }
+        return list
+    }
+
+    private fun parse(l: League, body: String): List<Fixture> {
+        val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+        val events = (json.parseToJsonElement(body) as? JsonObject)?.get("events") as? JsonArray ?: return emptyList()
+        return events.mapNotNull { e ->
+            val o = e as? JsonObject ?: return@mapNotNull null
+            val start = o.s("date")?.let { runCatching { iso.parse(it)!!.time }.getOrNull() } ?: return@mapNotNull null
+            val status = (o["status"] as? JsonObject)?.get("type") as? JsonObject
+            val state = status?.s("state") ?: "pre"
+            if (state == "post") return@mapNotNull null
+            val comp = (o["competitions"] as? JsonArray)?.firstOrNull() as? JsonObject
+            val sides = (comp?.get("competitors") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            fun side(where: String) = sides.firstOrNull { it.s("homeAway") == where }
+            fun team(c: JsonObject?): Team? {
+                val t = (c?.get("team") as? JsonObject) ?: (c?.get("athlete") as? JsonObject) ?: return null
+                val name = t.s("displayName") ?: return null
+                return Team(name, t.s("shortDisplayName"), t.s("abbreviation"), t.s("logo"))
+            }
+            Fixture(
+                id = o.s("id") ?: return@mapNotNull null, league = l, start = start, state = state,
+                detail = (if (state == "in") status?.s("shortDetail") else null).orEmpty(),
+                home = team(side("home")), away = team(side("away")), name = o.s("name").orEmpty(),
+                homeScore = side("home")?.s("score")?.takeIf { state == "in" }, awayScore = side("away")?.s("score")?.takeIf { state == "in" },
+            )
+        }
+    }
+
+    private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+
+    companion object {
+        val leagues = listOf(
+            League("fra1", "football", "Ligue 1", "soccer/fra.1"),
+            League("fra2", "football", "Ligue 2", "soccer/fra.2"),
+            League("cdf", "football", "Coupe de France", "soccer/fra.coupe_de_france"),
+            League("ucl", "football", "Ligue des champions", "soccer/uefa.champions"),
+            League("uel", "football", "Ligue Europa", "soccer/uefa.europa"),
+            League("uecl", "football", "Ligue Conférence", "soccer/uefa.europa.conf"),
+            League("eng1", "football", "Premier League", "soccer/eng.1"),
+            League("esp1", "football", "Liga", "soccer/esp.1"),
+            League("ita1", "football", "Serie A", "soccer/ita.1"),
+            League("ger1", "football", "Bundesliga", "soccer/ger.1"),
+            League("top14", "rugby", "Top 14", "rugby/270559"),
+            League("rcc", "rugby", "Champions Cup (rugby)", "rugby/271937"),
+            League("6n", "rugby", "Six Nations", "rugby/180659"),
+            League("nba", "basket", "NBA", "basketball/nba"),
+            League("f1", "moteur", "Formule 1", "racing/f1"),
+            League("nfl", "nfl", "NFL", "football/nfl"),
+            League("nhl", "hockey", "NHL", "hockey/nhl"),
+            League("ufc", "combat", "UFC", "mma/ufc"),
+        )
+        fun league(id: String) = leagues.firstOrNull { it.id == id }
+    }
+}
+
+/** Finds, in a guide, the programmes that show a game of the official calendar. */
+object FixtureMatcher {
+    /** Window around the kick-off where a programme of the game must start. */
+    const val BEFORE_MS = 45 * 60_000L
+    const val AFTER_MS = 30 * 60_000L
+    /** Event channels carry the time of their pre-show (or another time zone): a wider window. */
+    const val CHANNEL_BEFORE_MS = 4 * 3_600_000L
+    const val CHANNEL_AFTER_MS = 2 * 3_600_000L
+
+    /** Words to pre-filter the guide with (team names and short names). */
+    fun searchWords(f: Fixture): List<String> = listOfNotNull(f.home, f.away).flatMap { it.aliases }.ifEmpty {
+        SportsCatalog.byId(f.league.sport)?.keywords.orEmpty()
+    }
+
+    /**
+     * Whether a programme title (normalised) starting at [start] shows [f]: both teams named, or one team and the right
+     * sport / competition; for races and fights (no teams), the sport's keywords. Replays fall outside the window.
+     */
+    fun matches(f: Fixture, titleNorm: String, start: Long, channelName: Boolean = false): Boolean {
+        val before = if (channelName) CHANNEL_BEFORE_MS else BEFORE_MS
+        val after = if (channelName) CHANNEL_AFTER_MS else AFTER_MS
+        if (start < f.start - before || start > f.start + after) return false
+        // A channel name must name both teams: one team is too weak on its own there.
+        if (channelName && f.home != null && f.away != null) {
+            val t = " $titleNorm "
+            return listOf(f.home, f.away).all { team -> team.aliases.any { a -> t.contains(" $a ") || (a.length >= 6 && t.contains(a)) } }
+        }
+        val t = " $titleNorm "
+        fun named(team: Team?) = team != null && team.aliases.any { a -> t.contains(" $a ") || (a.length >= 6 && t.contains(a)) }
+        if (f.home != null && f.away != null) {
+            val h = named(f.home); val a = named(f.away)
+            if (h && a) return true
+            if (!h && !a) return false
+            val sport = SportsCatalog.byId(f.league.sport)
+            return sport?.normKeywords?.any { t.contains(" $it ") || t.contains(it) } == true || t.contains(normalize(f.league.label))
+        }
+        return SportsCatalog.byId(f.league.sport)?.normKeywords?.any { t.contains(it) } == true
+    }
+}
