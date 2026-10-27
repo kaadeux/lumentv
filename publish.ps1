@@ -45,8 +45,12 @@ if (Test-Path $jsonPath) {
 }
 
 if (-not $env:JAVA_HOME) { $env:JAVA_HOME = "C:/Program Files/Microsoft/jdk-17.0.21.21-hotspot" }
-& .\gradlew.bat testDebugUnitTest assembleRelease "-PlumenChannel=$channel" -q --console=plain
-if ($LASTEXITCODE -ne 0) { throw "Échec du build ou des tests." }
+# Gradle warnings go to stderr: only its exit code tells success.
+$ErrorActionPreference = "Continue"
+& .\gradlew.bat testDebugUnitTest assembleRelease "-PlumenChannel=$channel" -q --console=plain 2>&1 | Where-Object { $_ -match '^e:|FAIL' }
+$ok = $LASTEXITCODE -eq 0
+$ErrorActionPreference = "Stop"
+if (-not $ok) { throw "Échec du build ou des tests." }
 
 $apk = "app\build\outputs\apk\release\app-release.apk"
 $bt = Get-ChildItem "$env:LOCALAPPDATA\Android\Sdk\build-tools" | Sort-Object Name | Select-Object -Last 1
