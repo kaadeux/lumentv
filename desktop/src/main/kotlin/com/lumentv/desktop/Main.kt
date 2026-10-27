@@ -56,7 +56,14 @@ enum class Section(val label: String, val icon: ImageVector) {
     Settings("Paramètres", Icons.Filled.Settings),
 }
 
-fun main() = application {
+fun main() {
+    // DirectX (Skiko's default on Windows) leaves black strips on hover effects with some graphics cards: OpenGL unless
+    // the user picked another mode in Settings (or LUMEN_RENDER is set).
+    System.setProperty("skiko.renderApi", System.getenv("LUMEN_RENDER") ?: Store.renderApi)
+    app()
+}
+
+private fun app() = application {
     val windowState = rememberWindowState(size = DpSize(1360.dp, 860.dp))
     Window(onCloseRequest = { PlayerWindow.release(); exitApplication() }, state = windowState, title = "Lumen TV",
         icon = painterResource("icon.png")) {

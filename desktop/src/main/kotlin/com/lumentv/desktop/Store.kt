@@ -26,6 +26,12 @@ object Store {
     fun loadDoc(): ProfileDoc = readSecret("state.bin")?.let { runCatching { json.decodeFromString<ProfileDoc>(it) }.getOrNull() } ?: ProfileDoc()
     fun saveDoc(d: ProfileDoc) = writeSecret("state.bin", json.encodeToString(d))
 
+    /** How the window is drawn (OPENGL, DIRECT3D or SOFTWARE). Kept on this PC only: it depends on its graphics card. */
+    var renderApi: String
+        get() = File(dir, "render.txt").takeIf { it.exists() }?.readText()?.trim()?.takeIf { it in RENDER_APIS } ?: "OPENGL"
+        set(v) = File(dir, "render.txt").writeText(v)
+    val RENDER_APIS = listOf("OPENGL", "DIRECT3D", "SOFTWARE")
+
     fun loadKeys(): StoredKeys? = readSecret("profile.bin")?.let { runCatching { json.decodeFromString<StoredKeys>(it) }.getOrNull() }
     fun saveKeys(k: StoredKeys?) { if (k == null) File(dir, "profile.bin").delete() else writeSecret("profile.bin", json.encodeToString(k)) }
 

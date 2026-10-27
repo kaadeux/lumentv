@@ -108,6 +108,17 @@ fun SettingsScreen(state: AppState) {
         }
 
         item {
+            Card("Affichage") {
+                var api by remember { mutableStateOf(Store.renderApi) }
+                Choice("Moteur d'affichage", api, listOf("OPENGL" to "OpenGL (recommandé)", "DIRECT3D" to "DirectX", "SOFTWARE" to "Logiciel (le plus sûr, plus lent)")) {
+                    Store.renderApi = it; api = it
+                }
+                Text("À changer si vous voyez des traits noirs ou des clignotements. Pris en compte au prochain lancement, sur ce PC seulement.",
+                    color = Pal.dim, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        item {
             Card("À propos") {
                 Text("Lumen TV ${BuildInfo.VERSION} pour Windows · lecture par le moteur VLC intégré.", color = Pal.text)
                 Text("Raccourcis du lecteur : Espace pause · ←/→ 10 s · ↑/↓ volume · F plein écran · N épisode suivant · Échap fermer.", color = Pal.dim)
