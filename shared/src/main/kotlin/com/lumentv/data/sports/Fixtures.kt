@@ -118,7 +118,7 @@ class FixtureClient(http: OkHttpClient) {
             }
             Fixture(
                 id = o.s("id") ?: return@mapNotNull null, league = l, start = start, state = state,
-                detail = (if (state == "in") status?.s("shortDetail") else null).orEmpty(),
+                detail = (if (state == "in") status?.s("shortDetail") else null)?.let { liveFr(it) }.orEmpty(),
                 home = team(side("home")) ?: sides(o.s("name"))?.first, away = team(side("away")) ?: sides(o.s("name"))?.second, name = o.s("name").orEmpty(),
                 homeScore = side("home")?.s("score")?.takeIf { state == "in" }, awayScore = side("away")?.s("score")?.takeIf { state == "in" },
                 venue = (comp?.get("venue") as? JsonObject)?.let { v ->
@@ -147,6 +147,32 @@ class FixtureClient(http: OkHttpClient) {
                 homeScore = o.s("intHomeScore")?.takeIf { live }, awayScore = o.s("intAwayScore")?.takeIf { live },
                 round = o.s("intRound")?.takeIf { it != "0" }?.let { "Journée $it" }, venue = o.s("strVenue"),
             )
+        }
+    }
+
+    /** ESPN's live status in French ("Halftime" → "Mi-temps", "2nd Half" → "2e mi-temps", "Q3 5:21" → "QT3 5:21"…). */
+    internal fun liveFr(d: String): String {
+        val t = d.trim()
+        fun n(x: String) = x.replace(Regex("(st|nd|rd|th)$"), "").let { if (it == "1") "1re" else "${it}e" }
+        Regex("(?i)^(1st|2nd|3rd|\\d+th)\\s+half$").find(t)?.let { return n(it.groupValues[1]) + " mi-temps" }
+        Regex("(?i)^end of (1st|2nd|3rd|\\d+th)(\\s+\\w+)?$").find(t)?.let { return "Fin " + n(it.groupValues[1]).let { o -> if (o == "1re") "1er" else o } + " temps" }
+        Regex("(?i)^(1st|2nd|3rd|\\d+th)\\s+(period|quarter)$").find(t)?.let { return n(it.groupValues[1]) + if (it.groupValues[2].lowercase() == "period") " période" else " quart-temps" }
+        Regex("(?i)^q(\\d)\\b(.*)$").find(t)?.let { return "QT${it.groupValues[1]}${it.groupValues[2]}" }
+        Regex("(?i)^(\\d+)(st|nd|rd|th)\\b(.*)$").find(t)?.let { return n(it.groupValues[1]) + it.groupValues[3] }
+        Regex("(?i)^lap (.+)$").find(t)?.let { return "Tour ${it.groupValues[1]}" }
+        Regex("(?i)^round (.+)$").find(t)?.let { return "Round ${it.groupValues[1]}" }
+        return when (t.lowercase()) {
+            "halftime", "ht", "half" -> "Mi-temps"
+            "ft", "full time", "final" -> "Terminé"
+            "et", "extra time" -> "Prolongations"
+            "aet" -> "Après prolongations"
+            "pen", "penalties", "shootout" -> "Tirs au but"
+            "ot", "overtime" -> "Prolongation"
+            "delayed" -> "Retardé"
+            "postponed" -> "Reporté"
+            "suspended" -> "Suspendu"
+            "in progress" -> "En cours"
+            else -> t
         }
     }
 

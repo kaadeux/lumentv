@@ -310,7 +310,7 @@ private fun EpisodeRow(state: AppState, e: Ep, highlighted: Boolean, onPlay: () 
             }
             e.rating?.let { Chip(it, icon = Icons.Filled.Star) }
         }
-        Pill("Play", onPlay, Icons.Filled.PlayArrow, primary = true)
+        Pill("Lire", onPlay, Icons.Filled.PlayArrow, primary = true)
         DownloadButton(state, e.uid, download)
     }
 }

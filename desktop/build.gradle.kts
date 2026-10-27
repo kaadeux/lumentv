@@ -10,7 +10,7 @@ plugins {
     id("org.jetbrains.compose")
 }
 
-val appVersion = "1.3.4"
+val appVersion = "1.3.5"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -46,7 +46,8 @@ compose.desktop {
             description = "Lecteur IPTV familial"
             vendor = "Lumen TV"
             appResourcesRootDir.set(project.layout.projectDirectory.dir("resources"))
-            modules("java.sql", "java.naming", "jdk.crypto.ec", "jdk.unsupported")
+            // jdk.localedata: French day and month names (without it dates fall back to English).
+            modules("java.sql", "java.naming", "jdk.crypto.ec", "jdk.unsupported", "jdk.localedata")
             windows {
                 menu = true
                 shortcut = true

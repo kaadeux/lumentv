@@ -243,7 +243,7 @@ private fun ChannelItem(vm: MainViewModel, row: ChannelRow, epgVersion: Int, onC
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(row.ch.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (row.isFavorite) Text("  ★", style = MaterialTheme.typography.bodyMedium, color = Palette.Gold)
-                    if (row.ch.catchupDays > 0) { Spacer(Modifier.width(8.dp)); Badge("Replay", Palette.PanelHigh) }
+                    if (row.ch.catchupDays > 0) { Spacer(Modifier.width(8.dp)); Badge("Rattrapage", Palette.PanelHigh) }
                 }
                 val now = nowNext?.now
                 if (now != null) {

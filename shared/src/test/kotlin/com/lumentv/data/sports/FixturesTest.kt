@@ -49,4 +49,14 @@ class FixturesTest {
         java.io.File("build/fixtures.txt").writeText(list.joinToString("\n") { "${java.util.Date(it.start)} ${it.state} | ${it.details} | ${it.label} | ${it.venue}" })
         assertTrue(list.isNotEmpty())
     }
+
+    @Test fun liveStatusInFrench() {
+        val c = FixtureClient(OkHttpClient())
+        org.junit.Assert.assertEquals("Mi-temps", c.liveFr("Halftime"))
+        org.junit.Assert.assertEquals("2e mi-temps", c.liveFr("2nd Half"))
+        org.junit.Assert.assertEquals("1re période", c.liveFr("1st Period"))
+        org.junit.Assert.assertEquals("QT3 5:21", c.liveFr("Q3 5:21"))
+        org.junit.Assert.assertEquals("Fin 1er temps", c.liveFr("End of 1st Quarter"))
+        org.junit.Assert.assertEquals("67'", c.liveFr("67'"))
+    }
 }
