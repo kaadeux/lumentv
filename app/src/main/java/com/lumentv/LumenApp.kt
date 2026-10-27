@@ -48,6 +48,7 @@ class AppGraph(app: Application) {
     /** Channel shown in the in-app mini-player, null when it is closed. */
     val miniPlayer = kotlinx.coroutines.flow.MutableStateFlow<Long?>(null)
     val sports = com.lumentv.data.sports.SportsRepository(db, settings, epg, library)
+    val profile = com.lumentv.sync.ProfileManager(app, db, settings, playlists, epg, library, http, appScope)
 }
 
 class LumenApp : Application(), ImageLoaderFactory {
@@ -57,6 +58,7 @@ class LumenApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         graph = AppGraph(this)
+        graph.profile.start()
         graph.appScope.launch {
             val auto = graph.playlists.all().any { it.refreshHours > 0 }
             RefreshWorker.sync(this@LumenApp, auto)

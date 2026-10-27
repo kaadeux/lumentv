@@ -69,6 +69,10 @@ fun SettingsScreen(vm: MainViewModel) {
     var playlistMenu by remember { mutableStateOf<PlaylistEntity?>(null) }
     var deleting by remember { mutableStateOf<PlaylistEntity?>(null) }
     var autoFor by remember { mutableStateOf<PlaylistEntity?>(null) }
+    val profile by vm.graph.profile.state.collectAsStateWithLifecycle()
+    var profileDialog by remember { mutableStateOf(false) }
+    var profileBusy by remember { mutableStateOf(false) }
+    var profileError by remember { mutableStateOf<String?>(null) }
     var pinStep by remember { mutableStateOf<String?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
     var newPin by remember { mutableStateOf<String?>(null) }
@@ -104,6 +108,26 @@ fun SettingsScreen(vm: MainViewModel) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(vertical = 6.dp)) {
                 TvButton("Ajouter une playlist M3U", { vm.open(Screen.PlaylistEdit(0, PlaylistType.M3U)) }, icon = Icons.Filled.Add, primary = list.isEmpty())
                 TvButton("Ajouter un compte Xtream", { vm.open(Screen.PlaylistEdit(0, PlaylistType.XTREAM)) }, icon = Icons.Filled.Add)
+            }
+        }
+
+        if (vm.graph.profile.enabled) {
+            item { Group("Profil en ligne") }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (profile.name == null) {
+                        TvButton("Se connecter à un profil", { profileError = null; profileDialog = true }, icon = Icons.Filled.Add)
+                        Text("Retrouvez vos favoris et votre historique sur tous vos appareils.", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+                    } else {
+                        TvButton(if (profile.syncing) "Synchronisation…" else "Synchroniser maintenant", {
+                            scope.launch { vm.graph.profile.syncNow().onSuccess { vm.show("Profil synchronisé") } }
+                        }, icon = Icons.Filled.Refresh)
+                        TvButton("Se déconnecter", { vm.graph.profile.signOut(); vm.show("Profil déconnecté de cette TV") })
+                        Text("Profil « ${profile.name} »" + (profile.error?.let { " · $it" }
+                            ?: if (profile.lastSync > 0) " · synchronisé à " + SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(profile.lastSync)) else ""),
+                            style = MaterialTheme.typography.bodyMedium, color = if (profile.error != null) Palette.Danger else Palette.TextDim)
+                    }
+                }
             }
         }
 
@@ -188,6 +212,15 @@ fun SettingsScreen(vm: MainViewModel) {
             add(MenuOption("Supprimer") { deleting = p })
         }, onDismiss = { playlistMenu = null }, subtitle = p.accountInfo)
     }
+    if (profileDialog) com.lumentv.ui.components.ProfileDialog(profileBusy, profileError, onSubmit = { name, pass ->
+        profileBusy = true; profileError = null
+        scope.launch {
+            vm.graph.profile.signIn(name, pass)
+                .onSuccess { profileDialog = false; vm.show("Profil « ${vm.graph.profile.state.value.name} » connecté et synchronisé") }
+                .onFailure { profileError = if (it is IllegalArgumentException || it is com.lumentv.sync.WrongPassphraseException) it.message else userMessage(it) }
+            profileBusy = false
+        }
+    }, onDismiss = { profileDialog = false })
     autoFor?.let { p ->
         OptionsDialog("Rechargement automatique", REFRESH_CHOICES.map { h ->
             MenuOption(refreshLabel(h), h == p.refreshHours) {

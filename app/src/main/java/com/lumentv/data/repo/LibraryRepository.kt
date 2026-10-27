@@ -41,6 +41,9 @@ class LibraryRepository(private val db: AppDatabase) {
     /** Bumped whenever a favourite, hidden or locked flag changes, so lists reload. */
     val changes: StateFlow<Int> = _changes
 
+    /** Lists reload after data changed underneath them (a profile sync, for instance). */
+    fun bump() { _changes.value++ }
+
     // ---- Live -----------------------------------------------------------------------------------------------
 
     suspend fun groups(pid: Long, includeHidden: Boolean): List<GroupInfo> = withContext(Dispatchers.IO) {

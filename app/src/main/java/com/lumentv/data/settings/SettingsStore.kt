@@ -127,6 +127,37 @@ class SettingsStore(private val context: Context) {
         }
     }
 
+    /** The settings a profile shares between devices (not the device-specific ones: start screen, buffer, PIN…). */
+    suspend fun syncValues(): Map<String, String> {
+        val p = context.dataStore.data.first()
+        return buildMap {
+            p[Keys.audioLang]?.let { put(Keys.audioLang.name, it) }
+            p[Keys.subLang]?.let { put(Keys.subLang.name, it) }
+            p[Keys.subsOn]?.let { put(Keys.subsOn.name, it.toString()) }
+            p[Keys.autoNext]?.let { put(Keys.autoNext.name, it.toString()) }
+            p[Keys.sort]?.let { put(Keys.sort.name, it) }
+            p[Keys.epgDays]?.let { put(Keys.epgDays.name, it.toString()) }
+            p[Keys.sportIds]?.let { put(Keys.sportIds.name, it.sorted().joinToString("\n")) }
+            p[Keys.sportComps]?.let { put(Keys.sportComps.name, it) }
+            p[Keys.sportTeams]?.let { put(Keys.sportTeams.name, it) }
+            p[Keys.sportDays]?.let { put(Keys.sportDays.name, it.toString()) }
+        }
+    }
+
+    suspend fun applySync(values: Map<String, String>) {
+        if (values == syncValues()) return
+        context.dataStore.edit { p ->
+            values.forEach { (k, v) ->
+                when (k) {
+                    Keys.audioLang.name, Keys.subLang.name, Keys.sort.name, Keys.sportComps.name, Keys.sportTeams.name -> p[stringPreferencesKey(k)] = v
+                    Keys.subsOn.name, Keys.autoNext.name -> p[booleanPreferencesKey(k)] = v == "true"
+                    Keys.epgDays.name, Keys.sportDays.name -> v.toIntOrNull()?.let { p[intPreferencesKey(k)] = it }
+                    Keys.sportIds.name -> p[Keys.sportIds] = v.split('\n').filter { it.isNotBlank() }.toSet()
+                }
+            }
+        }
+    }
+
     private fun hashPin(pin: String): String =
         MessageDigest.getInstance("SHA-256").digest(("lumen:" + pin).toByteArray()).joinToString("") { "%02x".format(it) }
 }

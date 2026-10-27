@@ -30,6 +30,7 @@ android {
         require(channel == "main" || channel == "dev") { "lumenChannel must be main or dev" }
         if (channel == "dev") versionNameSuffix = "-dev"
         buildConfigField("String", "CHANNEL", "\"$channel\"")
+        buildConfigField("String", "SYNC_URL", "\"${localProp("lumen.syncUrl").trim()}\"")
         buildConfigField("String", "UPDATE_URL", "\"${localProp("lumen.updateUrl").trim().replace("/main/", "/$channel/")}\"")
     }
 

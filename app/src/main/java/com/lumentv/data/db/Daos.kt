@@ -257,6 +257,9 @@ interface HistoryDao {
     @Query("SELECT * FROM history")
     suspend fun everything(): List<HistoryEntity>
 
+    @Query("SELECT COUNT(*) || ':' || IFNULL(MAX(watchedAt), 0) || ':' || IFNULL(SUM(positionMs), 0) FROM history")
+    fun observeFingerprint(): Flow<String>
+
     @Query("DELETE FROM history WHERE playlistId = :pid")
     suspend fun deleteFor(pid: Long)
 }
