@@ -1,0 +1,375 @@
+@file:OptIn(ExperimentalTvMaterial3Api::class)
+
+package com.lumentv.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Text
+import com.lumentv.core.normalize
+import com.lumentv.core.userMessage
+import com.lumentv.ui.components.FilterField
+import com.lumentv.data.db.CategoryCount
+import com.lumentv.data.db.EpisodeEntity
+import com.lumentv.data.db.HistoryEntity
+import com.lumentv.data.db.HistoryKind
+import com.lumentv.data.db.MovieRow
+import com.lumentv.data.db.PlaylistType
+import com.lumentv.data.db.PrefKind
+import com.lumentv.data.db.SeriesRow
+import com.lumentv.data.repo.LibraryRepository
+import com.lumentv.data.xtream.XVodInfo
+import com.lumentv.ui.MainViewModel
+import com.lumentv.ui.Screen
+import com.lumentv.ui.components.EmptyState
+import com.lumentv.ui.components.FocusSurface
+import com.lumentv.ui.components.Loading
+import com.lumentv.ui.components.MenuOption
+import com.lumentv.ui.components.OptionsDialog
+import com.lumentv.ui.components.Poster
+import com.lumentv.ui.components.ProgressLine
+import com.lumentv.ui.components.TvButton
+import com.lumentv.ui.player.PlayerLauncher
+import com.lumentv.ui.theme.Palette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private const val RECENT = "\u0001recent"
+private const val ALL = "\u0001all"
+
+@Composable
+private fun CategoryColumn(title: String, cats: List<CategoryCount>?, extra: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit,
+                           onLong: (String) -> Unit) {
+    Column(Modifier.width(190.dp).fillMaxHeight()) {
+        Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(bottom = 10.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            items(extra, key = { it.first }) { (id, label) ->
+                FocusSurface({ onSelect(id) }, Modifier.fillMaxWidth(), selected = id == selected, focusedScale = 1.02f) {
+                    Text(label, style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp))
+                }
+            }
+            items(cats.orEmpty(), key = { "c:" + it.category }) { c ->
+                FocusSurface({ onSelect(c.category) }, Modifier.fillMaxWidth(), onLongClick = { onLong(c.category) }, selected = c.category == selected, focusedScale = 1.02f) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                        Text(c.category, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(" ${c.count}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PosterTile(title: String, image: String?, subtitle: String?, progress: Float?, favorite: Boolean, onClick: () -> Unit, onLong: () -> Unit) {
+    Column {
+        FocusSurface(onClick, Modifier.fillMaxWidth().aspectRatio(2f / 3f), onLongClick = onLong, focusedScale = 1.06f, shape = RoundedCornerShape(8.dp)) {
+            Poster(image, title, Modifier.fillMaxSize())
+            if (favorite) Text("★", color = Palette.Gold, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp))
+            if (progress != null && progress > 0f) ProgressLine(progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp))
+        }
+        Text(title, style = MaterialTheme.typography.bodySmall, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+        if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1)
+    }
+}
+
+@Composable
+fun MoviesScreen(vm: MainViewModel) {
+    val active by vm.active.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
+    val history by vm.graph.library.observeHistory(300).collectAsStateWithLifecycle(emptyList())
+    val scope = rememberCoroutineScope()
+    val p = active ?: return EmptyState("Aucune playlist", "")
+    var cat by remember(p.id) { mutableStateOf(vm.movieCategory ?: RECENT) }
+    var catMenu by remember { mutableStateOf<String?>(null) }
+    val cats by produceState<List<CategoryCount>?>(null, p.id, changes, settings.showHidden) { value = vm.graph.library.movieCategories(p.id, settings.showHidden) }
+    val movies by produceState<List<MovieRow>?>(null, p.id, cat, changes) {
+        value = null
+        value = when (cat) { RECENT -> vm.graph.library.recentMovies(p.id); ALL -> vm.graph.library.movies(p.id, null); else -> vm.graph.library.movies(p.id, cat) }
+    }
+    val progress = remember(history) { history.filter { it.kind == HistoryKind.MOVIE }.associateBy { it.uid } }
+    var filter by remember(p.id, cat) { mutableStateOf("") }
+
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        CategoryColumn("Films", cats, listOf(RECENT to "Ajoutés récemment", ALL to "Tous les films"), cat, { cat = it; vm.movieCategory = it }, { catMenu = it })
+        Column(Modifier.weight(1f)) {
+        FilterField(filter, if (cat == ALL || cat == RECENT) "Rechercher un film" else "Rechercher dans « $cat »") { filter = it }
+        val list = movies?.let { all -> normalize(filter).let { f -> if (f.isEmpty()) all else all.filter { it.m.nameNorm.contains(f) } } }
+        when {
+            list == null -> Loading()
+            list.isEmpty() -> EmptyState("Aucun film", if (filter.isBlank()) "Cette catégorie est vide." else "Rien ne correspond à « $filter ».")
+            else -> LazyVerticalGrid(GridCells.Fixed(5), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 20.dp, start = 6.dp, end = 6.dp),
+                modifier = Modifier.fillMaxSize()) {
+                items(list, key = { it.m.id }) { r ->
+                    val h = progress[r.m.uid]?.takeIf { it.playlistId == p.id }
+                    PosterTile(r.m.name, r.m.poster, listOfNotNull(r.m.year, r.m.rating?.let { "★ $it" }).joinToString(" · ").ifEmpty { null },
+                        h?.let { if (it.durationMs > 0) it.positionMs.toFloat() / it.durationMs else null }, r.isFavorite,
+                        onClick = { vm.open(Screen.MovieDetail(p.id, r.m.uid)) },
+                        onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.MOVIE, r.m.uid); vm.show(if (f) "Ajouté aux favoris" else "Retiré des favoris") } })
+                }
+            }
+        }
+        }
+    }
+    catMenu?.let { c ->
+        OptionsDialog(c, listOf(MenuOption("Masquer la catégorie") { scope.launch { vm.graph.library.setHidden(p.id, PrefKind.MOVIE_CATEGORY, c, true) } }),
+            onDismiss = { catMenu = null })
+    }
+}
+
+@Composable
+fun SeriesScreen(vm: MainViewModel) {
+    val active by vm.active.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val p = active ?: return EmptyState("Aucune playlist", "")
+    var cat by remember(p.id) { mutableStateOf(vm.seriesCategory ?: ALL) }
+    var catMenu by remember { mutableStateOf<String?>(null) }
+    val cats by produceState<List<CategoryCount>?>(null, p.id, changes, settings.showHidden) { value = vm.graph.library.seriesCategories(p.id, settings.showHidden) }
+    val series by produceState<List<SeriesRow>?>(null, p.id, cat, changes) {
+        value = null
+        value = vm.graph.library.series(p.id, if (cat == ALL) null else cat)
+    }
+    var filter by remember(p.id, cat) { mutableStateOf("") }
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        CategoryColumn("Séries", cats, listOf(ALL to "Toutes les séries"), cat, { cat = it; vm.seriesCategory = it }, { catMenu = it })
+        Column(Modifier.weight(1f)) {
+        FilterField(filter, if (cat == ALL) "Rechercher une série" else "Rechercher dans « $cat »") { filter = it }
+        val list = series?.let { all -> normalize(filter).let { f -> if (f.isEmpty()) all else all.filter { it.s.nameNorm.contains(f) } } }
+        when {
+            list == null -> Loading()
+            list.isEmpty() -> EmptyState("Aucune série", if (filter.isBlank()) "Cette catégorie est vide." else "Rien ne correspond à « $filter ».")
+            else -> LazyVerticalGrid(GridCells.Fixed(5), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 20.dp, start = 6.dp, end = 6.dp),
+                modifier = Modifier.fillMaxSize()) {
+                items(list, key = { it.s.id }) { r ->
+                    PosterTile(r.s.name, r.s.cover, listOfNotNull(r.s.year, r.s.rating?.let { "★ $it" }).joinToString(" · ").ifEmpty { null }, null, r.isFavorite,
+                        onClick = { vm.open(Screen.SeriesDetail(p.id, r.s.uid)) },
+                        onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } })
+                }
+            }
+        }
+        }
+    }
+    catMenu?.let { c ->
+        OptionsDialog(c, listOf(MenuOption("Masquer la catégorie") { scope.launch { vm.graph.library.setHidden(p.id, PrefKind.SERIES_CATEGORY, c, true) } }),
+            onDismiss = { catMenu = null })
+    }
+}
+
+@Composable
+fun MovieDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
+    val history by vm.graph.library.observeHistory(300).collectAsStateWithLifecycle(emptyList())
+    val movie by produceState<MovieRow?>(null, playlistId, uid, changes) { value = vm.graph.library.movieByUid(playlistId, uid) }
+    val m = movie ?: return Loading()
+    val info by produceState<XVodInfo?>(null, m.m.id) {
+        val p = vm.graph.playlists.get(playlistId)
+        if (p?.type == PlaylistType.XTREAM) value = runCatching { withContext(Dispatchers.IO) { vm.graph.playlists.xtream(p).vodInfo(m.m.streamId) } }.getOrNull()
+    }
+    val h: HistoryEntity? = history.firstOrNull { it.key == LibraryRepository.key(HistoryKind.MOVIE, playlistId, uid) }
+    val focus = remember { FocusRequester() }
+    val transfers by vm.graph.transfers.observe().collectAsStateWithLifecycle(emptyList())
+    val dl = transfers.firstOrNull { it.kind == com.lumentv.data.db.TransferKind.DOWNLOAD && it.playlistId == playlistId && it.refUid == uid }
+
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+        Poster(m.m.poster, m.m.name, Modifier.width(220.dp).aspectRatio(2f / 3f))
+        Column(Modifier.weight(1f)) {
+            Text(m.m.name, style = MaterialTheme.typography.headlineMedium, color = Palette.Text, maxLines = 2)
+            val meta = listOfNotNull(m.m.year ?: info?.releaseDate?.take(4), info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) },
+                m.m.rating?.let { "★ $it" }, info?.genre, m.m.category).joinToString(" · ")
+            Text(meta, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, modifier = Modifier.padding(vertical = 8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(vertical = 12.dp)) {
+                if (h != null && h.positionMs > 30_000 && (h.durationMs == 0L || h.positionMs < h.durationMs * 0.95)) {
+                    TvButton("Reprendre à ${clock(h.positionMs)}", { PlayerLauncher.movie(context, playlistId, uid, true) }, Modifier.focusRequester(focus), primary = true)
+                    TvButton("Depuis le début", { PlayerLauncher.movie(context, playlistId, uid, false) })
+                } else {
+                    TvButton("Lecture", { PlayerLauncher.movie(context, playlistId, uid, false) }, Modifier.focusRequester(focus), primary = true)
+                }
+                TvButton(if (m.isFavorite) "Retirer des favoris" else "Ajouter aux favoris", {
+                    scope.launch { vm.graph.library.toggleFavorite(playlistId, PrefKind.MOVIE, uid) }
+                })
+                DownloadButton(vm, dl) {
+                    scope.launch {
+                        if (dl != null) vm.graph.transfers.retry(dl.id) else vm.graph.transfers.downloadMovie(m.m)
+                        vm.show("Téléchargement lancé · suivez-le dans Téléchargés")
+                    }
+                }
+            }
+            Text(info?.plot ?: "Aucun résumé disponible.", style = MaterialTheme.typography.bodyLarge, color = Palette.Text, maxLines = 8, overflow = TextOverflow.Ellipsis)
+            info?.director?.takeIf { it.isNotBlank() }?.let { Text("Réalisation : $it", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, modifier = Modifier.padding(top = 10.dp)) }
+            info?.cast?.takeIf { it.isNotBlank() }?.let { Text("Avec : $it", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 2) }
+        }
+    }
+    LaunchedEffect(m.m.id) { runCatching { focus.requestFocus() } }
+}
+
+@Composable
+fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
+    val history by vm.graph.library.observeHistory(500).collectAsStateWithLifecycle(emptyList())
+    val series by produceState<SeriesRow?>(null, playlistId, uid, changes) { value = vm.graph.library.seriesByUid(playlistId, uid) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val episodes by produceState<List<EpisodeEntity>?>(null, playlistId, uid) {
+        val p = vm.graph.playlists.get(playlistId)
+        val s = vm.graph.library.seriesByUid(playlistId, uid)
+        value = if (p?.type == PlaylistType.XTREAM && s != null) {
+            try { vm.graph.playlists.loadXtreamEpisodes(p, uid, s.s.seriesId) }
+            catch (t: Throwable) { error = userMessage(t); vm.graph.library.storedEpisodes(playlistId, uid) }
+        } else vm.graph.library.storedEpisodes(playlistId, uid)
+    }
+    val s = series ?: return Loading()
+    val eps = episodes
+    val seasons = eps?.map { it.season }?.distinct()?.sorted().orEmpty()
+    var season by remember(seasons) { mutableStateOf(seasons.firstOrNull() ?: 1) }
+    val progress = remember(history) { history.filter { it.kind == HistoryKind.EPISODE && it.parentUid == uid }.associateBy { it.uid } }
+    val lastWatched = progress.values.maxByOrNull { it.watchedAt }
+    var epMenu by remember { mutableStateOf<EpisodeEntity?>(null) }
+    val transfers by vm.graph.transfers.observe().collectAsStateWithLifecycle(emptyList())
+    epMenu?.let { e ->
+        val dl = transfers.firstOrNull { it.kind == com.lumentv.data.db.TransferKind.DOWNLOAD && it.playlistId == playlistId && it.refUid == e.uid }
+        OptionsDialog(e.title, buildList {
+            add(MenuOption("Lire") { PlayerLauncher.episode(context, playlistId, uid, e.uid, false) })
+            if (dl?.status == com.lumentv.data.db.TransferStatus.DONE) add(MenuOption("Lire le fichier téléchargé") { PlayerLauncher.file(context, dl.id) })
+            else if (dl == null || dl.status == com.lumentv.data.db.TransferStatus.FAILED) add(MenuOption("Télécharger l'épisode") {
+                scope.launch { vm.graph.transfers.downloadEpisode(e, series?.s?.name ?: e.title); vm.show("Téléchargement lancé") } })
+        }, onDismiss = { epMenu = null }, subtitle = dl?.let { "Téléchargement : " + it.status })
+    }
+    val focus = remember { FocusRequester() }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(horizontalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.height(210.dp)) {
+            Poster(s.s.cover, s.s.name, Modifier.width(140.dp).aspectRatio(2f / 3f))
+            Column(Modifier.weight(1f)) {
+                Text(s.s.name, style = MaterialTheme.typography.headlineMedium, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(listOfNotNull(s.s.year, s.s.rating?.let { "★ $it" }, "${seasons.size} saison(s)", s.s.category).joinToString(" · "),
+                    style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, modifier = Modifier.padding(vertical = 6.dp))
+                Text(s.s.plot ?: "", style = MaterialTheme.typography.bodyMedium, color = Palette.Text, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
+                    if (lastWatched != null) TvButton("Reprendre : ${lastWatched.title.take(40)}", {
+                        PlayerLauncher.episode(context, playlistId, uid, lastWatched.uid, true)
+                    }, Modifier.focusRequester(focus), primary = true)
+                    TvButton(if (s.isFavorite) "Retirer des favoris" else "Ajouter aux favoris", {
+                        scope.launch { vm.graph.library.toggleFavorite(playlistId, PrefKind.SERIES, uid) }
+                    }, if (lastWatched == null) Modifier.focusRequester(focus) else Modifier)
+                }
+            }
+        }
+        if (seasons.size > 1) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 10.dp)) {
+                items(seasons) { n ->
+                    FocusSurface({ season = n }, selected = n == season, shape = RoundedCornerShape(20.dp)) {
+                        Text("Saison $n", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                    }
+                }
+            }
+        } else Spacer(Modifier.height(10.dp))
+        when {
+            eps == null -> Loading("Chargement des épisodes…")
+            eps.isEmpty() -> EmptyState("Aucun épisode", error ?: "Le fournisseur ne liste aucun épisode pour cette série.")
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(eps.filter { it.season == season }, key = { it.id }) { e ->
+                    val h = progress[e.uid]
+                    val dl = transfers.firstOrNull { it.playlistId == playlistId && it.refUid == e.uid }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FocusSurface({ PlayerLauncher.episode(context, playlistId, uid, e.uid, h != null && h.positionMs > 30_000) }, Modifier.weight(1f), focusedScale = 1.01f,
+                        onLongClick = { epMenu = e }) {
+                        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("E${e.episode}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(56.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(e.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                e.plot?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                                if (h != null && h.durationMs > 0) ProgressLine(h.positionMs.toFloat() / h.durationMs, Modifier.fillMaxWidth(0.5f).padding(top = 4.dp))
+                            }
+                            if (e.durationSecs > 0) Text(duration(e.durationSecs), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    // Right of each episode: download it, follow the download, or play the file.
+                    FocusSurface({
+                        when (dl?.status) {
+                            com.lumentv.data.db.TransferStatus.DONE -> PlayerLauncher.file(context, dl.id)
+                            com.lumentv.data.db.TransferStatus.RUNNING, com.lumentv.data.db.TransferStatus.SCHEDULED -> vm.openRoot(Screen.Recordings)
+                            else -> scope.launch {
+                                if (dl != null) vm.graph.transfers.retry(dl.id) else vm.graph.transfers.downloadEpisode(e, series?.s?.name ?: e.title)
+                                vm.show("Téléchargement de l'épisode ${e.episode} lancé · suivez-le dans Téléchargés")
+                            }
+                        }
+                    }, Modifier.width(76.dp), focusedScale = 1.05f) {
+                        Text(when (dl?.status) {
+                            com.lumentv.data.db.TransferStatus.DONE -> "▶ ✓"
+                            com.lumentv.data.db.TransferStatus.RUNNING -> if (dl.totalBytes > 0) "${dl.bytes * 100 / dl.totalBytes} %" else "…"
+                            else -> "⬇"
+                        }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 14.dp).fillMaxWidth(),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                    }
+                }
+            }
+        }
+    }
+    LaunchedEffect(s.s.id) { runCatching { focus.requestFocus() } }
+}
+
+/** Download state of a movie: start it, follow it, or play the file. */
+@Composable
+private fun DownloadButton(vm: MainViewModel, dl: com.lumentv.data.db.TransferEntity?, onDownload: () -> Unit) {
+    val context = LocalContext.current
+    when (dl?.status) {
+        com.lumentv.data.db.TransferStatus.DONE -> TvButton("▶ Fichier téléchargé", { PlayerLauncher.file(context, dl.id) })
+        com.lumentv.data.db.TransferStatus.RUNNING, com.lumentv.data.db.TransferStatus.SCHEDULED ->
+            TvButton("⬇ " + (if (dl.totalBytes > 0) "${dl.bytes * 100 / dl.totalBytes} %" else "en cours"), { vm.openRoot(Screen.Recordings) })
+        com.lumentv.data.db.TransferStatus.FAILED, com.lumentv.data.db.TransferStatus.CANCELLED -> TvButton("⬇ Reprendre le téléchargement", onDownload)
+        else -> TvButton("⬇ Télécharger le film", onDownload)
+    }
+}
+
+fun duration(secs: Int): String = if (secs >= 3600) "${secs / 3600} h ${"%02d".format((secs % 3600) / 60)}" else "${secs / 60} min"
+fun clock(ms: Long): String {
+    val s = ms / 1000
+    return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
+}
+
