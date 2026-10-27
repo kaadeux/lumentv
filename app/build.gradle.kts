@@ -24,7 +24,13 @@ android {
         // Family access code and update feed, from local.properties (never committed). Only the code's hash is built in.
         val code = localProp("lumen.accessCode").trim()
         buildConfigField("String", "ACCESS_HASH", "\"${if (code.isEmpty()) "" else sha256("lumen-access:$code")}\"")
-        buildConfigField("String", "UPDATE_URL", "\"${localProp("lumen.updateUrl").trim()}\"")
+        // Update channel: "main" (family) or "dev" (testing at home), chosen by publish.ps1 / deploy.ps1 from the git branch.
+        // Each channel follows the version.json of the same-named branch in the releases repository.
+        val channel = (project.findProperty("lumenChannel") as String?) ?: "main"
+        require(channel == "main" || channel == "dev") { "lumenChannel must be main or dev" }
+        if (channel == "dev") versionNameSuffix = "-dev"
+        buildConfigField("String", "CHANNEL", "\"$channel\"")
+        buildConfigField("String", "UPDATE_URL", "\"${localProp("lumen.updateUrl").trim().replace("/main/", "/$channel/")}\"")
     }
 
     val signingFile = rootProject.file("local.properties").takeIf { it.exists() }

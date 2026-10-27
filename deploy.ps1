@@ -24,7 +24,10 @@ $state = (cmd /c "adb -s $Tv get-state 2>&1")
 if ($state -ne 'device') { Write-Host "La TV n'est pas prête ($state). Acceptez « Autoriser le débogage USB ? » sur la TV puis relancez." -ForegroundColor Yellow; exit 1 }
 
 $task = if ($Release) { 'assembleRelease' } else { 'assembleDebug' }
-Step "compilation ($task)" { cmd /c ".\gradlew.bat --no-daemon -q $task 2>&1" }
+# Same update channel as publish.ps1: the dev branch builds follow the dev feed.
+$branch = (cmd /c "git rev-parse --abbrev-ref HEAD 2>nul").Trim()
+$channel = if ($branch -eq 'dev') { 'dev' } else { 'main' }
+Step "compilation ($task, canal $channel)" { cmd /c ".\gradlew.bat --no-daemon -q $task -PlumenChannel=$channel 2>&1" }
 $apk = if ($Release) { 'app\build\outputs\apk\release\app-release.apk' } else { 'app\build\outputs\apk\debug\app-debug.apk' }
 
 # "adb install" can wait forever for an on-screen confirmation on Android 14: push, then pm install.
