@@ -267,33 +267,64 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var tick by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); tick++ } }
-    val games by produceState<List<com.lumentv.data.sports.SportsRepository.Game>?>(null, pid, prefs, tick) {
-        value = if (prefs.leagues.isEmpty()) emptyList() else runCatching { vm.graph.sports.games(pid, prefs) }.getOrDefault(emptyList())
+    val funnel = com.lumentv.data.sports.SportsFunnel
+    val sports = prefs.sports.filter { s -> funnel.sports.any { it.id == s } }.toSet()
+    val loadKey = sports to prefs.leagues
+    val games by produceState<List<com.lumentv.data.sports.SportsRepository.Game>?>(null, pid, loadKey, tick) {
+        value = if (sports.isEmpty()) emptyList() else runCatching { vm.graph.sports.games(pid, prefs) }.getOrDefault(emptyList())
     }
     var open by remember { mutableStateOf<com.lumentv.data.sports.SportsRepository.Game?>(null) }
-    Column(Modifier.fillMaxSize()) {
-        ScreenTitle("Sports") { TvButton("Mes compétitions", { vm.open(Screen.SportsSettings) }) }
-        Text(if (prefs.leagues.isEmpty()) "Choisissez vos compétitions (Ligue 1, Top 14, Pro D2…) dans « Mes compétitions »."
-            else "Matchs en cours et à venir du calendrier officiel (" + prefs.leagues.mapNotNull { com.lumentv.data.sports.FixtureClient.league(it)?.label }.joinToString(", ") +
-                "), sans les rediffusions.", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 2, modifier = Modifier.padding(bottom = 10.dp))
-        val list = games
+    fun save(s: Set<String> = sports, l: Set<String> = prefs.leagues, t: List<String> = prefs.teams) = scope.launch {
+        vm.graph.sports.save(SportPrefs(s, prefs.competitions, t, funnel.DAYS, l))
+    }
+    val all = games.orEmpty()
+    val clubs = remember(all) { funnel.clubs(all.map { it.fixture }) }
+    val shownFixtures = remember(all, prefs.teams) { funnel.byClubs(all.map { it.fixture }, prefs.teams).toSet() }
+    val shown = all.filter { it.fixture in shownFixtures }
+
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxSize()) {
+        item { ScreenTitle("Sports") }
+        // 1. Sports
+        item { FilterLabel("1. Sport") }
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                funnel.sports.forEach { s -> Chip("${s.emoji} ${s.label}", s.id in sports) { save(s = if (s.id in sports) sports - s.id else sports + s.id) } }
+            }
+        }
+        if (sports.isNotEmpty()) {
+            // 2. Competitions of those sports (none = all)
+            item { FilterLabel("2. Compétition (aucune cochée = toutes)") }
+            item {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    funnel.leaguesOf(sports).forEach { l -> Chip(l.label, l.id in prefs.leagues) { save(l = if (l.id in prefs.leagues) prefs.leagues - l.id else prefs.leagues + l.id) } }
+                }
+            }
+            // 3. Clubs among the listed games (none = all)
+            if (clubs.isNotEmpty()) {
+                item { FilterLabel("3. Club / équipe (aucun coché = tous)") }
+                item {
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(clubs, key = { it }) { c -> Chip(c, c in prefs.teams) { save(t = if (c in prefs.teams) prefs.teams - c else prefs.teams + c) } }
+                    }
+                }
+            }
+        }
         when {
-            prefs.leagues.isEmpty() -> EmptyState("Aucune compétition choisie", "Ouvrez « Mes compétitions » et cochez celles que vous suivez. Le choix est partagé avec le PC.")
-            list == null -> Loading("Recherche des matchs…")
-            list.isEmpty() -> EmptyState("Aucun match", "Pas de match en cours ni à venir sur ${prefs.days} jour(s) dans ces compétitions.")
-            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxSize()) {
-                list.groupBy { if (it.fixture.live) "🔴 En direct" else dayLabel(it.fixture.start) }.forEach { (day, gs) ->
-                    item(key = "h$day") { DayHeader(day) }
-                    items(gs, key = { it.fixture.id }) { g ->
-                        GameRow(g) {
-                            when (g.channels.size) {
-                                0 -> vm.show(g.tv?.let { "Diffusé sur $it — cette chaîne n'est pas dans votre liste" }
-                                    ?: listOfNotNull(g.fixture.usualBroadcaster, "aucune chaîne de votre liste ne l'annonce encore").joinToString(" · ").replaceFirstChar { it.uppercase() })
-                                1 -> PlayerLauncher.live(context, g.channels[0].ch.id, Groups.ALL)
-                                else -> open = g
-                            }
+            sports.isEmpty() -> item { EmptyState("Choisissez un sport", "Puis, si vous voulez, une compétition et un club. Le choix est partagé avec le PC.") }
+            games == null -> item { Loading("Recherche des matchs…") }
+            shown.isEmpty() -> item { EmptyState("Aucun match", "Pas de match en cours ni à venir sur ${funnel.DAYS} jours avec ces filtres.") }
+            else -> shown.groupBy { if (it.fixture.live) "🔴 En direct" else dayLabel(it.fixture.start) }.forEach { (day, gs) ->
+                item(key = "h$day") { DayHeader(day) }
+                items(gs, key = { it.fixture.id }) { g ->
+                    GameRow(g) {
+                        when (g.channels.size) {
+                            0 -> vm.show(g.tv?.let { "Diffusé sur $it — cette chaîne n'est pas dans votre liste" }
+                                ?: listOfNotNull(g.fixture.usualBroadcaster, "aucune chaîne de votre liste ne l'annonce encore").joinToString(" · ").replaceFirstChar { it.uppercase() })
+                            1 -> PlayerLauncher.live(context, g.channels[0].ch.id, Groups.ALL)
+                            else -> open = g
                         }
                     }
                 }
@@ -305,6 +336,10 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
             onDismiss = { open = null }, subtitle = g.fixture.league.label + " · choisissez une chaîne")
     }
 }
+
+@Composable
+private fun FilterLabel(text: String) =
+    Text(text, style = MaterialTheme.typography.titleSmall, color = Palette.Accent, modifier = Modifier.padding(top = 6.dp))
 
 @Composable
 private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: () -> Unit) {

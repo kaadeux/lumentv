@@ -145,9 +145,9 @@ class SportsRepository(
 
     /** Official calendar, like the PC: every live and upcoming game of the chosen competitions, with its channels. */
     suspend fun games(pid: Long, prefs: SportPrefs): List<Game> = withContext(Dispatchers.IO) {
-        val teams = prefs.teams.map { normalize(it) }.filter { it.isNotBlank() }
-        val list = fixtures.fixtures(prefs.leagues.mapNotNull { FixtureClient.league(it) }, prefs.days)
-            .filter { f -> teams.isEmpty() || listOfNotNull(f.home, f.away).any { t -> t.aliases.any { a -> teams.any { a.contains(it) || it.contains(a) } } } }
+        val leagues = SportsFunnel.effectiveLeagues(prefs.sports, prefs.leagues)
+        if (leagues.isEmpty()) return@withContext emptyList()
+        val list = fixtures.fixtures(leagues, SportsFunnel.DAYS)
         if (list.isEmpty()) return@withContext emptyList()
         val progs = candidates(pid, list.flatMap { FixtureMatcher.searchWords(it) }, list.minOf { it.start } - FixtureMatcher.BEFORE_MS,
             list.maxOf { it.start } + FixtureMatcher.AFTER_MS)

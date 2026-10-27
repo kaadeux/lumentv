@@ -119,7 +119,7 @@ class FixtureClient(http: OkHttpClient) {
             Fixture(
                 id = o.s("id") ?: return@mapNotNull null, league = l, start = start, state = state,
                 detail = (if (state == "in") status?.s("shortDetail") else null).orEmpty(),
-                home = team(side("home")), away = team(side("away")), name = o.s("name").orEmpty(),
+                home = team(side("home")) ?: sides(o.s("name"))?.first, away = team(side("away")) ?: sides(o.s("name"))?.second, name = o.s("name").orEmpty(),
                 homeScore = side("home")?.s("score")?.takeIf { state == "in" }, awayScore = side("away")?.s("score")?.takeIf { state == "in" },
                 venue = (comp?.get("venue") as? JsonObject)?.let { v ->
                     listOfNotNull(v.s("fullName"), ((v["address"] as? JsonObject)?.s("city"))?.takeIf { c -> v.s("fullName")?.contains(c) != true }).joinToString(", ")
@@ -148,6 +148,14 @@ class FixtureClient(http: OkHttpClient) {
                 round = o.s("intRound")?.takeIf { it != "0" }?.let { "Journée $it" }, venue = o.s("strVenue"),
             )
         }
+    }
+
+    /** "UFC Fight Night: Moicano vs. Nolan" → Moicano and Nolan (MMA events list their fights, not two teams). */
+    private fun sides(name: String?): Pair<Team, Team>? {
+        val main = name?.substringAfter(':', name)?.trim() ?: return null
+        val parts = main.split(Regex("\\s+vs\\.?\\s+", RegexOption.IGNORE_CASE))
+        if (parts.size != 2 || parts.any { it.isBlank() || it.length > 40 }) return null
+        return Team(parts[0].trim(), null, null, null) to Team(parts[1].trim(), null, null, null)
     }
 
     private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != "null" }

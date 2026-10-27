@@ -45,8 +45,8 @@ class FixturesTest {
     /** Live check of the public calendar: SPORTS_LIVE=1. */
     @Test fun calendarAnswers() = runBlocking {
         assumeTrue(System.getenv("SPORTS_LIVE") == "1")
-        val list = FixtureClient(OkHttpClient()).fixtures(listOf(ligue1, FixtureClient.league("top14")!!), 5)
-        java.io.File("build/fixtures.txt").writeText(list.joinToString("\n") { "${java.util.Date(it.start)} ${it.state} ${it.league.label} ${it.label}" })
+        val list = FixtureClient(OkHttpClient()).fixtures(listOf(ligue1, FixtureClient.league("top14")!!, FixtureClient.league("ufc")!!, FixtureClient.league("prod2")!!), SportsFunnel.DAYS)
+        java.io.File("build/fixtures.txt").writeText(list.joinToString("\n") { "${java.util.Date(it.start)} ${it.state} | ${it.details} | ${it.label} | ${it.venue}" })
         assertTrue(list.isNotEmpty())
     }
 }

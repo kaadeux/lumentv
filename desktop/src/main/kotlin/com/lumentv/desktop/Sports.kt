@@ -68,40 +68,57 @@ private class Game(val f: Fixture, val channels: List<Ch>, val tv: com.lumentv.d
 @Composable
 fun SportsScreen(state: AppState) {
     val c = state.catalog!!
-    // LUMEN_SPORTS=fra1,top14 shows those competitions without saving them (screenshots).
-    val chosen = System.getenv("LUMEN_SPORTS")?.split(',')?.toSet() ?: state.setting("sport_leagues").split('\n').filter { it.isNotBlank() }.toSet()
-    val days = state.setting("sport_days", "7").toIntOrNull() ?: 7
+    val funnel = com.lumentv.data.sports.SportsFunnel
+    // Same settings as the TV (shared by the profile): sports, then competitions, then clubs.
+    fun set(key: String) = state.setting(key).split('\n').filter { it.isNotBlank() }
+    val sports = set("sport_ids").filter { s -> funnel.sports.any { it.id == s } }.toSet()
+    val leagues = set("sport_leagues").toSet()
+    val teams = set("sport_teams")
+    val chosen = funnel.effectiveLeagues(sports, leagues).map { it.id }.toSet()
     var tick by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); tick++ } }
-    val games by produceState<List<Game>?>(null, chosen, days, tick, c, state.guide) {
-        value = if (chosen.isEmpty()) emptyList() else runCatching { load(state, c, chosen, days) }.getOrDefault(emptyList())
+    val games by produceState<List<Game>?>(null, chosen, tick, c, state.guide) {
+        value = if (chosen.isEmpty()) emptyList() else runCatching { load(state, c, chosen, funnel.DAYS) }.getOrDefault(emptyList())
     }
-    fun toggle(id: String) = state.setSetting("sport_leagues", (if (id in chosen) chosen - id else chosen + id).sorted().joinToString("\n"))
+    fun save(key: String, values: Collection<String>) = state.setSetting(key, values.sorted().joinToString("\n"))
+    val all = games.orEmpty()
+    val clubs = remember(all) { funnel.clubs(all.map { it.f }) }
+    val kept = remember(all, teams) { funnel.byClubs(all.map { it.f }, teams).toSet() }
+    val shown = all.filter { it.f in kept }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Sports", style = MaterialTheme.typography.headlineSmall, color = Pal.text) }
         item {
-            Text("Matchs en cours et à venir du calendrier officiel, sans les rediffusions, avec les chaînes de votre liste qui les diffusent.",
-                color = Pal.dim)
+            Text("Matchs en cours et à venir (calendrier officiel, sans les rediffusions), avec les chaînes qui les diffusent.", color = Pal.dim)
         }
+        item { Step("1. Sport") }
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                FixtureClient.leagues.forEach { l ->
-                    val on = l.id in chosen
-                    Text((SportsCatalog.byId(l.sport)?.emoji?.let { "$it  " } ?: "") + l.label, color = if (on) Color.White else Pal.dim, fontSize = 13.sp,
-                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) Pal.accent else Pal.panelHigh)
-                            .combinedClickable { toggle(l.id) }.padding(horizontal = 14.dp, vertical = 7.dp))
+                funnel.sports.forEach { sp -> ChoiceChip("${sp.emoji}  ${sp.label}", sp.id in sports) { save("sport_ids", if (sp.id in sports) sports - sp.id else sports + sp.id) } }
+            }
+        }
+        if (sports.isNotEmpty()) {
+            item { Step("2. Compétition  ·  aucune cochée = toutes") }
+            item {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    funnel.leaguesOf(sports).forEach { l -> ChoiceChip(l.label, l.id in leagues) { save("sport_leagues", if (l.id in leagues) leagues - l.id else leagues + l.id) } }
+                }
+            }
+            if (clubs.isNotEmpty()) {
+                item { Step("3. Club / équipe  ·  aucun coché = tous") }
+                item {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        clubs.forEach { cl -> ChoiceChip(cl, cl in teams, small = true) { save("sport_teams", if (cl in teams) teams - cl else teams + cl) } }
+                    }
                 }
             }
         }
         when {
-            chosen.isEmpty() -> item { Empty("Choisissez vos compétitions", "Cochez par exemple Ligue 1, Top 14 ou Ligue des champions ci-dessus.") }
+            sports.isEmpty() -> item { Empty("Choisissez un sport", "Puis, si vous voulez, une compétition et un club. Le choix est partagé avec la TV.") }
             games == null -> item { Text("Recherche des matchs…", color = Pal.dim, modifier = Modifier.padding(16.dp)) }
-            games!!.isEmpty() -> item { Empty("Aucun match", "Pas de match en cours ni à venir sur $days jour(s) dans ces compétitions.") }
+            shown.isEmpty() -> item { Empty("Aucun match", "Pas de match en cours ni à venir sur ${funnel.DAYS} jours avec ces filtres.") }
             else -> {
-                val byDay = games!!.groupBy { g -> if (g.f.live) "En direct" else dayLabel(g.f.start) }
-                byDay.forEach { (label, list) ->
+                shown.groupBy { g -> if (g.f.live) "En direct" else dayLabel(g.f.start) }.forEach { (label, list) ->
                     item(key = "h$label") {
                         Text(label, color = if (label == "En direct") liveRed else Pal.text, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp, start = 4.dp))
                     }
@@ -112,6 +129,15 @@ fun SportsScreen(state: AppState) {
         item { Spacer(Modifier.size(24.dp)) }
     }
 }
+
+@Composable
+private fun Step(text: String) = Text(text, color = Pal.accent, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+
+@Composable
+private fun ChoiceChip(label: String, on: Boolean, small: Boolean = false, onClick: () -> Unit) =
+    Text(label, color = if (on) Color.White else Pal.dim, fontSize = if (small) 12.sp else 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) Pal.accent else Pal.panelHigh)
+            .combinedClickable(onClick = onClick).padding(horizontal = if (small) 11.dp else 14.dp, vertical = if (small) 5.dp else 7.dp))
 
 @Composable
 private fun GameCard(state: AppState, g: Game) {
