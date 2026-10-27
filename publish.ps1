@@ -9,9 +9,9 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 # git writes its progress to stderr, which Windows PowerShell 5.1 would turn into a terminating error.
-function Git([string]$what) {
+function Run-Git([string]$what) {
     $ErrorActionPreference = "Continue"
-    $out = & git @args 2>&1
+    $out = & git.exe @args 2>&1
     if ($LASTEXITCODE -ne 0) { throw "git : échec ($what) : $out" }
     $out
 }
@@ -24,15 +24,15 @@ foreach ($k in 'lumen.signing', 'lumen.updateUrl', 'lumen.accessCode', 'lumen.re
 $releases = $props['lumen.releasesDir']
 if (-not (Test-Path (Join-Path $releases '.git'))) { throw "Le dossier $releases n'est pas un clone git du dépôt public." }
 
-$channel = (Git "branche" rev-parse --abbrev-ref HEAD | Out-String).Trim()
+$channel = (Run-Git "branche" rev-parse --abbrev-ref HEAD | Out-String).Trim()
 if ($channel -ne 'main' -and $channel -ne 'dev') { throw "Publiez depuis la branche dev ou main (branche actuelle : $channel)." }
-if ((Git "état" status --porcelain | Out-String).Trim()) { throw "Des modifications ne sont pas commitées : commitez-les d'abord, pour que chaque version publiée corresponde à un commit." }
+if ((Run-Git "état" status --porcelain | Out-String).Trim()) { throw "Des modifications ne sont pas commitées : commitez-les d'abord, pour que chaque version publiée corresponde à un commit." }
 
 # The releases repository has one branch per channel.
-Git "récupération" -C $releases fetch -q origin | Out-Null
-$remote = (Git "branches distantes" -C $releases branch -r | Out-String)
-if ($remote -match "origin/$channel\b") { Git "checkout" -C $releases checkout -q -B $channel "origin/$channel" | Out-Null }
-else { Git "checkout" -C $releases checkout -q -B $channel origin/main | Out-Null }
+Run-Git "récupération" -C $releases fetch -q origin | Out-Null
+$remote = (Run-Git "branches distantes" -C $releases branch -r | Out-String)
+if ($remote -match "origin/$channel\b") { Run-Git "checkout" -C $releases checkout -q -B $channel "origin/$channel" | Out-Null }
+else { Run-Git "checkout" -C $releases checkout -q -B $channel origin/main | Out-Null }
 
 $gradle = Get-Content app\build.gradle.kts -Raw
 $code = [int]([regex]::Match($gradle, 'versionCode\s*=\s*(\d+)').Groups[1].Value)
@@ -59,10 +59,10 @@ $apkUrl = $props['lumen.updateUrl'] -replace '/main/', "/$channel/" -replace 've
 $json = [ordered]@{ versionCode = $code; versionName = $name; apk = $apkUrl; sha256 = $sha; notes = $Notes } | ConvertTo-Json
 [IO.File]::WriteAllText($jsonPath, $json, (New-Object System.Text.UTF8Encoding $false))
 
-Git "ajout" -C $releases add LumenTV.apk version.json | Out-Null
-Git "commit" -C $releases commit -q -m "Lumen TV $name" | Out-Null
-Git "envoi" -C $releases push -q -u origin $channel | Out-Null
+Run-Git "ajout" -C $releases add LumenTV.apk version.json | Out-Null
+Run-Git "commit" -C $releases commit -q -m "Lumen TV $name" | Out-Null
+Run-Git "envoi" -C $releases push -q -u origin $channel | Out-Null
 # Marks the source commit of each published version, to find it again (or roll back).
-Git "tag" tag -f "v$name" | Out-Null
-Git "envoi du tag" push -q -f origin "v$name" | Out-Null
+Run-Git "tag" tag -f "v$name" | Out-Null
+Run-Git "envoi du tag" push -q -f origin "v$name" | Out-Null
 Write-Host "Lumen TV $name publiée sur le canal $channel. Les appareils de ce canal la proposeront au prochain démarrage."
