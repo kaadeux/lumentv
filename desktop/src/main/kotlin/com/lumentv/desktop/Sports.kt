@@ -58,8 +58,8 @@ import java.util.Locale
 
 private val liveRed = Color(0xFFFF5A5F)
 
-/** A game of the official calendar and the channels of the playlist that show it. */
-private class Game(val f: Fixture, val channels: List<Ch>)
+/** A game of the official calendar, the channels of the playlist that show it, and the French channel (xmltvfr.fr). */
+private class Game(val f: Fixture, val channels: List<Ch>, val tv: com.lumentv.data.sports.Listing? = null)
 
 /**
  * Sports: live and upcoming games of the chosen competitions (official calendar, no replays), each with the
@@ -120,7 +120,7 @@ private fun GameCard(state: AppState, g: Game) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Pal.panel).border(1.dp, if (f.live) liveRed.copy(alpha = 0.5f) else Pal.panelHigh, RoundedCornerShape(14.dp))
         .padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(f.league.label.uppercase(), color = Pal.dim, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text(f.details.uppercase(), color = Pal.dim, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             if (f.live) Text("● EN DIRECT" + if (f.detail.isNotBlank()) " · ${f.detail}" else "", color = liveRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             else Text(hm.format(Date(f.start)), color = Pal.text, fontWeight = FontWeight.SemiBold)
         }
@@ -130,10 +130,18 @@ private fun GameCard(state: AppState, g: Game) {
                 fontSize = if (f.live) 22.sp else 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 18.dp))
             TeamCell(f.away!!, Modifier.weight(1f), end = true)
         } else Text(f.name, color = Pal.text, fontWeight = FontWeight.SemiBold)
-        if (g.channels.isEmpty()) Text(listOfNotNull(f.usualBroadcaster, "aucune chaîne de votre liste ne l'annonce encore").joinToString(" · ")
-            .replaceFirstChar { it.uppercase() }, color = Pal.dim, fontSize = 12.sp)
-        else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            g.channels.take(8).forEach { ch -> Pill(ch.name, { state.playChannel(ch) }, Icons.Filled.PlayArrow, primary = f.live) }
+        f.venue?.let { Text(it, color = Pal.dim, fontSize = 12.sp) }
+        val tvNote = g.tv?.let { l ->
+            "Diffusé sur ${l.channel}" + if (kotlin.math.abs(l.start - f.start) >= 90 * 60_000L) " à " + SimpleDateFormat("HH:mm EEEE", Locale.FRANCE).format(Date(l.start)) else ""
+        }
+        if (g.channels.isEmpty()) Text(tvNote?.let { "$it — cette chaîne n'est pas dans votre liste" }
+            ?: listOfNotNull(f.usualBroadcaster, "aucune chaîne de votre liste ne l'annonce encore").joinToString(" · ").replaceFirstChar { it.uppercase() },
+            color = Pal.dim, fontSize = 12.sp)
+        else {
+            tvNote?.let { Text(it, color = Pal.dim, fontSize = 12.sp) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                g.channels.take(8).forEach { ch -> Pill(ch.name, { state.playChannel(ch) }, Icons.Filled.PlayArrow, primary = f.live) }
+            }
         }
     }
 }
@@ -148,15 +156,20 @@ private fun TeamCell(t: Team, modifier: Modifier, end: Boolean) = Row(modifier, 
 
 private suspend fun load(state: AppState, c: Catalog, chosen: Set<String>, days: Int): List<Game> {
     val games = state.fixtures.fixtures(chosen.mapNotNull { FixtureClient.league(it) }, days)
+    val listings = runCatching { state.frenchGuide.listings() }.getOrDefault(emptyList())
     return withContext(Dispatchers.Default) {
         // Programmes near each kick-off (normalised once), and channels whose name announces a game.
         val from = (games.minOfOrNull { it.start } ?: 0) - FixtureMatcher.BEFORE_MS
         val to = (games.maxOfOrNull { it.start } ?: 0) + FixtureMatcher.AFTER_MS
         val progs = c.channels.flatMap { ch -> state.guide[ch.uid].orEmpty().filter { it.start in from..to }.map { Triple(ch, normalize(it.title), it.start) } }
         val named = c.channels.mapNotNull { ch -> EventChannelParser.parse(ch.name)?.let { (l, t) -> Triple(ch, normalize(l), t) } }
+        val byKey = c.channels.filter { com.lumentv.data.sports.FrenchTvGuide.frenchOrPlain(it.name) }.groupBy { com.lumentv.data.sports.FrenchTvGuide.channelKey(it.name) }
         games.map { f ->
-            Game(f, (progs.filter { (_, title, start) -> FixtureMatcher.matches(f, title, start) } +
-                named.filter { (_, title, start) -> FixtureMatcher.matches(f, title, start, channelName = true) }).map { it.first }.distinctBy { it.uid })
+            val tv = com.lumentv.data.sports.FrenchTvGuide.broadcast(f, listings)
+            // The French channel, when the playlist has it under the same name, becomes playable too.
+            val linked = tv?.let { com.lumentv.data.sports.FrenchTvGuide.best(byKey[com.lumentv.data.sports.FrenchTvGuide.channelKey(it.channel)].orEmpty()) { ch -> ch.name } }.orEmpty()
+            Game(f, ((progs.filter { (_, title, start) -> FixtureMatcher.matches(f, title, start) } +
+                named.filter { (_, title, start) -> FixtureMatcher.matches(f, title, start, channelName = true) }).map { it.first } + linked).distinctBy { it.uid }, tv)
         }
     }
 }

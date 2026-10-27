@@ -289,7 +289,8 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
                     items(gs, key = { it.fixture.id }) { g ->
                         GameRow(g) {
                             when (g.channels.size) {
-                                0 -> vm.show(listOfNotNull(g.fixture.usualBroadcaster, "aucune chaîne de votre liste ne l'annonce encore").joinToString(" · ").replaceFirstChar { it.uppercase() })
+                                0 -> vm.show(g.tv?.let { "Diffusé sur $it — cette chaîne n'est pas dans votre liste" }
+                                    ?: listOfNotNull(g.fixture.usualBroadcaster, "aucune chaîne de votre liste ne l'annonce encore").joinToString(" · ").replaceFirstChar { it.uppercase() })
                                 1 -> PlayerLauncher.live(context, g.channels[0].ch.id, Groups.ALL)
                                 else -> open = g
                             }
@@ -309,11 +310,14 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
 private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: () -> Unit) {
     val f = g.fixture
     FocusSurface(onClick, Modifier.fillMaxWidth(), focusedScale = 1.01f) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+      Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+        // "⚽ Football · Ligue 1 · Journée 10 · Stade Océane, Le Havre"
+        Text(listOfNotNull(f.details, f.venue).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.width(120.dp)) {
                 if (f.live) Badge("EN DIRECT", Palette.Danger)
                 else Text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start)), style = MaterialTheme.typography.titleLarge)
-                Text(f.league.label, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
             }
             if (f.home != null && f.away != null) {
                 TeamSide(f.home!!, Modifier.weight(1f), end = true)
@@ -321,14 +325,25 @@ private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: (
                     color = if (f.live) Palette.Text else Palette.TextDim, modifier = Modifier.padding(horizontal = 18.dp))
                 TeamSide(f.away!!, Modifier.weight(1f), end = false)
             } else Text(f.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(2f))
-            Column(Modifier.width(230.dp), horizontalAlignment = Alignment.End) {
+            Column(Modifier.width(250.dp), horizontalAlignment = Alignment.End) {
                 if (g.channels.isNotEmpty()) {
-                    Text(g.channels.first().ch.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("▶ " + g.channels.first().ch.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (g.channels.size > 1) Text("+ ${g.channels.size - 1} autre(s) chaîne(s)", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                    else g.tv?.let { Text("Sur $it", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1) }
+                } else if (g.tv != null) {
+                    Text("Sur ${g.tv}", style = MaterialTheme.typography.titleSmall, color = Palette.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    tvTimeNote(g)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1) }
                 } else Text(f.usualBroadcaster ?: "Chaîne inconnue", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 2)
             }
         }
+      }
     }
+}
+
+/** When the French channel starts the game at another time than the official calendar: "à 16:45 samedi". */
+private fun tvTimeNote(g: com.lumentv.data.sports.SportsRepository.Game): String? {
+    if (g.tvStart == 0L || kotlin.math.abs(g.tvStart - g.fixture.start) < 90 * 60_000L) return null
+    return "à " + java.text.SimpleDateFormat("HH:mm EEEE", java.util.Locale.FRANCE).format(java.util.Date(g.tvStart))
 }
 
 @Composable

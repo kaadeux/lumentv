@@ -34,6 +34,8 @@ data class Team(val name: String, val short: String?, val abbr: String?, val log
             val stripped = x.split(' ').filter { it !in noise }.joinToString(" ")
             if (stripped.length >= 3) out += stripped
             stripped.split(' ').filter { it.length >= 5 }.maxByOrNull { it.length }?.let { out += it }
+            // City + initials, as guides write it: "Paris Saint-Germain" → "paris sg".
+            stripped.split(' ').takeIf { it.size >= 3 }?.let { w -> out += w[0] + " " + w.drop(1).joinToString("") { it.take(1) } }
         }
         out.filter { it.length >= 3 }
     }
@@ -49,7 +51,11 @@ data class Fixture(
     val state: String, val detail: String,
     val home: Team?, val away: Team?, val name: String,
     val homeScore: String? = null, val awayScore: String? = null,
+    /** "Journée 10" when the calendar says it, and the stadium ("Stade Océane, Le Havre"). */
+    val round: String? = null, val venue: String? = null,
 ) {
+    /** "⚽ Football · Ligue 1 · Journée 10" */
+    val details get() = listOfNotNull(SportsCatalog.byId(league.sport)?.let { "${it.emoji} ${it.label}" }, league.label, round).joinToString(" · ")
     val live get() = state == "in"
     /** "Habituellement sur Canal+", or null when unknown. */
     val usualBroadcaster get() = league.tvFr?.let { "Habituellement sur $it" }
@@ -113,6 +119,9 @@ class FixtureClient(http: OkHttpClient) {
                 detail = (if (state == "in") status?.s("shortDetail") else null).orEmpty(),
                 home = team(side("home")), away = team(side("away")), name = o.s("name").orEmpty(),
                 homeScore = side("home")?.s("score")?.takeIf { state == "in" }, awayScore = side("away")?.s("score")?.takeIf { state == "in" },
+                venue = (comp?.get("venue") as? JsonObject)?.let { v ->
+                    listOfNotNull(v.s("fullName"), ((v["address"] as? JsonObject)?.s("city"))?.takeIf { c -> v.s("fullName")?.contains(c) != true }).joinToString(", ")
+                }?.takeIf { it.isNotBlank() },
             )
         }
     }
@@ -134,6 +143,7 @@ class FixtureClient(http: OkHttpClient) {
                 away = o.s("strAwayTeam")?.let { Team(it, null, null, o.s("strAwayTeamBadge")) },
                 name = o.s("strEvent").orEmpty(),
                 homeScore = o.s("intHomeScore")?.takeIf { live }, awayScore = o.s("intAwayScore")?.takeIf { live },
+                round = o.s("intRound")?.takeIf { it != "0" }?.let { "Journée $it" }, venue = o.s("strVenue"),
             )
         }
     }

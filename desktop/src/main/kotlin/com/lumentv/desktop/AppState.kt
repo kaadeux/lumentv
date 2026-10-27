@@ -38,6 +38,8 @@ class AppState(private val scope: CoroutineScope) {
     val library = Library(http)
     /** Official sports calendar (live and upcoming games). */
     val fixtures = com.lumentv.data.sports.FixtureClient(http)
+    /** Which French channel shows each game, days ahead (xmltvfr.fr, sports channels only, twice a day at most). */
+    val frenchGuide = com.lumentv.data.sports.FrenchTvGuide(http, java.io.File(Store.dir, "sports_tv.json")) { org.kxml2.io.KXmlParser() }
     private val sync = ProfileSync(http, BuildInfo.SYNC_URL)
     private val prefs = Preferences.userRoot().node("lumentv")
     private val syncLock = Mutex()

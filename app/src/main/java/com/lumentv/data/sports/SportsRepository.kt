@@ -47,6 +47,7 @@ class SportsRepository(
     private val epg: EpgRepository,
     private val library: LibraryRepository,
     private val fixtures: FixtureClient,
+    private val frenchGuide: FrenchTvGuide,
 ) {
     /** epg key -> channels of the playlist that show it, rebuilt when the guide changes. */
     private var channelIndex: Triple<Long, Int, Map<String, List<ChannelRow>>>? = null
@@ -138,7 +139,9 @@ class SportsRepository(
     private var cache: Triple<Triple<Long, SportPrefs, Int>, Long, List<SportEvent>>? = null
 
     /** A game of the official calendar and the channels of the playlist that show it (possibly none yet). */
-    data class Game(val fixture: Fixture, val channels: List<ChannelRow>)
+    data class Game(val fixture: Fixture, val channels: List<ChannelRow>,
+                    /** The French channel showing it (xmltvfr.fr), e.g. "Ligue 1+ 2", and when it starts there. */
+                    val tv: String? = null, val tvStart: Long = 0)
 
     /** Official calendar, like the PC: every live and upcoming game of the chosen competitions, with its channels. */
     suspend fun games(pid: Long, prefs: SportPrefs): List<Game> = withContext(Dispatchers.IO) {
@@ -150,9 +153,15 @@ class SportsRepository(
             list.maxOf { it.start } + FixtureMatcher.AFTER_MS)
         val index = channelsByKey(pid)
         val named = db.channels().withDates(pid).filter { !it.isHidden }.mapNotNull { r -> EventChannelParser.parse(r.ch.name)?.let { (l, t) -> Triple(r, normalize(l), t) } }
+        val listings = runCatching { frenchGuide.listings() }.getOrDefault(emptyList())
+        val byKey = db.channels().inGroup(pid, null).filter { !it.isHidden && FrenchTvGuide.frenchOrPlain(it.ch.name) }.groupBy { FrenchTvGuide.channelKey(it.ch.name) }
         list.map { f ->
-            Game(f, (progs.filter { FixtureMatcher.matches(f, it.titleNorm, it.start) }.flatMap { index[it.epgKey].orEmpty() } +
-                named.filter { (_, l, t) -> FixtureMatcher.matches(f, l, t, channelName = true) }.map { it.first }).distinctBy { it.ch.id })
+            val tv = FrenchTvGuide.broadcast(f, listings)
+            val own = (progs.filter { FixtureMatcher.matches(f, it.titleNorm, it.start) }.flatMap { index[it.epgKey].orEmpty() } +
+                named.filter { (_, l, t) -> FixtureMatcher.matches(f, l, t, channelName = true) }.map { it.first }).distinctBy { it.ch.id }
+            // The French channel, when the playlist has it under the same name, becomes playable too.
+            val linked = tv?.let { FrenchTvGuide.best(byKey[FrenchTvGuide.channelKey(it.channel)].orEmpty()) { r -> r.ch.name } }.orEmpty()
+            Game(f, (own + linked).distinctBy { it.ch.id }, tv?.channel, tv?.start ?: 0)
         }
     }
 

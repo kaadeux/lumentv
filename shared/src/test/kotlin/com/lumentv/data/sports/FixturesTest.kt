@@ -32,6 +32,14 @@ class FixturesTest {
         assertFalse(FixtureMatcher.matches(game, normalize("PSG vs. Lens"), game.start - 60 * 60_000, channelName = true))
     }
 
+    @Test fun frenchGuideNamesAndChannels() {
+        val l = Listing("DAZN 1", game.start, normalize("Le Havre / Paris-SG"))
+        assertTrue(FrenchTvGuide.broadcast(game, listOf(l)) != null)
+        assertTrue(FrenchTvGuide.channelKey("CANAL+ SPORT360 FHD") == FrenchTvGuide.channelKey("Canal+ Sport 360"))
+        assertFalse(FrenchTvGuide.channelKey("CANAL+ SPORT+") == FrenchTvGuide.channelKey("Canal+ Sport"))
+        assertTrue(FrenchTvGuide.channelKey("FR | CANAL+ SPORT [H265]") == FrenchTvGuide.channelKey("Canal+ Sport"))
+    }
+
     /** Live check of the public calendar: SPORTS_LIVE=1. */
     @Test fun calendarAnswers() = runBlocking {
         assumeTrue(System.getenv("SPORTS_LIVE") == "1")
