@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ExpandLess
@@ -305,11 +306,12 @@ private fun EpisodeRow(state: AppState, e: Ep, highlighted: Boolean, onPlay: () 
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             when {
-                watched -> Box(Modifier.combinedClickable { onToggleWatched(false) }) { Chip("REGARDÉ", green, green.copy(alpha = 0.15f), Icons.Filled.CheckCircle, green) }
+                watched -> Chip("REGARDÉ", green, green.copy(alpha = 0.15f), Icons.Filled.CheckCircle, green)
                 pct != null -> Chip("REPRENDRE $pct % VU", Color(0xFF9CC2FF), Pal.accent.copy(alpha = 0.18f))
             }
             e.rating?.let { Chip(it, icon = Icons.Filled.Star) }
         }
+        Pill(if (watched) "Marquer non vu" else "Marquer comme vu", { onToggleWatched(!watched) }, Icons.Filled.Done)
         Pill("Lire", onPlay, Icons.Filled.PlayArrow, primary = true)
         DownloadButton(state, e.uid, download)
     }

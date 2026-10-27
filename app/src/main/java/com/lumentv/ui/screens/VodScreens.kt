@@ -268,12 +268,29 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
     var season by remember(seasons) { mutableStateOf(seasons.firstOrNull() ?: 1) }
     val progress = remember(history) { history.filter { it.kind == HistoryKind.EPISODE && it.parentUid == uid }.associateBy { it.uid } }
     val lastWatched = progress.values.maxByOrNull { it.watchedAt }
+    // Watched = played to the end (same rule as the PC); "Marquer comme vu" writes such an entry, "non vu" removes it.
+    fun watched(e: EpisodeEntity) = progress[e.uid]?.let { it.durationMs > 0 && it.positionMs >= minOf(it.durationMs * 92 / 100, it.durationMs - 60_000) } == true
+    fun markWatched(list: List<EpisodeEntity>, on: Boolean) = scope.launch {
+        val now = System.currentTimeMillis()
+        list.forEachIndexed { i, e ->
+            val key = LibraryRepository.key(HistoryKind.EPISODE, playlistId, e.uid)
+            if (!on) vm.graph.library.deleteHistory(key)
+            else {
+                val dur = (e.durationSecs * 1000L).coerceAtLeast(1)
+                vm.graph.library.record(HistoryEntity(key, HistoryKind.EPISODE, playlistId, e.uid, series?.s?.name ?: e.title,
+                    "S${e.season} E${e.episode} · ${e.title}", e.image ?: series?.s?.cover, uid, now - (list.size - i), dur, dur))
+            }
+        }
+        vm.show(if (on) (if (list.size > 1) "${list.size} épisodes marqués comme vus" else "Marqué comme vu") else "Marqué comme non vu")
+    }
     var epMenu by remember { mutableStateOf<EpisodeEntity?>(null) }
     val transfers by vm.graph.transfers.observe().collectAsStateWithLifecycle(emptyList())
     epMenu?.let { e ->
         val dl = transfers.firstOrNull { it.kind == com.lumentv.data.db.TransferKind.DOWNLOAD && it.playlistId == playlistId && it.refUid == e.uid }
         OptionsDialog(e.title, buildList {
             add(MenuOption("Lire") { PlayerLauncher.episode(context, playlistId, uid, e.uid, false) })
+            if (watched(e)) add(MenuOption("Marquer comme non vu") { markWatched(listOf(e), false) })
+            else add(MenuOption("Marquer comme vu") { markWatched(listOf(e), true) })
             if (dl?.status == com.lumentv.data.db.TransferStatus.DONE) add(MenuOption("Lire le fichier téléchargé") { PlayerLauncher.file(context, dl.id) })
             else if (dl == null || dl.status == com.lumentv.data.db.TransferStatus.FAILED) add(MenuOption("Télécharger l'épisode") {
                 scope.launch { vm.graph.transfers.downloadEpisode(e, series?.s?.name ?: e.title); vm.show("Téléchargement lancé") } })
@@ -296,6 +313,10 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
                     TvButton(if (s.isFavorite) "Retirer des favoris" else "Ajouter aux favoris", {
                         scope.launch { vm.graph.library.toggleFavorite(playlistId, PrefKind.SERIES, uid) }
                     }, if (lastWatched == null) Modifier.focusRequester(focus) else Modifier)
+                    eps?.filter { it.season == season }?.takeIf { it.isNotEmpty() }?.let { list ->
+                        val all = list.all { watched(it) }
+                        TvButton(if (all) "Saison $season : marquer non vue" else "Marquer la saison $season comme vue", { markWatched(list, !all) })
+                    }
                 }
             }
         }
@@ -328,7 +349,14 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
                             if (e.durationSecs > 0) Text(duration(e.durationSecs), style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                    // Right of each episode: download it, follow the download, or play the file.
+                    // Right of each episode: mark it watched / not watched…
+                    val seen = watched(e)
+                    FocusSurface({ markWatched(listOf(e), !seen) }, Modifier.width(76.dp), focusedScale = 1.05f) {
+                        Text(if (seen) "✓ Vu" else "○ Vu", style = MaterialTheme.typography.titleMedium,
+                            color = if (seen) androidx.compose.ui.graphics.Color(0xFF4CD787) else Palette.TextDim,
+                            modifier = Modifier.padding(vertical = 14.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                    // …download it, follow the download, or play the file.
                     FocusSurface({
                         when (dl?.status) {
                             com.lumentv.data.db.TransferStatus.DONE -> PlayerLauncher.file(context, dl.id)
