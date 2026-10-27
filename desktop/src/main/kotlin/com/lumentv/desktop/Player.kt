@@ -136,6 +136,7 @@ class PlayerWindow private constructor(private val state: AppState) {
                 message.foreground = Ui.danger
                 message.text = "Lecture impossible : le flux ne répond pas, ou l'abonnement est déjà utilisé sur un autre écran."
             }
+            override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) { if (newCount > 0) trace("image") }
             override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { message.text = ""; playPause.set(icon = Ui.PAUSE); applyLanguages(); describeVideo() }
             override fun paused(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { playPause.set(icon = Ui.PLAY) }
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = SwingUtilities.invokeLater {
@@ -368,7 +369,14 @@ class PlayerWindow private constructor(private val state: AppState) {
     companion object {
         private var instance: PlayerWindow? = null
 
+        /** LUMEN_TRACE=<file>: logs how long each start takes (click → first image), for measurements. */
+        private val traceFile = System.getenv("LUMEN_TRACE")?.let { java.io.File(it) }
+        @Volatile private var openedAt = 0L
+        @Volatile private var openedWhat = ""
+        private fun trace(step: String) = traceFile?.appendText("$openedWhat $step ${System.currentTimeMillis() - openedAt} ms\n")
+
         fun open(state: AppState, item: PlayItem) {
+            openedAt = System.currentTimeMillis(); openedWhat = item.kind
             if (instance?.item != null || item.url.startsWith("file:")) return show(state, item)
             val p = state.active ?: return show(state, item)
             val key = state.presenceKey()
@@ -390,6 +398,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         }
 
         private fun show(state: AppState, item: PlayItem) {
+            trace("vérification écran terminée")
             val w = instance ?: PlayerWindow(state).also { instance = it }
             w.play(item)
         }

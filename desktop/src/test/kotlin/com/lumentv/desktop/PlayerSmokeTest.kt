@@ -20,7 +20,11 @@ class PlayerSmokeTest {
         state.open(key)
         Thread.sleep(4000)
         val seriesName = System.getenv("PLAYER_SERIES")
-        if (seriesName != null) {
+        val movieName = System.getenv("PLAYER_MOVIE")
+        if (movieName != null) {
+            val m = c.movies.first { it.name.contains(movieName, true) }
+            SwingUtilities.invokeAndWait { state.playMovie(m, fromStart = true) }
+        } else if (seriesName != null) {
             val s = c.series.first { it.name.equals(seriesName, true) }
             val eps = state.library.episodes(state.active!!, c, s)
             val i = eps.indexOfFirst { !state.isWatched(Kind.EPISODE, it.uid) }.coerceAtLeast(0)
