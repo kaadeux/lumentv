@@ -57,6 +57,8 @@ class Bubble(
     private val size: Int = 40,
     private val primary: Boolean = false,
     private val accent: Boolean = false,
+    /** Discreet: dark glass with soft text, full colour only under the mouse (skip intro, next episode). */
+    private val subtle: Boolean = false,
     private val onClick: (Bubble) -> Unit,
 ) : JComponent() {
     private var hover = false
@@ -88,6 +90,7 @@ class Bubble(
         val g = Ui.smooth(g0)
         val w = width.toDouble(); val h = height.toDouble()
         g.color = when {
+            subtle -> if (hover) Ui.accent else Color(10, 12, 18, 110)
             primary -> if (hover) Color(255, 255, 255, 235) else Color.WHITE
             accent -> if (hover) Ui.accent.brighter() else Ui.accent
             active -> Color(255, 255, 255, 70)
@@ -95,7 +98,7 @@ class Bubble(
             else -> Ui.bubble
         }
         if (label == null) g.fill(Ellipse2D.Double(0.0, 0.0, w - 1, h - 1)) else g.fill(RoundRectangle2D.Double(0.0, 0.0, w - 1, h - 1, h, h))
-        val fg = if (primary) Ui.bg else Ui.text
+        val fg = if (primary) Ui.bg else if (subtle && !hover) Color(255, 255, 255, 170) else Ui.text
         g.color = fg
         val ic = icon?.takeIf { Ui.iconFamily != null }
         val l = label ?: if (ic == null) icon else null
@@ -190,4 +193,15 @@ object Markers {
     fun creditsLength(series: String) = prefs.getLong("credits:${series.hashCode()}", 0)
     fun setCreditsLength(series: String, ms: Long) { if (ms in 10_000..360_000) prefs.putLong("credits:${series.hashCode()}", ms) }
     fun defaultCredits(durationMs: Long) = (durationMs * 0.025).toLong().coerceIn(30_000L, 90_000L)
+}
+
+/** Transparent panel that shades the video from the top or from the bottom, so white controls stay readable. */
+class ShadePanel(private val fromTop: Boolean) : javax.swing.JPanel() {
+    init { isOpaque = false }
+    override fun paintComponent(g0: java.awt.Graphics) {
+        val g = g0 as Graphics2D
+        val dark = Color(0, 0, 0, 170); val clear = Color(0, 0, 0, 0)
+        g.paint = if (fromTop) java.awt.GradientPaint(0f, 0f, dark, 0f, height.toFloat(), clear) else java.awt.GradientPaint(0f, 0f, clear, 0f, height * 0.45f, dark)
+        g.fillRect(0, 0, width, height)
+    }
 }

@@ -1,4 +1,4 @@
-import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+﻿import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import java.util.Properties
 import java.security.MessageDigest
 
@@ -10,7 +10,7 @@ plugins {
     id("org.jetbrains.compose")
 }
 
-val appVersion = "1.2.6"
+val appVersion = "1.2.7"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17

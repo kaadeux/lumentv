@@ -73,6 +73,7 @@ class PlayerWindow private constructor(private val state: AppState) {
     private var skipped = false
     private var learnIntroAt = 0L
     private var speedIndex = 2
+    private var overlayOn = false
     private val speeds = listOf(0.75f, 0.9f, 1f, 1.25f, 1.5f, 2f)
 
     // ---- Widgets ----------------------------------------------------------------------------------------------
@@ -92,13 +93,15 @@ class PlayerWindow private constructor(private val state: AppState) {
     private val fwd30 = Bubble(Ui.FWD30, tooltip = "Avancer de 30 s") { skip(30_000) }
     private val restart = Bubble(Ui.RESTART, tooltip = "Reprendre au début") { player.controls().setTime(0) }
     private val nextBtn = Bubble(Ui.NEXT, tooltip = "Épisode suivant (N)") { playNext() }
-    private val skipIntro = Bubble(label = "Passer le récap / l'intro", accent = true, size = 42) { skipIntro() }
-    private val nextCard = Bubble(Ui.NEXT, "Épisode suivant", accent = true, size = 42) { playNext() }
-    private val nextClose = Bubble(Ui.CLOSE, tooltip = "Finir celui-ci", size = 42) { nextDismissed = true; refreshActions() }
-    private val top = JPanel(BorderLayout())
-    private val bottom = JPanel()
+    private val skipIntro = Bubble(label = "Passer le récap / l'intro", subtle = true, size = 38) { skipIntro() }
+    private val nextCard = Bubble(Ui.NEXT, "Épisode suivant", subtle = true, size = 38) { playNext() }
+    private val nextClose = Bubble(Ui.CLOSE, tooltip = "Finir celui-ci", subtle = true, size = 38) { nextDismissed = true; refreshActions() }
+    private val top = ShadePanel(fromTop = true).apply { layout = BorderLayout() }
+    private val bottom = ShadePanel(fromTop = false)
     private val actions = JPanel(FlowLayout(FlowLayout.RIGHT, 10, 0))
     private val seekRow = JPanel(BorderLayout(10, 0))
+    /** Transparent window kept by VLC exactly over the picture: the controls float, the video never resizes. */
+    private val overlay = javax.swing.JWindow(frame)
 
     init {
         frame.iconImage = javax.imageio.ImageIO.read(PlayerWindow::class.java.getResource("/icon.png"))
@@ -108,9 +111,17 @@ class PlayerWindow private constructor(private val state: AppState) {
         frame.setLocationRelativeTo(null)
         frame.contentPane.background = Ui.bg
         frame.layout = BorderLayout()
-        frame.add(buildTop(), BorderLayout.NORTH)
         frame.add(component, BorderLayout.CENTER)
-        frame.add(buildBottom(), BorderLayout.SOUTH)
+        overlay.background = Color(0, 0, 0, 0)
+        val root = JPanel(BorderLayout()).apply { isOpaque = false }
+        root.add(buildTop(), BorderLayout.NORTH)
+        val south = JPanel(BorderLayout()).apply { isOpaque = false }
+        south.add(actions, BorderLayout.NORTH); south.add(buildBottom(), BorderLayout.CENTER)
+        root.add(south, BorderLayout.SOUTH)
+        overlay.contentPane = root
+        val awake = object : MouseAdapter() { override fun mouseMoved(e: MouseEvent) = wake() }
+        listOf(root, top, bottom).forEach { it.addMouseMotionListener(awake) }
+        keys(overlay.rootPane)
         frame.addWindowListener(object : WindowAdapter() { override fun windowClosing(e: WindowEvent) = close() })
         val surface = component.videoSurfaceComponent()
         surface.background = Color.BLACK
@@ -135,10 +146,10 @@ class PlayerWindow private constructor(private val state: AppState) {
         Timer(500) { tick() }.start()
     }
 
-    private fun dark(p: JPanel) = p.apply { background = Ui.bg; isOpaque = true }
+    private fun dark(p: JPanel) = p.apply { isOpaque = false }
 
     private fun buildTop(): JComponent {
-        dark(top).border = EmptyBorder(10, 14, 10, 14)
+        top.border = EmptyBorder(12, 14, 40, 14)
         val left = dark(JPanel(FlowLayout(FlowLayout.LEFT, 12, 0)))
         left.add(Bubble(Ui.CHEVRON_LEFT, "Retour", size = 36) { close() })
         val texts = dark(JPanel()).apply { layout = BoxLayout(this, BoxLayout.Y_AXIS); add(title); add(subtitle) }
@@ -150,10 +161,11 @@ class PlayerWindow private constructor(private val state: AppState) {
     }
 
     private fun buildBottom(): JComponent {
-        dark(bottom).layout = BoxLayout(bottom, BoxLayout.Y_AXIS)
-        bottom.border = EmptyBorder(6, 16, 14, 16)
-        dark(actions).add(message)
-        actions.add(skipIntro); actions.add(nextClose); actions.add(nextCard)
+        bottom.layout = BoxLayout(bottom, BoxLayout.Y_AXIS)
+        bottom.border = EmptyBorder(50, 16, 14, 16)
+        // Skip intro / next episode stay on screen (discreet) even when the bars are hidden.
+        dark(actions).border = EmptyBorder(0, 0, 8, 18)
+        actions.add(message); actions.add(skipIntro); actions.add(nextClose); actions.add(nextCard)
         dark(seekRow).border = EmptyBorder(6, 0, 4, 0)
         seekRow.add(timeNow, BorderLayout.WEST); seekRow.add(seek, BorderLayout.CENTER); seekRow.add(timeEnd, BorderLayout.EAST)
         seek.hoverText = { f -> val len = player.status().length(); if (len > 0) fmt((len * f).toLong()) else "" }
@@ -165,8 +177,10 @@ class PlayerWindow private constructor(private val state: AppState) {
         right.add(Bubble(Ui.AUDIO, tooltip = "Piste audio") { tracksMenu(it, audio = true) })
         right.add(Bubble(Ui.SUBS, tooltip = "Sous-titres") { tracksMenu(it, audio = false) })
         right.add(muteBtn); right.add(volume)
+        // Same width on both sides, so play / pause sits exactly in the middle.
+        left.preferredSize = Dimension(right.preferredSize.width, right.preferredSize.height)
         controls.add(left, BorderLayout.WEST); controls.add(center, BorderLayout.CENTER); controls.add(right, BorderLayout.EAST)
-        bottom.add(actions); bottom.add(seekRow); bottom.add(controls)
+        bottom.add(seekRow); bottom.add(controls)
         return bottom
     }
 
@@ -190,12 +204,14 @@ class PlayerWindow private constructor(private val state: AppState) {
             if (it.startMs > 5_000) add(":start-time=${it.startMs / 1000}")
             if (!it.live && it.url.startsWith("http")) {
                 // Read several minutes ahead: a slow or bursty server no longer stalls films and episodes.
-                add(":network-caching=8000"); add(":stream-filter=prefetch"); add(":prefetch-buffer-size=196608")
+                // Small start buffer for a quick start; the prefetch keeps reading minutes ahead in the background.
+                add(":network-caching=1500"); add(":stream-filter=prefetch"); add(":prefetch-buffer-size=196608")
             }
         }
         // VLC draws into the window: it must be on screen before playback starts.
         frame.isVisible = true
         frame.toFront()
+        if (!overlayOn) { player.overlay().set(overlay); player.overlay().enable(true); overlayOn = true }
         player.media().play(it.url, *opts.toTypedArray())
         player.controls().setRate(1f); speedIndex = 2; speedBtn.set(label = "1.0x")
         wake()
@@ -235,7 +251,7 @@ class PlayerWindow private constructor(private val state: AppState) {
     /** Shows the bars again after a mouse move or a key; in full screen they hide after 3 s of calm. */
     private fun wake() {
         lastMove = System.currentTimeMillis()
-        if (!top.isVisible) { top.isVisible = true; bottom.isVisible = true; component.videoSurfaceComponent().cursor = Cursor.getDefaultCursor() }
+        if (!top.isVisible) { top.isVisible = true; bottom.isVisible = true; component.videoSurfaceComponent().cursor = Cursor.getDefaultCursor(); overlay.repaint() }
     }
 
     private fun seriesKey() = item?.takeIf { it.kind == Kind.EPISODE }?.parentUid
@@ -280,8 +296,8 @@ class PlayerWindow private constructor(private val state: AppState) {
         }
         refreshActions()
         if (learnIntroAt in 1..System.currentTimeMillis()) { seriesKey()?.let { Markers.setIntroEnd(it, player.status().time() - 15_000) }; learnIntroAt = 0 }
-        if (player.fullScreen().isFullScreen && top.isVisible && System.currentTimeMillis() - lastMove > 3_000) {
-            top.isVisible = false; bottom.isVisible = false
+        if (top.isVisible && System.currentTimeMillis() - lastMove > 3_000 && player.status().isPlaying) {
+            top.isVisible = false; bottom.isVisible = false; overlay.repaint()
             component.videoSurfaceComponent().cursor = Toolkit.getDefaultToolkit().createCustomCursor(BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), Point(0, 0), "none")
         }
         if (System.currentTimeMillis() - lastSaved > 15_000) saveNow()
@@ -345,6 +361,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         player.controls().stop()
         if (item != null) { ScreenGuard.stopped(); presenceKey?.let { k -> Thread { runBlocking { state.presence.leave(k) } }.start() } }
         item = null
+        if (overlayOn) { player.overlay().enable(false); overlayOn = false }
         frame.isVisible = false
     }
 
@@ -358,9 +375,9 @@ class PlayerWindow private constructor(private val state: AppState) {
             // Before taking a screen (off the UI thread, a few seconds at most): another Lumen TV device playing on
             // this subscription, or the provider saying every screen is in use.
             Thread {
-                val others = key?.let { runBlocking { state.presence.others(it) } }.orEmpty()
+                val others = key?.let { runBlocking { kotlinx.coroutines.withTimeoutOrNull(1_500) { state.presence.others(it) } } }.orEmpty()
                 val warning = if (others.isNotEmpty()) Presence.warning(others) else if (p.type != "xtream" || ScreenGuard.ownStreamCounted()) null else runCatching {
-                    val http = state.http.newBuilder().callTimeout(4, java.util.concurrent.TimeUnit.SECONDS).build()
+                    val http = state.http.newBuilder().callTimeout(1500, java.util.concurrent.TimeUnit.MILLISECONDS).build()
                     ScreenGuard.warning(XtreamApi(http, XtreamCredentials(p.source, p.username, p.password), p.userAgent.ifBlank { null }).authenticate())
                 }.getOrNull()
                 SwingUtilities.invokeLater {
