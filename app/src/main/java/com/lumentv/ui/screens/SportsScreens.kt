@@ -200,8 +200,9 @@ fun SportsSettingsScreen(vm: MainViewModel) {
             }
         }
         item {
-            Text("Avec au moins une compétition cochée, le panneau ne montre que ses vrais matchs (calendrier public d'ESPN) et les chaînes " +
-                "de votre liste qui les diffusent. Sans rien coché, il lit les matchs dans le guide TV comme avant (rediffusions comprises).",
+            Text("Le panneau Sports montre les vrais matchs de ces compétitions (calendriers publics ESPN et TheSportsDB), avec les chaînes " +
+                "de votre liste qui les diffusent, ou le diffuseur habituel. Ce choix est partagé avec le PC. Les sections ci-dessous servent " +
+                "seulement à filtrer par équipe et à choisir la période.",
                 style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         }
         item { Section("Sports (aucun coché = tous)") }
