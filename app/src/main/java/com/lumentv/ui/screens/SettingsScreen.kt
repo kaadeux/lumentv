@@ -107,6 +107,24 @@ fun SettingsScreen(vm: MainViewModel) {
             }
         }
 
+        if (vm.graph.updater.enabled) {
+            item { Group("Mises à jour") }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TvButton("Rechercher une mise à jour", {
+                        scope.launch {
+                            vm.show("Recherche d'une mise à jour…")
+                            vm.graph.updater.check()
+                                .onSuccess { if (it == null) vm.show("Lumen TV est à jour (${BuildConfig.VERSION_NAME}).") }
+                                .onFailure { vm.show("Impossible de vérifier les mises à jour : ${userMessage(it)}") }
+                        }
+                    }, icon = Icons.Filled.Refresh)
+                    Text("Version ${BuildConfig.VERSION_NAME} · " + if (BuildConfig.CHANNEL == "dev") "canal de test" else "canal famille",
+                        style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+                }
+            }
+        }
+
         item { Group("Lecture") }
         item { SettingRow("Mémoire tampon", if (settings.bufferMode == "stable") "Stable (connexion faible)" else "Normale (démarrage rapide)", {
             scope.launch { vm.graph.settings.set(Keys.buffer, if (settings.bufferMode == "stable") "normal" else "stable") } }) }
@@ -145,17 +163,6 @@ fun SettingsScreen(vm: MainViewModel) {
         item { Group("Stockage") }
         item { SettingRow("Vider le cache des images", null, {
             context.imageLoader.memoryCache?.clear(); context.imageLoader.diskCache?.clear(); vm.show("Cache des images vidé") }) }
-
-        if (vm.graph.updater.enabled) item {
-            SettingRow("Rechercher une mise à jour", "Version ${BuildConfig.VERSION_NAME}", {
-                scope.launch {
-                    vm.show("Recherche d'une mise à jour…")
-                    vm.graph.updater.check()
-                        .onSuccess { if (it == null) vm.show("Lumen TV est à jour (${BuildConfig.VERSION_NAME}).") }
-                        .onFailure { vm.show("Impossible de vérifier les mises à jour : ${userMessage(it)}") }
-                }
-            })
-        }
 
         item { Group("À propos et diagnostic") }
         item {
