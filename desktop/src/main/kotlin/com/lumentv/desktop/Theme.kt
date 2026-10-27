@@ -1,0 +1,80 @@
+package com.lumentv.desktop
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardOptions
+import java.security.MessageDigest
+import java.util.prefs.Preferences
+
+/** Same colours as the TV app. */
+object Pal {
+    val bg = Color(0xFF0E1117)
+    val side = Color(0xFF141821)
+    val panel = Color(0xFF181C25)
+    val panelHigh = Color(0xFF242933)
+    val accent = Color(0xFF4F8CFF)
+    val text = Color(0xFFE6E8EE)
+    val dim = Color(0xFF9AA1AE)
+    val danger = Color(0xFFFF6B6B)
+}
+
+@Composable
+fun LumenTheme(content: @Composable () -> Unit) = MaterialTheme(
+    colorScheme = darkColorScheme(primary = Pal.accent, onPrimary = Color.White, primaryContainer = Pal.accent, onPrimaryContainer = Color.White,
+        secondaryContainer = Pal.accent.copy(alpha = 0.3f), onSecondaryContainer = Pal.text, outline = Pal.panelHigh, background = Pal.bg, surface = Pal.panel, onSurface = Pal.text, onBackground = Pal.text,
+        surfaceVariant = Pal.panelHigh, onSurfaceVariant = Pal.dim, error = Pal.danger),
+) { Box(Modifier.fillMaxSize().background(Pal.bg)) { content() } }
+
+/** Family access code, as on the TV: asked once per Windows account, only its hash is in the app. */
+object Access {
+    private val prefs = Preferences.userRoot().node("lumentv")
+    private fun hash(code: String) = MessageDigest.getInstance("SHA-256").digest("lumen-access:${code.trim()}".toByteArray()).joinToString("") { "%02x".format(it) }
+    fun isUnlocked() = BuildInfo.ACCESS_HASH.isEmpty() || prefs.get("unlocked", "") == BuildInfo.ACCESS_HASH
+    fun unlock(code: String): Boolean {
+        if (hash(code) != BuildInfo.ACCESS_HASH) return false
+        prefs.put("unlocked", BuildInfo.ACCESS_HASH); return true
+    }
+}
+
+@Composable
+fun AccessScreen(onUnlocked: () -> Unit) {
+    var code by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(Modifier.width(420.dp).clip(RoundedCornerShape(16.dp)).background(Pal.panel).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Lumen TV", style = MaterialTheme.typography.headlineSmall, color = Pal.text)
+            Text("Application réservée à la famille. Entrez le code d'accès à 6 chiffres.", color = Pal.dim)
+            OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6); error = false }, singleLine = true, label = { Text("Code d'accès") },
+                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
+            if (error) Text("Code incorrect", color = Pal.danger)
+            Spacer(Modifier.height(4.dp))
+            Button({ if (Access.unlock(code)) onUnlocked() else error = true }, enabled = code.length == 6) { Text("Valider") }
+        }
+    }
+}

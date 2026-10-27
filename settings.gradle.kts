@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "LumenTV"
-include(":app", ":shared")
+include(":app", ":shared", ":desktop")
