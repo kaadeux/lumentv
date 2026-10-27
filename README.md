@@ -251,3 +251,18 @@ git push
 git checkout dev                          # retour sur la branche de test
 ```
 Chaque version publiée a un tag `vX.Y.Z` (ou `vX.Y.Z-dev`) qui pointe sur son commit.
+
+## Profil en ligne et application Windows
+
+- **Serveur de profils** : `sync-server/` (Cloudflare Worker + base D1, offre gratuite), en ligne sur
+  `https://lumentv-sync.lumentv-sync.workers.dev`. Il ne stocke qu'un bloc chiffré par profil : nom + phrase secrète
+  → clés dérivées sur l'appareil (PBKDF2 200 000 tours), contenu en AES-256-GCM. Le serveur garde seulement
+  l'empreinte du jeton d'accès. Redéployer : `cd sync-server` puis `npx wrangler deploy`.
+- **Contenu synchronisé** : playlists (avec identifiants), favoris, historique et positions de reprise, réglages
+  partagés (langues, sous-titres, épisode suivant, sports). Fusion élément par élément, la modification la plus
+  récente l'emporte ; les suppressions se propagent.
+- **TV** : Paramètres → Profil en ligne. **PC** : Paramètres → Profil en ligne. Même nom, même phrase secrète.
+- **Application Windows** (`desktop/`, Compose Desktop + moteur VLC 3.0.21 intégré) :
+  `desktop\get-vlc.ps1` une fois (télécharge et vérifie VLC), puis `.\gradlew :desktop:run` pour la lancer,
+  `.\gradlew :desktop:packageMsi` pour l'installateur (`desktop\build\compose\binaries\main\msi`).
+- `local.properties` : `lumen.syncUrl` en plus des réglages déjà décrits.
