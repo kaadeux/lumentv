@@ -201,12 +201,24 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
     var nextDismissed by remember(vm.subtitle) { mutableStateOf(false) }
     var learnIntroAt by remember { mutableLongStateOf(0L) }
     val introEnd = seriesKey?.let { markers.introEnd(it) } ?: 0L
-    val showSkip = seriesKey != null && !skipped && state.playing && state.error == null &&
-        position in 3_000L until (if (introEnd > 0) introEnd - 2_000 else SeriesMarkers.DEFAULT_INTRO_WINDOW)
+    var skippedRecap by remember(vm.subtitle) { mutableStateOf(false) }
+    val seg = vm.segments?.takeIf { it.known }
+    // Known segments (TheIntroDB): two distinct buttons, each only while its part plays (recap, a scene, then the intro).
+    val inRecap = seg?.recap?.let { position in it && it.last - position > 3_000 } == true && !skippedRecap
+    val inIntro = seg?.intro?.let { position in (it.first - 3_000)..it.last && it.last - position > 3_000 } == true && !skipped
+    val showSkip = seriesKey != null && state.playing && state.error == null && (if (seg != null) inRecap || inIntro
+        else !skipped && position in 3_000L until (if (introEnd > 0) introEnd - 2_000 else SeriesMarkers.DEFAULT_INTRO_WINDOW))
+    val skipLabel = when { seg == null -> "Passer le récap / l'intro"; inRecap -> "Passer le récap"; else -> "Passer l'intro" }
     val credits = seriesKey?.let { markers.creditsLength(it) }?.takeIf { it > 0 } ?: SeriesMarkers.defaultCredits(duration)
     val remaining = duration - position
-    val showNext = seriesKey != null && vm.nextEpisode != null && !nextDismissed && duration > 120_000 && remaining in 1..credits
+    val creditsStart = vm.segments?.credits?.first?.takeIf { it in 60_000 until duration }
+    val showNext = seriesKey != null && vm.nextEpisode != null && !nextDismissed && duration > 120_000 &&
+        (if (creditsStart != null) position >= creditsStart && remaining > 0 else remaining in 1..credits)
     fun skipIntro() {
+        if (seg != null) {
+            if (inRecap) { skippedRecap = true; c.player.seekTo(seg.recap!!.last + 1) } else if (inIntro) { skipped = true; c.player.seekTo(seg.intro!!.last + 1) }
+            return
+        }
         skipped = true
         c.player.seekTo(if (introEnd > 0) introEnd else position + SeriesMarkers.DEFAULT_SKIP)
         // Whatever the viewer corrects with Left / Right in the next 15 s becomes this series' intro end.
@@ -361,7 +373,7 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
                             modifier = Modifier.padding(top = 6.dp))
                     }
                 } else {
-                    Text("⏭  Passer le récap / l'intro   (OK)", style = MaterialTheme.typography.titleMedium, color = Palette.OnFocus,
+                    Text("⏭  $skipLabel   (OK)", style = MaterialTheme.typography.titleMedium, color = Palette.OnFocus,
                         modifier = Modifier.clip(RoundedCornerShape(24.dp)).background(Color.White).padding(horizontal = 22.dp, vertical = 12.dp))
                 }
             }

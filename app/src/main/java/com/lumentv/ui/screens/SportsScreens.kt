@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,6 +68,8 @@ fun SportsScreen(vm: MainViewModel) {
     val epgVersion by vm.graph.epg.version.collectAsStateWithLifecycle()
     val p = active ?: return EmptyState("Aucune playlist", "")
     val prefs = SportPrefs.of(settings)
+    // Same system as the PC: the official calendar.
+    return OfficialSports(vm, p.id, prefs)
     var tick by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(60_000); tick++ } }
     val events by produceState<List<SportEvent>?>(null, p.id, prefs, epgVersion, tick) { value = vm.graph.sports.events(p.id, prefs) }
@@ -255,3 +258,82 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
     }
 }
+
+/**
+ * Official calendar (same as the PC): live games first with their score, then by day; each with team logos and the
+ * channels of the playlist that show it, or the usual broadcaster in France when none announces it yet.
+ */
+@Composable
+private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
+    val context = LocalContext.current
+    var tick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); tick++ } }
+    val games by produceState<List<com.lumentv.data.sports.SportsRepository.Game>?>(null, pid, prefs, tick) {
+        value = if (prefs.leagues.isEmpty()) emptyList() else runCatching { vm.graph.sports.games(pid, prefs) }.getOrDefault(emptyList())
+    }
+    var open by remember { mutableStateOf<com.lumentv.data.sports.SportsRepository.Game?>(null) }
+    Column(Modifier.fillMaxSize()) {
+        ScreenTitle("Sports") { TvButton("Mes compétitions", { vm.open(Screen.SportsSettings) }) }
+        Text(if (prefs.leagues.isEmpty()) "Choisissez vos compétitions (Ligue 1, Top 14, Pro D2…) dans « Mes compétitions »."
+            else "Matchs en cours et à venir du calendrier officiel (" + prefs.leagues.mapNotNull { com.lumentv.data.sports.FixtureClient.league(it)?.label }.joinToString(", ") +
+                "), sans les rediffusions.", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 2, modifier = Modifier.padding(bottom = 10.dp))
+        val list = games
+        when {
+            prefs.leagues.isEmpty() -> EmptyState("Aucune compétition choisie", "Ouvrez « Mes compétitions » et cochez celles que vous suivez. Le choix est partagé avec le PC.")
+            list == null -> Loading("Recherche des matchs…")
+            list.isEmpty() -> EmptyState("Aucun match", "Pas de match en cours ni à venir sur ${prefs.days} jour(s) dans ces compétitions.")
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxSize()) {
+                list.groupBy { if (it.fixture.live) "🔴 En direct" else dayLabel(it.fixture.start) }.forEach { (day, gs) ->
+                    item(key = "h$day") { DayHeader(day) }
+                    items(gs, key = { it.fixture.id }) { g ->
+                        GameRow(g) {
+                            when (g.channels.size) {
+                                0 -> vm.show(listOfNotNull(g.fixture.usualBroadcaster, "aucune chaîne de votre liste ne l'annonce encore").joinToString(" · ").replaceFirstChar { it.uppercase() })
+                                1 -> PlayerLauncher.live(context, g.channels[0].ch.id, Groups.ALL)
+                                else -> open = g
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    open?.let { g ->
+        OptionsDialog(g.fixture.label, g.channels.map { row -> MenuOption(row.ch.name) { PlayerLauncher.live(context, row.ch.id, Groups.ALL) } },
+            onDismiss = { open = null }, subtitle = g.fixture.league.label + " · choisissez une chaîne")
+    }
+}
+
+@Composable
+private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: () -> Unit) {
+    val f = g.fixture
+    FocusSurface(onClick, Modifier.fillMaxWidth(), focusedScale = 1.01f) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.width(120.dp)) {
+                if (f.live) Badge("EN DIRECT", Palette.Danger)
+                else Text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start)), style = MaterialTheme.typography.titleLarge)
+                Text(f.league.label, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+            }
+            if (f.home != null && f.away != null) {
+                TeamSide(f.home!!, Modifier.weight(1f), end = true)
+                Text(if (f.live && f.homeScore != null) "${f.homeScore} – ${f.awayScore}" else "vs", style = MaterialTheme.typography.titleLarge,
+                    color = if (f.live) Palette.Text else Palette.TextDim, modifier = Modifier.padding(horizontal = 18.dp))
+                TeamSide(f.away!!, Modifier.weight(1f), end = false)
+            } else Text(f.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(2f))
+            Column(Modifier.width(230.dp), horizontalAlignment = Alignment.End) {
+                if (g.channels.isNotEmpty()) {
+                    Text(g.channels.first().ch.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (g.channels.size > 1) Text("+ ${g.channels.size - 1} autre(s) chaîne(s)", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                } else Text(f.usualBroadcaster ?: "Chaîne inconnue", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 2)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TeamSide(t: com.lumentv.data.sports.Team, modifier: Modifier, end: Boolean) =
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = if (end) Arrangement.End else Arrangement.Start) {
+        if (end) Text(t.short ?: t.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 10.dp))
+        coil.compose.AsyncImage(t.logo, null, Modifier.size(36.dp))
+        if (!end) Text(t.short ?: t.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 10.dp))
+    }

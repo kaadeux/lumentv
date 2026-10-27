@@ -1,5 +1,6 @@
 package com.lumentv.desktop
 
+import com.lumentv.data.Segments
 import com.lumentv.data.xtream.Presence
 import com.lumentv.data.xtream.ScreenGuard
 import com.lumentv.data.xtream.XtreamApi

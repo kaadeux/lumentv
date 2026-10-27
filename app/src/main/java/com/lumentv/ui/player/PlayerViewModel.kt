@@ -137,9 +137,15 @@ class PlayerViewModel(val graph: AppGraph) : ViewModel() {
         return if (p.type == PlaylistType.XTREAM) graph.playlists.loadXtreamEpisodes(p, sUid, s.s.seriesId) else emptyList()
     }
 
+    /** Recap / intro / credits of the current episode (TheIntroDB), null when unknown. */
+    var segments by mutableStateOf<com.lumentv.data.Segments?>(null)
+        private set
+
     private suspend fun setEpisode(e: EpisodeEntity) {
         uid = e.uid
         val series = graph.library.seriesByUid(playlistId, e.seriesUid)
+        segments = null
+        series?.s?.tmdb?.let { tmdb -> viewModelScope.launch { val s = graph.introDb.segments(tmdb, e.season, e.episode); if (uid == e.uid) segments = s } }
         title = series?.s?.name ?: e.title
         subtitle = "S${e.season} E${e.episode} · ${e.title}"
         image = e.image ?: series?.s?.cover

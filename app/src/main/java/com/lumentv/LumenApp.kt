@@ -54,6 +54,7 @@ class AppGraph(app: Application) {
             p.getString("id", null) ?: java.util.UUID.randomUUID().toString().also { p.edit().putString("id", it).apply() }
         },
         android.provider.Settings.Global.getString(app.contentResolver, "device_name") ?: android.os.Build.MODEL)
+    val introDb = com.lumentv.data.IntroDb(http)
     val profile = com.lumentv.sync.ProfileManager(app, db, settings, playlists, epg, library, http, appScope)
 }
 
@@ -71,6 +72,10 @@ class LumenApp : Application(), ImageLoaderFactory {
             graph.transfers.resumePending()
             val s = graph.settings.current()
             (s.activePlaylistId.takeIf { it > 0 } ?: graph.playlists.all().firstOrNull()?.id)?.let { graph.sports.prewarm(it) }
+            // Lists saved before v4 lack the series' TMDB ids (recap / intro buttons): reload them once.
+            graph.playlists.all().filter { it.type == com.lumentv.data.db.PlaylistType.XTREAM && it.seriesCount > 0 }.forEach { p ->
+                if (graph.db.vod().seriesWithTmdb(p.id) == 0) graph.playlists.refresh(p.id)
+            }
         }
     }
 

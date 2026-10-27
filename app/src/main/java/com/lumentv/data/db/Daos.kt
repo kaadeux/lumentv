@@ -103,6 +103,9 @@ interface ChannelDao {
 
 @Dao
 interface VodDao {
+    @Query("SELECT COUNT(*) FROM series WHERE playlistId = :pid AND tmdb IS NOT NULL")
+    suspend fun seriesWithTmdb(pid: Long): Int
+
     @Query("SELECT category, COUNT(*) AS count, MIN(number) AS firstNumber FROM movies WHERE playlistId = :pid GROUP BY category ORDER BY firstNumber")
     suspend fun movieCategories(pid: Long): List<CategoryCount>
 

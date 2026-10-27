@@ -17,8 +17,12 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
-/** A competition of the official calendar (ESPN's free scoreboard, no key). [sport] is a [SportsCatalog] id. */
-data class League(val id: String, val sport: String, val label: String, val path: String)
+/**
+ * A competition of the official calendar. [path] is ESPN's (free scoreboard, no key) or, when [sportsDb], a
+ * TheSportsDB league id (free key) for what ESPN lacks. [sport] is a [SportsCatalog] id. [tvFr]: usual broadcaster in
+ * France, shown when no channel of the playlist announces a game.
+ */
+data class League(val id: String, val sport: String, val label: String, val path: String, val tvFr: String? = null, val sportsDb: Boolean = false)
 
 data class Team(val name: String, val short: String?, val abbr: String?, val logo: String?) {
     /** Names a guide may use for this team, normalised: "Paris Saint-Germain", "PSG", "Le Havre AC" → "le havre", "havre". */
@@ -47,6 +51,8 @@ data class Fixture(
     val homeScore: String? = null, val awayScore: String? = null,
 ) {
     val live get() = state == "in"
+    /** "Habituellement sur Canal+", or null when unknown. */
+    val usualBroadcaster get() = league.tvFr?.let { "Habituellement sur $it" }
     val label get() = if (home != null && away != null) "${home.short ?: home.name} – ${away.short ?: away.name}" else name
 }
 
@@ -61,11 +67,12 @@ class FixtureClient(http: OkHttpClient) {
 
     suspend fun fixtures(leagues: Collection<League>, days: Int): List<Fixture> = withContext(Dispatchers.IO) {
         val day = SimpleDateFormat("yyyyMMdd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+        val dash = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
         val now = System.currentTimeMillis()
         // ESPN days are US days: start one day back so tonight's European games are not missed.
-        val dates = (-1..days.coerceIn(1, 7)).map { day.format(now + it * 86_400_000L) }
+        val dates = (-1..days.coerceIn(1, 7)).map { now + it * 86_400_000L }
         coroutineScope {
-            leagues.flatMap { l -> dates.map { d -> async { day(l, d) } } }.awaitAll().flatten()
+            leagues.flatMap { l -> dates.map { d -> async { day(l, if (l.sportsDb) dash.format(d) else day.format(d)) } } }.awaitAll().flatten()
         }.distinctBy { it.id }.filter { it.state == "in" || (it.state == "pre" && it.start > now - 3 * 3_600_000L) }
             .sortedWith(compareBy({ !it.live }, { it.start }))
     }
@@ -74,8 +81,11 @@ class FixtureClient(http: OkHttpClient) {
         val key = "${l.path}/$date"
         synchronized(cache) { cache[key]?.let { (t, list) -> if (System.currentTimeMillis() - t < 5 * 60_000) return list } }
         val list = runCatching {
-            val req = Request.Builder().url("https://site.api.espn.com/apis/site/v2/sports/${l.path}/scoreboard?dates=$date").build()
-            http.newCall(req).execute().use { r -> if (!r.isSuccessful) emptyList() else parse(l, r.body!!.string()) }
+            val url = if (l.sportsDb) "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=$date&l=${l.path}"
+                else "https://site.api.espn.com/apis/site/v2/sports/${l.path}/scoreboard?dates=$date"
+            http.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                if (!r.isSuccessful) emptyList() else if (l.sportsDb) parseSportsDb(l, r.body!!.string()) else parse(l, r.body!!.string())
+            }
         }.getOrDefault(emptyList())
         synchronized(cache) { cache[key] = System.currentTimeMillis() to list }
         return list
@@ -107,25 +117,47 @@ class FixtureClient(http: OkHttpClient) {
         }
     }
 
-    private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+    /** TheSportsDB day list: no live state, so a game is "live" from kick-off for two hours unless marked finished. */
+    private fun parseSportsDb(l: League, body: String): List<Fixture> {
+        val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+        val events = (json.parseToJsonElement(body) as? JsonObject)?.get("events") as? JsonArray ?: return emptyList()
+        val now = System.currentTimeMillis()
+        return events.mapNotNull { e ->
+            val o = e as? JsonObject ?: return@mapNotNull null
+            val start = o.s("strTimestamp")?.let { runCatching { iso.parse(it.take(19))!!.time }.getOrNull() } ?: return@mapNotNull null
+            val status = o.s("strStatus").orEmpty()
+            if (status in setOf("FT", "AET", "AOT", "Match Finished", "CANC", "PST") || now > start + 2 * 3_600_000L) return@mapNotNull null
+            val live = now >= start
+            Fixture(
+                id = "sdb" + (o.s("idEvent") ?: return@mapNotNull null), league = l, start = start, state = if (live) "in" else "pre", detail = "",
+                home = o.s("strHomeTeam")?.let { Team(it, null, null, o.s("strHomeTeamBadge")) },
+                away = o.s("strAwayTeam")?.let { Team(it, null, null, o.s("strAwayTeamBadge")) },
+                name = o.s("strEvent").orEmpty(),
+                homeScore = o.s("intHomeScore")?.takeIf { live }, awayScore = o.s("intAwayScore")?.takeIf { live },
+            )
+        }
+    }
+
+    private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != "null" }
 
     companion object {
         val leagues = listOf(
-            League("fra1", "football", "Ligue 1", "soccer/fra.1"),
-            League("fra2", "football", "Ligue 2", "soccer/fra.2"),
-            League("cdf", "football", "Coupe de France", "soccer/fra.coupe_de_france"),
-            League("ucl", "football", "Ligue des champions", "soccer/uefa.champions"),
-            League("uel", "football", "Ligue Europa", "soccer/uefa.europa"),
-            League("uecl", "football", "Ligue Conférence", "soccer/uefa.europa.conf"),
-            League("eng1", "football", "Premier League", "soccer/eng.1"),
-            League("esp1", "football", "Liga", "soccer/esp.1"),
-            League("ita1", "football", "Serie A", "soccer/ita.1"),
-            League("ger1", "football", "Bundesliga", "soccer/ger.1"),
-            League("top14", "rugby", "Top 14", "rugby/270559"),
-            League("rcc", "rugby", "Champions Cup (rugby)", "rugby/271937"),
-            League("6n", "rugby", "Six Nations", "rugby/180659"),
-            League("nba", "basket", "NBA", "basketball/nba"),
-            League("f1", "moteur", "Formule 1", "racing/f1"),
+            League("fra1", "football", "Ligue 1", "soccer/fra.1", "Ligue 1+ ou beIN Sports"),
+            League("fra2", "football", "Ligue 2", "soccer/fra.2", "beIN Sports"),
+            League("cdf", "football", "Coupe de France", "soccer/fra.coupe_de_france", "France Télévisions ou beIN Sports"),
+            League("ucl", "football", "Ligue des champions", "soccer/uefa.champions", "Canal+"),
+            League("uel", "football", "Ligue Europa", "soccer/uefa.europa", "Canal+"),
+            League("uecl", "football", "Ligue Conférence", "soccer/uefa.europa.conf", "Canal+"),
+            League("eng1", "football", "Premier League", "soccer/eng.1", "Canal+"),
+            League("esp1", "football", "Liga", "soccer/esp.1", "beIN Sports"),
+            League("ita1", "football", "Serie A", "soccer/ita.1", "beIN Sports"),
+            League("ger1", "football", "Bundesliga", "soccer/ger.1", "beIN Sports"),
+            League("top14", "rugby", "Top 14", "rugby/270559", "Canal+"),
+            League("prod2", "rugby", "Pro D2", "5172", "Canal+", sportsDb = true),
+            League("rcc", "rugby", "Champions Cup (rugby)", "rugby/271937", "France Télévisions ou beIN Sports"),
+            League("6n", "rugby", "Six Nations", "rugby/180659", "France 2"),
+            League("nba", "basket", "NBA", "basketball/nba", "beIN Sports"),
+            League("f1", "moteur", "Formule 1", "racing/f1", "Canal+"),
             League("nfl", "nfl", "NFL", "football/nfl"),
             League("nhl", "hockey", "NHL", "hockey/nhl"),
             League("ufc", "combat", "UFC", "mma/ufc"),

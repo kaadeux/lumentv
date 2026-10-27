@@ -137,6 +137,25 @@ class SportsRepository(
 
     private var cache: Triple<Triple<Long, SportPrefs, Int>, Long, List<SportEvent>>? = null
 
+    /** A game of the official calendar and the channels of the playlist that show it (possibly none yet). */
+    data class Game(val fixture: Fixture, val channels: List<ChannelRow>)
+
+    /** Official calendar, like the PC: every live and upcoming game of the chosen competitions, with its channels. */
+    suspend fun games(pid: Long, prefs: SportPrefs): List<Game> = withContext(Dispatchers.IO) {
+        val teams = prefs.teams.map { normalize(it) }.filter { it.isNotBlank() }
+        val list = fixtures.fixtures(prefs.leagues.mapNotNull { FixtureClient.league(it) }, prefs.days)
+            .filter { f -> teams.isEmpty() || listOfNotNull(f.home, f.away).any { t -> t.aliases.any { a -> teams.any { a.contains(it) || it.contains(a) } } } }
+        if (list.isEmpty()) return@withContext emptyList()
+        val progs = candidates(pid, list.flatMap { FixtureMatcher.searchWords(it) }, list.minOf { it.start } - FixtureMatcher.BEFORE_MS,
+            list.maxOf { it.start } + FixtureMatcher.AFTER_MS)
+        val index = channelsByKey(pid)
+        val named = db.channels().withDates(pid).filter { !it.isHidden }.mapNotNull { r -> EventChannelParser.parse(r.ch.name)?.let { (l, t) -> Triple(r, normalize(l), t) } }
+        list.map { f ->
+            Game(f, (progs.filter { FixtureMatcher.matches(f, it.titleNorm, it.start) }.flatMap { index[it.epgKey].orEmpty() } +
+                named.filter { (_, l, t) -> FixtureMatcher.matches(f, l, t, channelName = true) }.map { it.first }).distinctBy { it.ch.id })
+        }
+    }
+
     /**
      * Official calendar: the real live and upcoming games of the chosen competitions (ESPN), each with the channels of
      * the playlist whose guide shows it around kick-off, or whose name announces it. Replays never qualify.

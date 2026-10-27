@@ -130,7 +130,8 @@ private fun GameCard(state: AppState, g: Game) {
                 fontSize = if (f.live) 22.sp else 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 18.dp))
             TeamCell(f.away!!, Modifier.weight(1f), end = true)
         } else Text(f.name, color = Pal.text, fontWeight = FontWeight.SemiBold)
-        if (g.channels.isEmpty()) Text("Aucune chaîne de votre liste ne l'annonce dans son guide.", color = Pal.dim, fontSize = 12.sp)
+        if (g.channels.isEmpty()) Text(listOfNotNull(f.usualBroadcaster, "aucune chaîne de votre liste ne l'annonce encore").joinToString(" · ")
+            .replaceFirstChar { it.uppercase() }, color = Pal.dim, fontSize = 12.sp)
         else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             g.channels.take(8).forEach { ch -> Pill(ch.name, { state.playChannel(ch) }, Icons.Filled.PlayArrow, primary = f.live) }
         }

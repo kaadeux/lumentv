@@ -15,6 +15,7 @@ import com.lumentv.data.xtream.XSeries
 import com.lumentv.data.xtream.XtreamApi
 import com.lumentv.data.xtream.XtreamCredentials
 import com.lumentv.sync.SyncPlaylist
+import com.lumentv.data.Segments
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -167,31 +168,10 @@ class Library(private val http: OkHttpClient) {
     fun movieUrl(p: SyncPlaylist, m: Mv) = if (p.type == "xtream") xtream(p).movieUrl(m.streamId, m.ext) else m.url
     fun episodeUrl(p: SyncPlaylist, e: Ep) = if (p.type == "xtream" && e.streamId > 0) xtream(p).episodeUrl(e.streamId, e.ext) else e.url
 
-    private val segmentCache = HashMap<String, Segments>()
+    private val introDb = com.lumentv.data.IntroDb(http)
 
-    /**
-     * Recap, intro and credits of an episode from TheIntroDB (free community database, keyed by TMDB id), so the
-     * player can offer "Passer le récap" and "Passer l'intro" at the right moments. One small request per episode.
-     */
-    suspend fun segments(tmdb: String, season: Int, episode: Int): Segments? = withContext(Dispatchers.IO) {
-        val key = "$tmdb/$season/$episode"
-        segmentCache[key]?.let { return@withContext it }
-        runCatching {
-            val req = Request.Builder().url("https://api.theintrodb.org/v3/media?tmdb_id=$tmdb&season=$season&episode=$episode").build()
-            http.newBuilder().callTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build().newCall(req).execute().use { r ->
-                if (!r.isSuccessful) return@runCatching null
-                val o = kotlinx.serialization.json.Json.parseToJsonElement(r.body!!.string()) as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
-                // A recap or intro needs a real end (some entries have none, or are empty: 0 to 0); credits may run to the end.
-                fun seg(name: String, openEnd: Boolean): LongRange? {
-                    val first = (o[name] as? kotlinx.serialization.json.JsonArray)?.firstOrNull() as? kotlinx.serialization.json.JsonObject ?: return null
-                    val start = (first["start_ms"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: return null
-                    val end = (first["end_ms"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: if (openEnd) Long.MAX_VALUE else return null
-                    return if (end - start >= 5_000) start until end else null
-                }
-                Segments(seg("recap", false), seg("intro", false), seg("credits", true)).also { segmentCache[key] = it }
-            }
-        }.getOrNull()
-    }
+    /** Recap / intro / credits of an episode (TheIntroDB). */
+    suspend fun segments(tmdb: String, season: Int, episode: Int): Segments? = introDb.segments(tmdb, season, episode)
 
     /** Programmes from 6 h ago to 7 days ahead (what the guide offers), by channel uid. */
     suspend fun guide(c: Catalog, offsetMinutes: Int, userAgent: String): Map<String, List<Prog>> = withContext(Dispatchers.IO) {
@@ -226,5 +206,3 @@ class Library(private val http: OkHttpClient) {
     }
 }
 
-/** Where the recap, the intro and the credits are in an episode (ms); null when unknown. */
-data class Segments(val recap: LongRange?, val intro: LongRange?, val credits: LongRange?)

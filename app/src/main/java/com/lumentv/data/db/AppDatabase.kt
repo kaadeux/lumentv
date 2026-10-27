@@ -12,11 +12,12 @@ import androidx.room.RoomDatabase
         PrefEntity::class, ProgramEntity::class, EpgChannelEntity::class, HistoryEntity::class,
         TransferEntity::class, ReminderEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
     // v2 only adds tables: Room migrates by itself and keeps playlists, favourites and history.
     // v3 adds an index on programme start times (sports panel). Both migrations keep every row.
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    // v4 adds the series' TMDB id (a nullable column).
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun playlists(): PlaylistDao

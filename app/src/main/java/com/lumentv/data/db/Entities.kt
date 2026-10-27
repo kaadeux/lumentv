@@ -100,6 +100,8 @@ data class SeriesEntity(
     val rating: String? = null,
     val year: String? = null,
     val number: Int,
+    /** TMDB id given by the provider, to find recap / intro / credits (TheIntroDB). */
+    val tmdb: String? = null,
 )
 
 /** Episodes: stored from the M3U, or fetched on demand from Xtream (get_series_info) and cached. */
