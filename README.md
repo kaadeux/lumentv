@@ -211,3 +211,15 @@ sur la clé de debug (utile pour développer, mais un tel APK ne peut pas mettre
   par-dessus les copies existantes (il faudrait désinstaller et tout reconfigurer).
 - Ne la mettez jamais sur GitHub (`*.jks` et `keystore.properties` sont dans `.gitignore`).
 - Augmentez `versionCode` dans `app/build.gradle.kts` à chaque version publiée.
+
+## Publication et mises à jour (famille)
+
+- Code source : dépôt **privé** `kaadeux/lumentv`. Versions : dépôt **public** `kaadeux/lumentv-releases`
+  (uniquement `LumenTV.apk` + `version.json`), cloné dans `E:\TV\lumentv-releases`.
+- `local.properties` (jamais commité) contient : `lumen.signing`, `lumen.accessCode` (code familial à 6 chiffres,
+  seule son empreinte est dans l'APK), `lumen.updateUrl`, `lumen.releasesDir`.
+- Publier : augmenter `versionCode` / `versionName` dans `app/build.gradle.kts`, puis
+  `.\publish.ps1 -Notes "Ce qui change"`. Les TV proposent la mise à jour au démarrage suivant (jusqu'à 5 min de cache GitHub).
+- Première installation (Downloader) : `https://raw.githubusercontent.com/kaadeux/lumentv-releases/main/LumenTV.apk`.
+  À la première mise à jour, Android demande d'autoriser « Lumen TV » dans « Installation d'applis inconnues ».
+- Changer `lumen.accessCode` puis publier redemande le code sur tous les appareils.
