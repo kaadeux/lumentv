@@ -75,9 +75,10 @@ fun MiniPlayerHost(graph: AppGraph) {
             if (controller != null) return
             val c = PlayerController(context, graph.streamHttp, kotlinx.coroutines.runBlocking { graph.settings.current() })
             controller = c
+            com.lumentv.data.xtream.ScreenGuard.started()
             scope.launch { runCatching { c.play(graph.resolver.channel(r.ch)) } }
         }
-        fun release() { controller?.release(); controller = null }
+        fun release() { if (controller != null) com.lumentv.data.xtream.ScreenGuard.stopped(); controller?.release(); controller = null }
         val obs = LifecycleEventObserver { _, e ->
             if (e == Lifecycle.Event.ON_START) create()
             if (e == Lifecycle.Event.ON_STOP) release()

@@ -263,7 +263,8 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         val http = generateSequence(e.cause) { it.cause }.filterIsInstance<HttpDataSource.InvalidResponseCodeException>().firstOrNull()
         return when {
             http != null -> when (http.responseCode) {
-                401, 403 -> "Accès refusé par le fournisseur (HTTP ${http.responseCode}). Abonnement expiré ou trop de connexions ?"
+                401, 403 -> "Accès refusé par le fournisseur (HTTP ${http.responseCode}). Abonnement expiré, ou déjà utilisé sur un autre écran ?"
+                429, 456, 458, 509 -> com.lumentv.data.xtream.ScreenGuard.REFUSED
                 404 -> "Flux introuvable (HTTP 404)."
                 else -> "Le serveur a répondu HTTP ${http.responseCode}."
             }

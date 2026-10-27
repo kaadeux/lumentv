@@ -121,8 +121,9 @@ class PlayerViewModel(val graph: AppGraph) : ViewModel() {
                 }
                 else -> return@launch fail("Contenu inconnu.")
             }
+            checkScreens()
             loaded = true
-            controller?.let { start(it) }
+            if (screenWarning == null) controller?.let { start(it) }
         } catch (t: Throwable) {
             fail(userMessage(t))
         }
@@ -149,10 +150,38 @@ class PlayerViewModel(val graph: AppGraph) : ViewModel() {
 
     private fun fail(message: String) { fatal = message; loaded = true }
 
+    /** Set when every screen of the subscription is already in use; playback waits for the viewer's choice. */
+    var screenWarning by mutableStateOf<String?>(null)
+        private set
+    private var counted = false
+    private var presenceKey: String? = null
+    private var beatJob: Job? = null
+
+    /**
+     * Before taking a screen: is another Lumen TV device playing on this subscription (presence through the sync
+     * server), or does the provider (Xtream) say every screen is in use? The provider is not asked when this device
+     * is the one it counts.
+     */
+    private suspend fun checkScreens() {
+        if (mode == Mode.FILE) return
+        val pid = channel?.ch?.playlistId ?: playlistId
+        val p = graph.playlists.get(pid) ?: return
+        presenceKey = com.lumentv.data.xtream.Presence.key(p.type, com.lumentv.core.SecretBox.decrypt(p.sourceEnc), p.username,
+            com.lumentv.core.SecretBox.decrypt(p.passwordEnc))
+        val others = graph.presence.others(presenceKey!!)
+        if (others.isNotEmpty()) { screenWarning = com.lumentv.data.xtream.Presence.warning(others); return }
+        if (p.type != com.lumentv.data.db.PlaylistType.XTREAM || com.lumentv.data.xtream.ScreenGuard.ownStreamCounted()) return
+        val account = runCatching { kotlinx.coroutines.withTimeout(4_000) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { graph.playlists.xtream(p).authenticate() } } }.getOrNull() ?: return
+        screenWarning = com.lumentv.data.xtream.ScreenGuard.warning(account)
+    }
+
+    /** "Lancer quand même". */
+    fun confirmScreens() { screenWarning = null; controller?.let { start(it) } }
+
     /** Called by the activity in onStart with a fresh player. */
     fun attach(c: PlayerController) {
         controller = c
-        if (loaded && fatal == null) start(c)
+        if (loaded && fatal == null && screenWarning == null) start(c)
     }
 
     /** Called in onStop, before the player is released. */
@@ -160,9 +189,20 @@ class PlayerViewModel(val graph: AppGraph) : ViewModel() {
         controller?.let { saveProgress(it) }
         controller?.let { if (mode != Mode.LIVE) resumeAt = it.player.currentPosition }
         controller = null
+        if (counted) {
+            counted = false
+            com.lumentv.data.xtream.ScreenGuard.stopped()
+            beatJob?.cancel()
+            presenceKey?.let { k -> graph.appScope.launch { graph.presence.leave(k) } }
+        }
     }
 
     private fun start(c: PlayerController) = viewModelScope.launch {
+        if (!counted) {
+            counted = true
+            com.lumentv.data.xtream.ScreenGuard.started()
+            presenceKey?.let { k -> beatJob = viewModelScope.launch { while (true) { graph.presence.beat(k); kotlinx.coroutines.delay(com.lumentv.data.xtream.Presence.BEAT_MS) } } }
+        }
         try {
             when (mode) {
                 Mode.LIVE -> {

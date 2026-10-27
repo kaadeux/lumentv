@@ -7,6 +7,13 @@
 //   PUT    /v1/profile/:id   {baseVersion, data}             -> 200 {version} | 409 {version, data} | 403
 //          (baseVersion 0 creates the profile; a stale baseVersion gets 409 with the current copy to merge with)
 //   DELETE /v1/profile/:id                                   -> 204 | 403
+//
+// Screens: devices playing on the same subscription announce themselves, so another device can warn before taking
+// a second screen. The id is a hash of the subscription computed on the device (it includes the password, so it
+// cannot be guessed); only a random device id, a device name and an expiry are stored.
+//   GET    /v1/presence/:id?device=<own id>   -> 200 {others: [{name, until}]}
+//   PUT    /v1/presence/:id   {device, name, ttl}   -> 204   (heartbeat while playing)
+//   DELETE /v1/presence/:id?device=<own id>   -> 204   (stopped)
 
 const MAX_BYTES = 4 * 1024 * 1024;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -15,6 +22,9 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/" || url.pathname === "/v1/health") return json({ ok: true, service: "lumentv-sync" });
+
+    const pr = url.pathname.match(/^\/v1\/presence\/([0-9a-f]{64})$/);
+    if (pr) return presence(request, env, pr[1]);
 
     const m = url.pathname.match(/^\/v1\/profile\/([0-9a-f]{64})$/);
     if (!m) return json({ error: "not found" }, 404);
@@ -80,4 +90,31 @@ function timingSafeEqual(a, b) {
   let r = 0;
   for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return r === 0;
+}
+
+async function presence(request, env, id) {
+  const url = new URL(request.url);
+  const now = Date.now();
+  if (request.method === "GET") {
+    const device = url.searchParams.get("device") || "";
+    const rows = await env.DB.prepare("SELECT name, until FROM presence WHERE id = ? AND device != ? AND until > ?").bind(id, device, now).all();
+    return json({ others: rows.results || [] });
+  }
+  if (request.method === "PUT") {
+    let b;
+    try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+    const device = String(b.device || "").slice(0, 64), name = String(b.name || "Appareil").slice(0, 60);
+    const ttl = Math.min(Math.max(Number(b.ttl) || 90, 30), 300) * 1000;
+    if (!device) return json({ error: "device" }, 400);
+    await env.DB.prepare("INSERT INTO presence (id, device, name, until) VALUES (?, ?, ?, ?) ON CONFLICT(id, device) DO UPDATE SET name = excluded.name, until = excluded.until")
+      .bind(id, device, name, now + ttl).run();
+    // Housekeeping: forget long-expired entries now and then.
+    if (Math.random() < 0.05) await env.DB.prepare("DELETE FROM presence WHERE until < ?").bind(now - 86400000).run();
+    return new Response(null, { status: 204 });
+  }
+  if (request.method === "DELETE") {
+    await env.DB.prepare("DELETE FROM presence WHERE id = ? AND device = ?").bind(id, url.searchParams.get("device") || "").run();
+    return new Response(null, { status: 204 });
+  }
+  return json({ error: "method" }, 405);
 }

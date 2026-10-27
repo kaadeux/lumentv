@@ -313,6 +313,15 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
             return@Box
         }
 
+        vm.screenWarning?.let { msg ->
+            // "Annuler" and Back leave; "Lancer quand même" clears the warning first, so the dismiss does nothing.
+            OptionsDialog("Un autre écran regarde déjà", listOf(
+                MenuOption("Annuler") { onExit() },
+                MenuOption("Lancer quand même") { vm.confirmScreens() },
+            ), onDismiss = { if (vm.screenWarning != null) onExit() }, subtitle = msg)
+            return@Box
+        }
+
         if (state.error != null) {
             CenterCard(
                 state.error!!,

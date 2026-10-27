@@ -40,6 +40,12 @@ class AppState(private val scope: CoroutineScope) {
     private val prefs = Preferences.userRoot().node("lumentv")
     private val syncLock = Mutex()
 
+    /** Tells the other Lumen TV devices of the same subscription that this PC is playing. */
+    val presence = com.lumentv.data.xtream.Presence(http, BuildInfo.SYNC_URL,
+        prefs.get("device", null) ?: java.util.UUID.randomUUID().toString().also { prefs.put("device", it) },
+        "PC " + (System.getenv("COMPUTERNAME") ?: "Windows"))
+    fun presenceKey(): String? = active?.let { com.lumentv.data.xtream.Presence.key(it.type, it.source, it.username, it.password) }
+
     var doc by mutableStateOf(Store.loadDoc()); private set
     var profileName by mutableStateOf(Store.loadKeys()?.name); private set
     var syncing by mutableStateOf(false); private set

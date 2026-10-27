@@ -24,6 +24,12 @@ import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JFrame
 import javax.swing.JLabel
+import javax.swing.JOptionPane
+import com.lumentv.data.xtream.ScreenGuard
+import com.lumentv.data.xtream.Presence
+import kotlinx.coroutines.runBlocking
+import com.lumentv.data.xtream.XtreamApi
+import com.lumentv.data.xtream.XtreamCredentials
 import javax.swing.JPanel
 import javax.swing.JPopupMenu
 import javax.swing.JSlider
@@ -64,6 +70,8 @@ class PlayerWindow private constructor(private val state: AppState) {
     private var item: PlayItem? = null
     private var dragging = false
     private var lastSaved = 0L
+    private var lastBeat = 0L
+    private var presenceKey: String? = null
 
     init {
         frame.iconImage = javax.imageio.ImageIO.read(PlayerWindow::class.java.getResource("/icon.png"))
@@ -83,7 +91,7 @@ class PlayerWindow private constructor(private val state: AppState) {
             override fun finished(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { onFinished() }
             override fun error(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater {
                 message.foreground = errorColor
-                message.text = "Lecture impossible : le flux ne répond pas ou n'est pas pris en charge."
+                message.text = "Lecture impossible : le flux ne répond pas, ou l'abonnement est déjà utilisé sur un autre écran."
             }
             override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { message.text = ""; applyLanguages() }
         })
@@ -92,6 +100,7 @@ class PlayerWindow private constructor(private val state: AppState) {
 
     fun play(it: PlayItem) {
         saveNow()
+        if (item == null) { ScreenGuard.started(); presenceKey = state.presenceKey(); lastBeat = 0 }
         item = it
         lastSaved = System.currentTimeMillis()
         frame.title = "Lumen TV — " + it.title + (it.subtitle?.let { s -> " · $s" } ?: "")
@@ -170,6 +179,10 @@ class PlayerWindow private constructor(private val state: AppState) {
             skipIntro.isVisible = it.kind == Kind.EPISODE && pos in 3_000..360_000
         } else time.text = if (it.live) "En direct" else ""
         if (System.currentTimeMillis() - lastSaved > 15_000) saveNow()
+        if (System.currentTimeMillis() - lastBeat > Presence.BEAT_MS) {
+            lastBeat = System.currentTimeMillis()
+            presenceKey?.let { k -> Thread { runBlocking { state.presence.beat(k) } }.start() }
+        }
     }
 
     private fun saveNow() {
@@ -218,6 +231,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         saveNow()
         if (player.fullScreen().isFullScreen) player.fullScreen().set(false)
         player.controls().stop()
+        if (item != null) { ScreenGuard.stopped(); presenceKey?.let { k -> Thread { runBlocking { state.presence.leave(k) } }.start() } }
         item = null
         frame.isVisible = false
     }
@@ -225,10 +239,31 @@ class PlayerWindow private constructor(private val state: AppState) {
     companion object {
         private var instance: PlayerWindow? = null
         fun open(state: AppState, item: PlayItem) {
+            if (instance?.item != null) return show(state, item)
+            val p = state.active ?: return show(state, item)
+            val key = state.presenceKey()
+            // Before taking a screen (off the UI thread, a few seconds at most): another Lumen TV device playing on
+            // this subscription, or the provider saying every screen is in use.
+            Thread {
+                val others = key?.let { runBlocking { state.presence.others(it) } }.orEmpty()
+                val warning = if (others.isNotEmpty()) Presence.warning(others) else if (p.type != "xtream" || ScreenGuard.ownStreamCounted()) null else runCatching {
+                    val http = state.http.newBuilder().callTimeout(4, java.util.concurrent.TimeUnit.SECONDS).build()
+                    ScreenGuard.warning(XtreamApi(http, XtreamCredentials(p.source, p.username, p.password), p.userAgent.ifBlank { null }).authenticate())
+                }.getOrNull()
+                SwingUtilities.invokeLater {
+                    if (warning == null) return@invokeLater show(state, item)
+                    val choice = JOptionPane.showOptionDialog(null, "<html><body style='width:360px'>$warning</body></html>", "Un autre écran regarde déjà",
+                        JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, null, arrayOf("Lancer quand même", "Annuler"), "Annuler")
+                    if (choice == 0) show(state, item)
+                }
+            }.start()
+        }
+
+        private fun show(state: AppState, item: PlayItem) {
             val w = instance ?: PlayerWindow(state).also { instance = it }
             w.play(item)
         }
-        fun release() { instance?.let { it.saveNow(); it.component.release() }; instance = null }
+        fun release() { instance?.let { it.close(); it.component.release() }; instance = null }
         private fun fmt(ms: Long): String { val s = ms / 1000; return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60) }
     }
 }

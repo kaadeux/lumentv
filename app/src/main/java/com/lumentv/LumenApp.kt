@@ -48,6 +48,12 @@ class AppGraph(app: Application) {
     /** Channel shown in the in-app mini-player, null when it is closed. */
     val miniPlayer = kotlinx.coroutines.flow.MutableStateFlow<Long?>(null)
     val sports = com.lumentv.data.sports.SportsRepository(db, settings, epg, library)
+    /** Tells the other Lumen TV devices of the same subscription that this one is playing. */
+    val presence = com.lumentv.data.xtream.Presence(http, com.lumentv.BuildConfig.SYNC_URL,
+        app.getSharedPreferences("device", android.content.Context.MODE_PRIVATE).let { p ->
+            p.getString("id", null) ?: java.util.UUID.randomUUID().toString().also { p.edit().putString("id", it).apply() }
+        },
+        android.provider.Settings.Global.getString(app.contentResolver, "device_name") ?: android.os.Build.MODEL)
     val profile = com.lumentv.sync.ProfileManager(app, db, settings, playlists, epg, library, http, appScope)
 }
 
