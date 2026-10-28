@@ -102,7 +102,10 @@ class PlayerWindow private constructor(private val state: AppState) {
     private val playPause = Bubble(Ui.PAUSE, tooltip = "Pause / lecture (Espace)", size = 56, primary = true) { togglePause() }
     private val fullBtn = Bubble(Ui.FULL, tooltip = "Plein écran (F)") { toggleFullScreen() }
     private val muteBtn = Bubble(Ui.VOLUME, tooltip = "Muet (M)", size = 36) { toggleMute() }
-    private val volume = VolumeBar { v -> player.audio().setVolume(v); muteBtn.set(icon = if (v == 0) Ui.MUTE else Ui.VOLUME) }
+    // The volume is kept between sessions and applied to every new video: VLC would otherwise play at its own level,
+    // whatever the bar shows.
+    private val volumePrefs = java.util.prefs.Preferences.userRoot().node("lumentv")
+    private val volume = VolumeBar { v -> setVolume(v) }.apply { value = volumePrefs.getInt("volume", 100).coerceIn(0, 100) }
     private val speedBtn = Bubble(Ui.SPEED, "1.0x", "Vitesse de lecture") { cycleSpeed() }
     private val back10 = Bubble(Ui.BACK10, tooltip = "Reculer de 10 s (←)") { skip(-10_000) }
     private val fwd30 = Bubble(Ui.FWD30, tooltip = "Avancer de 30 s") { skip(30_000) }
@@ -159,7 +162,7 @@ class PlayerWindow private constructor(private val state: AppState) {
                 message.text = "Lecture impossible : le flux ne répond pas, ou l'abonnement est déjà utilisé sur un autre écran."
             }
             override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) { if (newCount > 0) trace("image") }
-            override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { message.foreground = Ui.dim; message.text = "";playPause.set(icon = Ui.PAUSE); applyLanguages(); describeVideo() }
+            override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { player.audio().setVolume(volume.value); message.foreground = Ui.dim; message.text = "";playPause.set(icon = Ui.PAUSE); applyLanguages(); describeVideo() }
             override fun paused(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { playPause.set(icon = Ui.PLAY) }
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = SwingUtilities.invokeLater {
                 if (message.foreground == Ui.danger) return@invokeLater
@@ -285,7 +288,10 @@ class PlayerWindow private constructor(private val state: AppState) {
         player.media().play(it.url, *(if (it.userAgent.isNotBlank()) arrayOf(":http-user-agent=${it.userAgent}") else emptyArray()))
         refreshActions()
     }
-    private fun setVolume(v: Int) { volume.value = v.coerceIn(0, 100); volume.repaint(); player.audio().setVolume(volume.value); muteBtn.set(icon = if (volume.value == 0) Ui.MUTE else Ui.VOLUME) }
+    private fun setVolume(v: Int) {
+        volume.value = v.coerceIn(0, 100); volume.repaint(); player.audio().setVolume(volume.value); volumePrefs.putInt("volume", volume.value)
+        muteBtn.set(icon = if (volume.value == 0) Ui.MUTE else Ui.VOLUME)
+    }
     private fun toggleMute() { player.audio().mute(); muteBtn.set(icon = if (player.audio().isMute) Ui.MUTE else Ui.VOLUME) }
     private fun cycleSpeed() { speedIndex = (speedIndex + 1) % speeds.size; player.controls().setRate(speeds[speedIndex]); speedBtn.set(label = "${speeds[speedIndex]}x") }
 
