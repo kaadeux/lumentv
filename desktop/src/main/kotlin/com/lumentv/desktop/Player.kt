@@ -304,7 +304,9 @@ class PlayerWindow private constructor(private val state: AppState) {
         frame.isVisible = true
         frame.toFront()
         if (!overlayOn) { player.overlay().set(overlay); player.overlay().enable(true); overlayOn = true }
-        player.media().play(it.url, *opts.toTypedArray())
+        // Films and episodes go through the relay, which resumes a download the server stops feeding (StreamRelay).
+        val viaRelay = !it.live && it.url.startsWith("http") && System.getenv("LUMEN_NO_RELAY") != "1"
+        player.media().play(if (viaRelay) StreamRelay.wrap(it.url, it.userAgent) else it.url, *opts.toTypedArray())
         player.controls().setRate(1f); speedIndex = 2; speedBtn.set(label = "1.0x")
         wake()
     }
