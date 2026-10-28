@@ -487,7 +487,8 @@ class PlayerWindow private constructor(private val state: AppState) {
 
         fun open(state: AppState, item: PlayItem) {
             openedAt = System.currentTimeMillis(); openedWhat = item.kind
-            if (instance?.item != null || item.url.startsWith("file:")) return show(state, item)
+            // LUMEN_NO_SCREEN_CHECK=1 (tests on local files served over HTTP): no subscription involved, no check.
+            if (instance?.item != null || item.url.startsWith("file:") || System.getenv("LUMEN_NO_SCREEN_CHECK") == "1") return show(state, item)
             val p = state.active ?: return show(state, item)
             val key = state.presenceKey()
             // Before taking a screen (off the UI thread, a few seconds at most): another Lumen TV device playing on

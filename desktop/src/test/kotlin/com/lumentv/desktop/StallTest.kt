@@ -1,4 +1,4 @@
-package com.lumentv.desktop
+﻿package com.lumentv.desktop
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -7,8 +7,8 @@ import org.junit.Test
 import javax.swing.SwingUtilities
 
 /**
- * Dev only (STALL_URL=http://…): plays a film from a server that stops sending mid-way; the player must reopen it
- * where it stopped (see LUMEN_TRACE). No subscription is used.
+ * Dev only (STALL_URL=http://â€¦): plays a film from a server that stops sending mid-way; the player must reopen it
+ * where it stopped (see LUMEN_TRACE). No subscription is used: run with LUMEN_NO_SCREEN_CHECK=1.
  */
 class StallTest {
     @Test fun filmReopensWhereItStalled() {
