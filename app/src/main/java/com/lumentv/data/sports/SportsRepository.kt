@@ -176,7 +176,7 @@ class SportsRepository(
         val listingsAsync = async { runCatching { frenchGuide.listings() }.getOrDefault(emptyList()).also { lap("guide FR") } }
         val mapsAsync = async { channelMaps(pid).also { lap("channels") } }
         val indexAsync = async { channelsByKey(pid).also { lap("guide index") } }
-        val list = fixtures.fixtures(leagues, SportsFunnel.DAYS).also { lap("calendar (${it.size})") }
+        val list = fixtures.fixtures(leagues, SportsFunnel.days(prefs.days)).also { lap("calendar (${it.size})") }
         if (list.isEmpty()) return@withContext emptyList()
         val progs = candidates(pid, list.flatMap { FixtureMatcher.searchWords(it) }, list.minOf { it.start } - FixtureMatcher.BEFORE_MS,
             list.maxOf { it.start } + FixtureMatcher.AFTER_MS).also { lap("programmes") }

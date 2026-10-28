@@ -39,7 +39,7 @@ data class Settings(
     val sportIds: Set<String> = emptySet(),
     val sportCompetitions: List<String> = emptyList(),
     val sportTeams: List<String> = emptyList(),
-    val sportDays: Int = 3,
+    val sportDays: Int = com.lumentv.data.sports.SportsFunnel.DAYS,
     /** Competitions of the official calendar ([com.lumentv.data.sports.FixtureClient.leagues] ids). */
     val sportLeagues: Set<String> = emptySet(),
 )
@@ -86,7 +86,7 @@ class SettingsStore(private val context: Context) {
             sportIds = p[Keys.sportIds] ?: emptySet(),
             sportCompetitions = p[Keys.sportComps]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList(),
             sportTeams = p[Keys.sportTeams]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList(),
-            sportDays = p[Keys.sportDays] ?: 3,
+            sportDays = p[Keys.sportDays] ?: com.lumentv.data.sports.SportsFunnel.DAYS,
             sportLeagues = p[Keys.sportLeagues] ?: emptySet(),
         )
     }

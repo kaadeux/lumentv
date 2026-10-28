@@ -78,9 +78,12 @@ class FixtureClient(http: OkHttpClient) {
         val dash = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
         val now = System.currentTimeMillis()
         // ESPN days are US days: start one day back so tonight's European games are not missed.
-        val dates = (-1..days.coerceIn(1, 7)).map { now + it * 86_400_000L }
+        val dates = (-1..days.coerceIn(1, SportsFunnel.MAX_DAYS)).map { now + it * 86_400_000L }
+        // Formatted here, once: SimpleDateFormat is not thread-safe, and the requests below run in parallel.
+        val compact = dates.map { day.format(it) }
+        val dashed = dates.map { dash.format(it) }
         coroutineScope {
-            leagues.flatMap { l -> dates.map { d -> async { day(l, if (l.sportsDb) dash.format(d) else day.format(d)) } } }.awaitAll().flatten()
+            leagues.flatMap { l -> (if (l.sportsDb) dashed else compact).map { d -> async { day(l, d) } } }.awaitAll().flatten()
         }.distinctBy { it.id }.filter { it.state == "in" || (it.state == "pre" && it.start > now - 3 * 3_600_000L) }
             .sortedWith(compareBy({ !it.live }, { it.start }))
     }
@@ -88,13 +91,16 @@ class FixtureClient(http: OkHttpClient) {
     private fun day(l: League, date: String): List<Fixture> {
         val key = "${l.path}/$date"
         synchronized(cache) { cache[key]?.let { (t, list) -> if (System.currentTimeMillis() - t < 5 * 60_000) return list } }
-        val list = runCatching {
-            val url = if (l.sportsDb) "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=$date&l=${l.path}"
-                else "https://site.api.espn.com/apis/site/v2/sports/${l.path}/scoreboard?dates=$date"
-            http.newCall(Request.Builder().url(url).build()).execute().use { r ->
-                if (!r.isSuccessful) emptyList() else if (l.sportsDb) parseSportsDb(l, r.body!!.string()) else parse(l, r.body!!.string())
-            }
-        }.getOrDefault(emptyList())
+        val url = if (l.sportsDb) "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=$date&l=${l.path}"
+            else "https://site.api.espn.com/apis/site/v2/sports/${l.path}/scoreboard?dates=$date"
+        // One more try on failure; a failed day is not cached, so the next visit asks again instead of showing it empty.
+        val list = (1..2).firstNotNullOfOrNull {
+            runCatching {
+                http.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                    if (!r.isSuccessful) null else if (l.sportsDb) parseSportsDb(l, r.body!!.string()) else parse(l, r.body!!.string())
+                }
+            }.getOrNull()
+        } ?: return emptyList()
         synchronized(cache) { cache[key] = System.currentTimeMillis() to list }
         return list
     }

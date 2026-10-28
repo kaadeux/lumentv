@@ -5,8 +5,13 @@ package com.lumentv.data.sports
  * (none = all of them), then optionally some clubs among the games listed (none = all games).
  */
 object SportsFunnel {
-    /** How far ahead games are listed. */
+    /** How far ahead games are listed, by default; the user picks among [DAY_CHOICES] (setting "sport_days"). */
     const val DAYS = 7
+    const val MAX_DAYS = 14
+    val DAY_CHOICES = listOf(3, 7, 14)
+
+    /** The saved period, or the default one. */
+    fun days(saved: Int?): Int = saved?.takeIf { it in DAY_CHOICES } ?: DAYS
 
     /** Sports that have at least one competition in the official calendar. */
     val sports: List<Sport> = SportsCatalog.all.filter { s -> FixtureClient.leagues.any { it.sport == s.id } }

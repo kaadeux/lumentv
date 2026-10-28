@@ -273,13 +273,15 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
     LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); tick++ } }
     val funnel = com.lumentv.data.sports.SportsFunnel
     val sports = prefs.sports.filter { s -> funnel.sports.any { it.id == s } }.toSet()
-    val loadKey = sports to prefs.leagues
+    val days = funnel.days(prefs.days)
+    val loadKey = Triple(sports, prefs.leagues, days)
     val games by produceState<List<com.lumentv.data.sports.SportsRepository.Game>?>(null, pid, loadKey, tick) {
+        value = null
         value = if (sports.isEmpty()) emptyList() else runCatching { vm.graph.sports.games(pid, prefs) }.getOrDefault(emptyList())
     }
     var open by remember { mutableStateOf<com.lumentv.data.sports.SportsRepository.Game?>(null) }
-    fun save(s: Set<String> = sports, l: Set<String> = prefs.leagues, t: List<String> = prefs.teams) = scope.launch {
-        vm.graph.sports.save(SportPrefs(s, prefs.competitions, t, funnel.DAYS, l))
+    fun save(s: Set<String> = sports, l: Set<String> = prefs.leagues, t: List<String> = prefs.teams, d: Int = days) = scope.launch {
+        vm.graph.sports.save(SportPrefs(s, prefs.competitions, t, d, l))
     }
     val all = games.orEmpty()
     val clubs = remember(all) { funnel.clubs(all.map { it.fixture }) }
@@ -303,9 +305,16 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
                     funnel.leaguesOf(sports).forEach { l -> Chip(l.label, l.id in prefs.leagues) { save(l = if (l.id in prefs.leagues) prefs.leagues - l.id else prefs.leagues + l.id) } }
                 }
             }
-            // 3. Clubs among the listed games (none = all)
+            // 3. How many days ahead
+            item { FilterLabel("3. Période") }
+            item {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    funnel.DAY_CHOICES.forEach { n -> Chip("$n jours", n == days) { if (n != days) save(d = n) } }
+                }
+            }
+            // 4. Clubs among the listed games (none = all)
             if (clubs.isNotEmpty()) {
-                item { FilterLabel("3. Club / équipe (aucun coché = tous)") }
+                item { FilterLabel("4. Club / équipe (aucun coché = tous)") }
                 item {
                     androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(clubs, key = { it }) { c -> Chip(c, c in prefs.teams) { save(t = if (c in prefs.teams) prefs.teams - c else prefs.teams + c) } }
@@ -316,7 +325,7 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
         when {
             sports.isEmpty() -> item { EmptyState("Choisissez un sport", "Puis, si vous voulez, une compétition et un club. Le choix est partagé avec le PC.") }
             games == null -> item { Loading("Recherche des matchs…") }
-            shown.isEmpty() -> item { EmptyState("Aucun match", "Pas de match en cours ni à venir sur ${funnel.DAYS} jours avec ces filtres.") }
+            shown.isEmpty() -> item { EmptyState("Aucun match", "Pas de match en cours ni à venir sur $days jours avec ces filtres.") }
             else -> shown.groupBy { if (it.fixture.live) "🔴 En direct" else dayLabel(it.fixture.start) }.forEach { (day, gs) ->
                 item(key = "h$day") { DayHeader(day) }
                 items(gs, key = { it.fixture.id }) { g ->

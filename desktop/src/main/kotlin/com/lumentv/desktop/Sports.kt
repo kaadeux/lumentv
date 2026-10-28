@@ -75,10 +75,14 @@ fun SportsScreen(state: AppState) {
     val leagues = set("sport_leagues").toSet()
     val teams = set("sport_teams")
     val chosen = funnel.effectiveLeagues(sports, leagues).map { it.id }.toSet()
+    val days = funnel.days(state.setting("sport_days").toIntOrNull())
     var tick by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); tick++ } }
-    val games by produceState<List<Game>?>(null, chosen, tick, c, state.guide) {
-        value = if (chosen.isEmpty()) emptyList() else runCatching { load(state, c, chosen, funnel.DAYS) }.getOrDefault(emptyList())
+    // The guide arriving later only adds channels: the games already shown stay on screen meanwhile.
+    val games by produceState<List<Game>?>(null, chosen, days, tick, c, state.guide) {
+        val t0 = System.currentTimeMillis()
+        value = if (chosen.isEmpty()) emptyList() else runCatching { load(state, c, chosen, days) }.getOrDefault(emptyList())
+        System.getenv("LUMEN_TRACE")?.let { java.io.File(it).appendText("sports ${value?.size} games in ${System.currentTimeMillis() - t0} ms (guide ${state.guide.size} channels)\n") }
     }
     fun save(key: String, values: Collection<String>) = state.setSetting(key, values.sorted().joinToString("\n"))
     val all = games.orEmpty()
@@ -104,8 +108,14 @@ fun SportsScreen(state: AppState) {
                     funnel.leaguesOf(sports).forEach { l -> ChoiceChip(l.label, l.id in leagues) { save("sport_leagues", if (l.id in leagues) leagues - l.id else leagues + l.id) } }
                 }
             }
+            item { Step("3. Période") }
+            item {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    funnel.DAY_CHOICES.forEach { n -> ChoiceChip("$n jours", n == days) { state.setSetting("sport_days", n.toString()) } }
+                }
+            }
             if (clubs.isNotEmpty()) {
-                item { Step("3. Club / équipe  ·  aucun coché = tous") }
+                item { Step("4. Club / équipe  ·  aucun coché = tous") }
                 item {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         clubs.forEach { cl -> ChoiceChip(cl, cl in teams, small = true) { save("sport_teams", if (cl in teams) teams - cl else teams + cl) } }
@@ -116,7 +126,7 @@ fun SportsScreen(state: AppState) {
         when {
             sports.isEmpty() -> item { Empty("Choisissez un sport", "Puis, si vous voulez, une compétition et un club. Le choix est partagé avec la TV.") }
             games == null -> item { Text("Recherche des matchs…", color = Pal.dim, modifier = Modifier.padding(16.dp)) }
-            shown.isEmpty() -> item { Empty("Aucun match", "Pas de match en cours ni à venir sur ${funnel.DAYS} jours avec ces filtres.") }
+            shown.isEmpty() -> item { Empty("Aucun match", "Pas de match en cours ni à venir sur $days jours avec ces filtres.") }
             else -> {
                 shown.groupBy { g -> if (g.f.live) "En direct" else dayLabel(g.f.start) }.forEach { (label, list) ->
                     item(key = "h$label") {
