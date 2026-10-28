@@ -394,7 +394,8 @@ private fun tvTimeNote(g: com.lumentv.data.sports.SportsRepository.Game): String
 @Composable
 private fun TeamSide(t: com.lumentv.data.sports.Team, modifier: Modifier, end: Boolean) =
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = if (end) Arrangement.End else Arrangement.Start) {
-        if (end) Text(t.short ?: t.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 10.dp))
+        // The name gives way, not the crest: a long name ("Clermont Auvergne") used to squeeze the logo out.
+        if (end) Text(t.short ?: t.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(end = 10.dp))
         coil.compose.AsyncImage(t.logo, null, Modifier.size(36.dp))
-        if (!end) Text(t.short ?: t.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 10.dp))
+        if (!end) Text(t.short ?: t.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(start = 10.dp))
     }

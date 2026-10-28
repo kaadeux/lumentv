@@ -185,9 +185,9 @@ private fun GameCard(state: AppState, g: Game) {
 @Composable
 private fun TeamCell(t: Team, modifier: Modifier, end: Boolean) = Row(modifier, verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = if (end) Arrangement.End else Arrangement.Start) {
-    if (end) Text(t.name, color = Pal.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 10.dp))
+    if (end) Text(t.name, color = Pal.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(end = 10.dp))
     AsyncImage(t.logo, null, Modifier.size(36.dp), contentScale = ContentScale.Fit)
-    if (!end) Text(t.name, color = Pal.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 10.dp))
+    if (!end) Text(t.name, color = Pal.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(start = 10.dp))
 }
 
 private suspend fun load(state: AppState, c: Catalog, chosen: Set<String>, days: Int): List<Game> {
