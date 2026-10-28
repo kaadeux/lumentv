@@ -11,6 +11,7 @@ import uk.co.caprica.vlcj.binding.support.runtime.RuntimeUtil
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
+import uk.co.caprica.vlcj.player.base.State
 import uk.co.caprica.vlcj.player.component.EmbeddedMediaPlayerComponent
 import uk.co.caprica.vlcj.player.embedded.fullscreen.adaptive.AdaptiveFullScreenStrategy
 import java.awt.BorderLayout
@@ -79,6 +80,12 @@ class PlayerWindow private constructor(private val state: AppState) {
     private var overlayOn = false
     /** A live channel that was paused plays behind live until "Revenir au direct". */
     private var behindLive = false
+    // Live watchdog: a channel that stops (stream closed, error, picture stuck) is reopened, 1 s to 15 s apart.
+    private var liveAttempt = 0
+    private var reconnectAt = 0L
+    private var liveTime = -1L
+    private var liveTimeChangedAt = 0L
+    private var openedAt = 0L
     /** Recap / intro / credits of the current episode (TheIntroDB), or null: then the learned markers are used. */
     @Volatile private var segments: Segments? = null
     private var skippedRecap = false
@@ -140,13 +147,14 @@ class PlayerWindow private constructor(private val state: AppState) {
         surface.addMouseMotionListener(object : MouseAdapter() { override fun mouseMoved(e: MouseEvent) = wake() })
         keys(frame.rootPane)
         player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
-            override fun finished(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { onFinished() }
+            override fun finished(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { if (item?.live == true) scheduleReconnect("Flux interrompu") else onFinished() }
             override fun error(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater {
+                if (item?.live == true) { scheduleReconnect("Flux indisponible"); return@invokeLater }
                 message.foreground = Ui.danger
                 message.text = "Lecture impossible : le flux ne répond pas, ou l'abonnement est déjà utilisé sur un autre écran."
             }
             override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) { if (newCount > 0) trace("image") }
-            override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { message.text = ""; playPause.set(icon = Ui.PAUSE); applyLanguages(); describeVideo() }
+            override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { message.foreground = Ui.dim; message.text = "";playPause.set(icon = Ui.PAUSE); applyLanguages(); describeVideo() }
             override fun paused(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { playPause.set(icon = Ui.PLAY) }
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = SwingUtilities.invokeLater {
                 if (message.foreground == Ui.danger) return@invokeLater
@@ -197,7 +205,9 @@ class PlayerWindow private constructor(private val state: AppState) {
     fun play(it: PlayItem) {
         saveNow()
         if (item == null) { ScreenGuard.started(); presenceKey = state.presenceKey(); lastBeat = 0 }
+        if (it !== item) liveAttempt = 0
         item = it
+        reconnectAt = 0; liveTime = -1; liveTimeChangedAt = System.currentTimeMillis(); openedAt = liveTimeChangedAt
         lastSaved = System.currentTimeMillis()
         nextDismissed = false; skipped = false; learnIntroAt = 0; behindLive = false; skippedRecap = false
         segments = null
@@ -335,9 +345,37 @@ class PlayerWindow private constructor(private val state: AppState) {
         if (showNext) nextCard.set(label = "Épisode suivant dans ${(len - pos) / 1000} s")
     }
 
+    /** Live only: shows the countdown and reopens the channel when it is due (see watchLive). */
+    private fun scheduleReconnect(reason: String) {
+        val it = item?.takeIf { it.live } ?: return
+        if (reconnectAt > 0 || !frame.isVisible) return
+        liveAttempt++
+        val delay = listOf(1, 2, 4, 8, 15)[(liveAttempt - 1).coerceAtMost(4)]
+        reconnectAt = System.currentTimeMillis() + delay * 1000L
+        trace("live reconnect #$liveAttempt in $delay s: $reason (${it.title})")
+        message.foreground = Ui.danger
+        message.text = "$reason · nouvelle tentative dans $delay s (essai $liveAttempt)"
+    }
+
+    /** A live channel whose time no longer moves for 20 s (stuck picture, stalled stream) is reopened; pause excepted. */
+    private fun watchLive(it: PlayItem) {
+        val now = System.currentTimeMillis()
+        if (reconnectAt > 0) { if (now >= reconnectAt) { reconnectAt = 0; play(it) }; return }
+        val t = player.status().time()
+        when {
+            player.status().state() == State.PAUSED -> liveTimeChangedAt = now
+            t != liveTime -> {
+                liveTime = t; liveTimeChangedAt = now
+                if (t > 0 && now - openedAt > 30_000) liveAttempt = 0 // plays again for good
+            }
+            now - liveTimeChangedAt > 20_000 -> scheduleReconnect("Signal perdu")
+        }
+    }
+
     private fun tick() {
         val it = item ?: return
         if (!frame.isVisible) return
+        if (it.live) watchLive(it)
         val pos = player.status().time(); val len = player.status().length()
         if (!it.live && len > 0) {
             if (!seek.isDragging) { seek.played = pos.toFloat() / len; seek.repaint() }

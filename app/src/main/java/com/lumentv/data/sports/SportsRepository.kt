@@ -1,5 +1,6 @@
 package com.lumentv.data.sports
 
+import android.util.Log
 import androidx.sqlite.db.SimpleSQLiteQuery
 import com.lumentv.core.normalize
 import com.lumentv.data.db.AppDatabase
@@ -10,6 +11,7 @@ import com.lumentv.data.repo.LibraryRepository
 import com.lumentv.data.settings.Settings
 import com.lumentv.data.settings.SettingsStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 
 data class SportEvent(
@@ -40,6 +42,8 @@ data class SportPrefs(val sports: Set<String>, val competitions: List<String>, v
 
 /** Upcoming and live matches, taken from the guide (XMLTV) of the active playlist. */
 private const val CACHE_MS = 120_000L
+
+private const val TAG = "Sports"
 
 class SportsRepository(
     private val db: AppDatabase,
@@ -143,18 +147,42 @@ class SportsRepository(
                     /** The French channel showing it (xmltvfr.fr), e.g. "Ligue 1+ 2", and when it starts there. */
                     val tv: String? = null, val tvStart: Long = 0)
 
+    /**
+     * Channels announcing an event in their name, and channels by French name: going through the 13 000 channels takes
+     * seconds on the box, so it is kept until the playlist is reloaded or a channel hidden.
+     */
+    private data class ChannelMaps(val named: List<Triple<ChannelRow, String, Long>>, val byKey: Map<String, List<ChannelRow>>)
+    @Volatile private var maps: Triple<Long, String, ChannelMaps>? = null
+
+    private suspend fun channelMaps(pid: Long): ChannelMaps = kotlinx.coroutines.coroutineScope {
+        val version = "${db.playlists().get(pid)?.lastRefresh}:${library.changes.value}"
+        maps?.let { (p, v, m) -> if (p == pid && v == version) return@coroutineScope m }
+        val named = async {
+            db.channels().withDates(pid).filter { !it.isHidden }.mapNotNull { r -> EventChannelParser.parse(r.ch.name)?.let { (l, t) -> Triple(r, normalize(l), t) } }
+        }
+        val byKey = async {
+            db.channels().inGroup(pid, null).filter { !it.isHidden && FrenchTvGuide.frenchOrPlain(it.ch.name) }.groupBy { FrenchTvGuide.channelKey(it.ch.name) }
+        }
+        ChannelMaps(named.await(), byKey.await()).also { maps = Triple(pid, version, it) }
+    }
+
     /** Official calendar, like the PC: every live and upcoming game of the chosen competitions, with its channels. */
     suspend fun games(pid: Long, prefs: SportPrefs): List<Game> = withContext(Dispatchers.IO) {
         val leagues = SportsFunnel.effectiveLeagues(prefs.sports, prefs.leagues)
         if (leagues.isEmpty()) return@withContext emptyList()
-        val list = fixtures.fixtures(leagues, SportsFunnel.DAYS)
+        val t0 = System.currentTimeMillis()
+        fun lap(what: String) = Log.i(TAG, "$what +${System.currentTimeMillis() - t0} ms")
+        // Calendar, French guide and the playlist's channels are independent: fetched together.
+        val listingsAsync = async { runCatching { frenchGuide.listings() }.getOrDefault(emptyList()).also { lap("guide FR") } }
+        val mapsAsync = async { channelMaps(pid).also { lap("channels") } }
+        val indexAsync = async { channelsByKey(pid).also { lap("guide index") } }
+        val list = fixtures.fixtures(leagues, SportsFunnel.DAYS).also { lap("calendar (${it.size})") }
         if (list.isEmpty()) return@withContext emptyList()
         val progs = candidates(pid, list.flatMap { FixtureMatcher.searchWords(it) }, list.minOf { it.start } - FixtureMatcher.BEFORE_MS,
-            list.maxOf { it.start } + FixtureMatcher.AFTER_MS)
-        val index = channelsByKey(pid)
-        val named = db.channels().withDates(pid).filter { !it.isHidden }.mapNotNull { r -> EventChannelParser.parse(r.ch.name)?.let { (l, t) -> Triple(r, normalize(l), t) } }
-        val listings = runCatching { frenchGuide.listings() }.getOrDefault(emptyList())
-        val byKey = db.channels().inGroup(pid, null).filter { !it.isHidden && FrenchTvGuide.frenchOrPlain(it.ch.name) }.groupBy { FrenchTvGuide.channelKey(it.ch.name) }
+            list.maxOf { it.start } + FixtureMatcher.AFTER_MS).also { lap("programmes") }
+        val index = indexAsync.await()
+        val (named, byKey) = mapsAsync.await()
+        val listings = listingsAsync.await()
         list.map { f ->
             val tv = FrenchTvGuide.broadcast(f, listings)
             val own = (progs.filter { FixtureMatcher.matches(f, it.titleNorm, it.start) }.flatMap { index[it.epgKey].orEmpty() } +
@@ -199,7 +227,10 @@ class SportsRepository(
     }
 
     /** Computes the list in the background at start-up, so the panel opens without waiting. */
-    suspend fun prewarm(pid: Long) { runCatching { events(pid, SportPrefs.of(settings.current())) } }
+    suspend fun prewarm(pid: Long) {
+        runCatching { frenchGuide.refresh() }
+        runCatching { games(pid, SportPrefs.of(settings.current())) }
+    }
 
     /** Competitions and teams that appear in the guide, most frequent first, to pick from in the settings. */
     suspend fun suggestions(pid: Long, sportIds: Set<String>): Pair<List<String>, List<String>> = withContext(Dispatchers.IO) {

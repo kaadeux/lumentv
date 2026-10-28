@@ -99,6 +99,9 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
                 retryIn = if (state == Player.STATE_READY) 0 else s.retryIn,
             )
             if (state == Player.STATE_READY) attempt = 0
+            // The provider closed a live stream: reopen it instead of leaving the last picture frozen.
+            val spec = current
+            if (state == Player.STATE_ENDED && spec?.live == true) scheduleRetry(spec, "Flux interrompu")
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -136,8 +139,34 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         }
     }
 
+    // Live watchdog: no error, but nothing moves (stalled stream, stuck picture) → reconnect like after an error.
+    private var lastPosition = -1L
+    private var lastFrames = -1
+    private var movedAt = 0L
+    private val watchdog = object : Runnable {
+        override fun run() {
+            if (released) return
+            main.postDelayed(this, 2_000)
+            val spec = current?.takeIf { it.live } ?: return
+            val now = android.os.SystemClock.elapsedRealtime()
+            val frames = player.videoDecoderCounters?.let { it.ensureUpdated(); it.renderedOutputBufferCount } ?: -1
+            val pos = player.currentPosition
+            // Paused, or a retry already on its way: nothing to watch.
+            val waiting = !player.playWhenReady || retryRunnable != null
+            val clockMoves = pos != lastPosition
+            val pictureMoves = player.videoFormat == null || frames != lastFrames
+            if (waiting || clockMoves && pictureMoves) movedAt = now
+            lastPosition = pos; lastFrames = frames
+            if (now - movedAt > STALL_MS) {
+                Log.w(TAG, "live stalled (clock ${if (clockMoves) "moves" else "stopped"}), reconnecting")
+                scheduleRetry(spec, if (clockMoves) "Image figée" else "Signal perdu")
+            }
+        }
+    }
+
     init {
         player.addListener(listener)
+        main.postDelayed(watchdog, 2_000)
         runCatching {
             connectivity.registerNetworkCallback(
                 NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), netCallback,
@@ -154,6 +183,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
     }
 
     private fun prepare(spec: StreamSpec, positionMs: Long) {
+        movedAt = android.os.SystemClock.elapsedRealtime()
         val okHttp = OkHttpDataSource.Factory(http).apply {
             spec.userAgent?.let { setUserAgent(it) }
             spec.referer?.let { setDefaultRequestProperties(mapOf("Referer" to it)) }
@@ -183,7 +213,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         _state.value = _state.value.copy(buffering = false, error = message, retryIn = delaySec, attempt = attempt)
         cancelRetry()
         val position = if (spec.live) 0 else player.currentPosition
-        val r = Runnable { if (!released && current === spec) prepare(spec, position) }
+        val r = Runnable { retryRunnable = null; if (!released && current === spec) prepare(spec, position) }
         retryRunnable = r
         main.postDelayed(r, delaySec * 1000L)
     }
@@ -252,6 +282,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
     fun release() {
         released = true
         cancelRetry()
+        main.removeCallbacks(watchdog)
         runCatching { connectivity.unregisterNetworkCallback(netCallback) }
         player.removeListener(listener)
         player.release()
@@ -281,5 +312,9 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         }
     }
 
-    companion object { private const val TAG = "Player" }
+    companion object {
+        private const val TAG = "Player"
+        /** A live channel whose clock or picture stays still this long (while meant to play) is reconnected. */
+        private const val STALL_MS = 20_000L
+    }
 }

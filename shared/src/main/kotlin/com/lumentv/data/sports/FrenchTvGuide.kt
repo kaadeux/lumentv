@@ -3,6 +3,7 @@ package com.lumentv.data.sports
 import com.lumentv.core.normalize
 import com.lumentv.data.epg.XmltvParser
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -33,17 +34,37 @@ class FrenchTvGuide(http: OkHttpClient, private val cacheFile: File, private val
 
     @Serializable private class Cache(val fetchedAt: Long, val items: List<Listing>)
 
-    suspend fun listings(): List<Listing> = lock.withLock {
+    private val refreshing = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * The listings at once: an older copy (up to 2 days) is answered immediately and refreshed in the background, so
+     * the sports screen never waits for the 9 MB download; only the very first time does.
+     */
+    suspend fun listings(): List<Listing> {
+        val now = System.currentTimeMillis()
+        val cached = withContext(Dispatchers.IO) { cached() }
+        if (cached != null && now - cached.fetchedAt < MAX_AGE) return cached.items
+        if (cached != null && now - cached.fetchedAt < 4 * MAX_AGE) {
+            if (refreshing.compareAndSet(false, true)) Thread { try { runBlocking { refresh() } } finally { refreshing.set(false) } }.start()
+            return cached.items
+        }
+        return refresh()
+    }
+
+    /** Downloads the guide again when the copy is older than 12 h (at start-up, in the background). */
+    suspend fun refresh(): List<Listing> = lock.withLock {
         withContext(Dispatchers.IO) {
             val now = System.currentTimeMillis()
-            val cached = mem ?: runCatching { json.decodeFromString<Cache>(cacheFile.readText()) }.getOrNull()?.also { mem = it }
-            if (cached != null && now - cached.fetchedAt < 12 * 3_600_000L) return@withContext cached.items
+            val cached = cached()
+            if (cached != null && now - cached.fetchedAt < MAX_AGE) return@withContext cached.items
             runCatching { fetch(now) }.onSuccess { items ->
                 val c = Cache(now, items); mem = c
                 runCatching { cacheFile.parentFile?.mkdirs(); cacheFile.writeText(json.encodeToString(c)) }
             }.getOrNull() ?: cached?.items.orEmpty()
         }
     }
+
+    private fun cached(): Cache? = mem ?: runCatching { json.decodeFromString<Cache>(cacheFile.readText()) }.getOrNull()?.also { mem = it }
 
     private fun fetch(now: Long): List<Listing> {
         val req = Request.Builder().url(URL).header("User-Agent", "LumenTV").build()
@@ -65,6 +86,8 @@ class FrenchTvGuide(http: OkHttpClient, private val cacheFile: File, private val
 
     companion object {
         const val URL = "https://xmltvfr.fr/xmltv/xmltv_fr.xml.gz"
+        /** A copy younger than this is used as is; older ones are refreshed. */
+        private const val MAX_AGE = 12 * 3_600_000L
         private val sportsChannel = Regex("(?i)canal\\+|bein|ligue 1|rmc sport|eurosport|dazn|^france [2-5]$|^tf1$|^m6$|^w9$|tmc|tfx|l.equipe|" +
             "infosport|sport en france|prime video|amazon|rugby")
 
