@@ -131,7 +131,7 @@ fun Categories(title: String, items: List<Pair<String, String>>, selected: Strin
 fun Poster(title: String, image: String?, caption: String?, progress: Float?, favorite: Boolean, onClick: () -> Unit) {
     Column(Modifier.clip(RoundedCornerShape(10.dp)).background(Pal.panel).combinedClickable(onClick = onClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(Pal.panelHigh)) {
-            AsyncImage(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            AsyncImage(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
             if (favorite) Icon(Icons.Filled.Favorite, null, tint = Pal.accent, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(18.dp))
         }
         progress?.let { LinearProgressIndicator({ it.coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(3.dp)) }
@@ -169,7 +169,7 @@ fun LiveScreen(state: AppState) {
                         .combinedClickable(onDoubleClick = { state.playChannel(ch) }) { selected = ch }.padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("${ch.num}", color = Pal.dim, modifier = Modifier.width(44.dp))
-                        AsyncImage(ch.logo, null, Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(Pal.panelHigh), contentScale = ContentScale.Fit)
+                        AsyncImage(ch.logo, null, Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(Pal.panelHigh), contentScale = ContentScale.Fit, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
                         Column(Modifier.weight(1f)) {
                             Text(ch.name, color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             if (cur != null) {
@@ -294,7 +294,7 @@ fun SearchScreen(state: AppState) {
             items(chs, key = { "c" + it.uid }) { ch ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Pal.panel).combinedClickable { state.playChannel(ch) }.padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    AsyncImage(ch.logo, null, Modifier.size(36.dp), contentScale = ContentScale.Fit)
+                    AsyncImage(ch.logo, null, Modifier.size(36.dp), contentScale = ContentScale.Fit, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
                     Text(ch.name, color = Pal.text, modifier = Modifier.weight(1f)); Text(ch.group, color = Pal.dim)
                 }
             }
@@ -331,7 +331,7 @@ fun FavoritesScreen(state: AppState) {
         items(chs, key = { "c" + it.uid }) { ch ->
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Pal.panel).combinedClickable { state.playChannel(ch) }.padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AsyncImage(ch.logo, null, Modifier.size(36.dp), contentScale = ContentScale.Fit)
+                AsyncImage(ch.logo, null, Modifier.size(36.dp), contentScale = ContentScale.Fit, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
                 Text(ch.name, color = Pal.text, modifier = Modifier.weight(1f)); Text(ch.group, color = Pal.dim)
                 TextButton({ state.toggleFavorite(Kind.CHANNEL, ch.uid) }) { Text("Retirer") }
             }
@@ -359,7 +359,7 @@ fun HistoryScreen(state: AppState) {
             items(list, key = { it.kind + it.uid }) { h ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Pal.panel).combinedClickable { scope.launch { state.resume(h) } }.padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    AsyncImage(h.image, null, Modifier.size(48.dp).clip(RoundedCornerShape(6.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop)
+                    AsyncImage(h.image, null, Modifier.size(48.dp).clip(RoundedCornerShape(6.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
                     Column(Modifier.weight(1f)) {
                         Text(h.title, color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(listOfNotNull(when (h.kind) { Kind.CHANNEL -> "Chaîne"; Kind.MOVIE -> "Film"; else -> "Épisode" }, h.subtitle, fmt.format(Date(h.watchedAt))).joinToString(" · "),

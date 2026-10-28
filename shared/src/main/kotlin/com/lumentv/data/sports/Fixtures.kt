@@ -62,7 +62,15 @@ data class Fixture(
     val live get() = state == "in"
     /** "Habituellement sur Canal+", or null when unknown. */
     val usualBroadcaster get() = league.tvFr?.let { "Habituellement sur $it" }
+    /** The channels can be opened during the game and from [OPEN_BEFORE_MS] before kick-off, not earlier. */
+    fun channelsOpen(now: Long = System.currentTimeMillis()) = live || start - now <= OPEN_BEFORE_MS
+    /** "Chaînes accessibles dès 20:00 (1 h avant le match)" */
+    val opensNote get() = "Chaînes accessibles dès " + SimpleDateFormat("HH:mm", Locale.FRANCE).format(java.util.Date(start - OPEN_BEFORE_MS)) + " (1 h avant le match)"
     val label get() = if (home != null && away != null) "${home.short ?: home.name} – ${away.short ?: away.name}" else name
+
+    companion object {
+        const val OPEN_BEFORE_MS = 3_600_000L
+    }
 }
 
 /**

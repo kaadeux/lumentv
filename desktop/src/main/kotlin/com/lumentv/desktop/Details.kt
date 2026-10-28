@@ -122,7 +122,7 @@ fun AppState.playFile(t: DownloadTask) {
 
 @Composable
 private fun Backdrop(image: String?) {
-    AsyncImage(image, null, Modifier.fillMaxWidth().height(420.dp).blur(40.dp).alpha(0.28f), contentScale = ContentScale.Crop)
+    AsyncImage(image, null, Modifier.fillMaxWidth().height(420.dp).blur(40.dp).alpha(0.28f), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
 }
 
 @Composable
@@ -164,7 +164,7 @@ fun MovieDetail(state: AppState, m: Mv, onBack: () -> Unit) {
             item {
                 Card {
                     Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        AsyncImage(m.poster, null, Modifier.width(190.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop)
+                        AsyncImage(m.poster, null, Modifier.width(190.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(m.name, style = MaterialTheme.typography.headlineMedium, color = Pal.text, fontWeight = FontWeight.Bold)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -224,7 +224,7 @@ fun SeriesDetail(state: AppState, s0: Se, onBack: () -> Unit) {
             item {
                 Card {
                     Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        AsyncImage(s.cover, null, Modifier.width(170.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop)
+                        AsyncImage(s.cover, null, Modifier.width(170.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(s.name, style = MaterialTheme.typography.headlineMedium, color = Pal.text, fontWeight = FontWeight.Bold)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -296,7 +296,7 @@ private fun EpisodeRow(state: AppState, e: Ep, highlighted: Boolean, onPlay: () 
         .combinedClickable(onDoubleClick = onPlay, onClick = onPlay).padding(12.dp).heightIn(min = 84.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Box(Modifier.width(150.dp)) {
-            AsyncImage(e.image, null, Modifier.width(150.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop)
+            AsyncImage(e.image, null, Modifier.width(150.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
             if (pct != null) LinearProgressIndicator({ pct / 100f }, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp), color = Pal.accent)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -334,7 +334,7 @@ fun DownloadsScreen(state: AppState) {
             items(d.tasks.toList(), key = { it.id }) { t ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Pal.panel).padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    AsyncImage(t.image, null, Modifier.size(56.dp, 80.dp).clip(RoundedCornerShape(6.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop)
+                    AsyncImage(t.image, null, Modifier.size(56.dp, 80.dp).clip(RoundedCornerShape(6.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(t.title, color = Pal.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         t.subtitle?.let { Text(it, color = Pal.dim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }

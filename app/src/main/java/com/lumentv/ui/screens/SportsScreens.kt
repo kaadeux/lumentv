@@ -330,7 +330,8 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
                 item(key = "h$day") { DayHeader(day) }
                 items(gs, key = { it.fixture.id }) { g ->
                     GameRow(g) {
-                        when (g.channels.size) {
+                        if (g.channels.isNotEmpty() && !g.fixture.channelsOpen()) vm.show(g.fixture.opensNote)
+                        else when (g.channels.size) {
                             0 -> vm.show(g.tv?.let { "Diffusé sur $it — cette chaîne n'est pas dans votre liste" }
                                 ?: listOfNotNull(g.fixture.usualBroadcaster, "aucune chaîne de votre liste ne l'annonce encore").joinToString(" · ").replaceFirstChar { it.uppercase() })
                             1 -> PlayerLauncher.live(context, g.channels[0].ch.id, Groups.ALL)
@@ -354,6 +355,8 @@ private fun FilterLabel(text: String) =
 @Composable
 private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: () -> Unit) {
     val f = g.fixture
+    // Re-read every minute, so a game's channels unlock on screen one hour before kick-off.
+    val now by androidx.compose.runtime.produceState(System.currentTimeMillis()) { while (true) { kotlinx.coroutines.delay(60_000); value = System.currentTimeMillis() } }
     FocusSurface(onClick, Modifier.fillMaxWidth(), focusedScale = 1.01f) {
       Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
         // "⚽ Football · Ligue 1 · Journée 10 · Stade Océane, Le Havre"
@@ -371,7 +374,12 @@ private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: (
                 TeamSide(f.away!!, Modifier.weight(1f), end = false)
             } else Text(f.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(2f))
             Column(Modifier.width(250.dp), horizontalAlignment = Alignment.End) {
-                if (g.channels.isNotEmpty()) {
+                if (g.channels.isNotEmpty() && !f.channelsOpen(now)) {
+                    // Announced, but not playable yet: opens one hour before kick-off.
+                    Text(g.channels.first().ch.name, style = MaterialTheme.typography.titleSmall, color = Palette.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Accessible dès " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start - com.lumentv.data.sports.Fixture.OPEN_BEFORE_MS)),
+                        style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1)
+                } else if (g.channels.isNotEmpty()) {
                     Text("▶ " + g.channels.first().ch.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (g.channels.size > 1) Text("+ ${g.channels.size - 1} autre(s) chaîne(s)", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
                     else g.tv?.let { Text("Sur $it", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1) }

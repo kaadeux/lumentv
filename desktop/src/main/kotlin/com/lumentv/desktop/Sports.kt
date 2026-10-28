@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,6 +79,8 @@ fun SportsScreen(state: AppState) {
     val days = funnel.days(state.setting("sport_days").toIntOrNull())
     var tick by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); tick++ } }
+    // Every minute, so the channels unlock on screen one hour before kick-off.
+    val now by produceState(System.currentTimeMillis()) { while (true) { delay(60_000L); value = System.currentTimeMillis() } }
     // The guide arriving later only adds channels: the games already shown stay on screen meanwhile.
     val games by produceState<List<Game>?>(null, chosen, days, tick, c, state.guide) {
         val t0 = System.currentTimeMillis()
@@ -132,7 +135,7 @@ fun SportsScreen(state: AppState) {
                     item(key = "h$label") {
                         Text(label, color = if (label == "En direct") liveRed else Pal.text, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp, start = 4.dp))
                     }
-                    items(list, key = { it.f.id }) { g -> GameCard(state, g) }
+                    items(list, key = { it.f.id }) { g -> GameCard(state, g, now) }
                 }
             }
         }
@@ -150,33 +153,39 @@ private fun ChoiceChip(label: String, on: Boolean, small: Boolean = false, onCli
             .combinedClickable(onClick = onClick).padding(horizontal = if (small) 11.dp else 14.dp, vertical = if (small) 5.dp else 7.dp))
 
 @Composable
-private fun GameCard(state: AppState, g: Game) {
+private fun GameCard(state: AppState, g: Game, now: Long) {
     val f = g.f
     val hm = remember { SimpleDateFormat("HH:mm", Locale.FRANCE) }
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Pal.panel).border(1.dp, if (f.live) liveRed.copy(alpha = 0.5f) else Pal.panelHigh, RoundedCornerShape(14.dp))
-        .padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(f.details.uppercase(), color = Pal.dim, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            if (f.live) Text("● EN DIRECT" + if (f.detail.isNotBlank()) " · ${f.detail}" else "", color = liveRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            else Text(hm.format(Date(f.start)), color = Pal.text, fontWeight = FontWeight.SemiBold)
+        .padding(horizontal = 20.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // "⚽ FOOTBALL · LIGUE 1 · JOURNÉE 10 · Stade Océane, Le Havre"
+        Text(listOfNotNull(f.details.uppercase(), f.venue).joinToString("  ·  "), color = Pal.dim, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // As on the TV: the time on the left, then the two teams around "vs".
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.width(120.dp)) {
+                if (f.live) {
+                    Text("● EN DIRECT", color = liveRed, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    if (f.detail.isNotBlank()) Text(f.detail, color = liveRed, fontSize = 13.sp)
+                } else Text(hm.format(Date(f.start)), color = Pal.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+            }
+            if (f.home != null && f.away != null) {
+                TeamCell(f.home!!, Modifier.weight(1f), end = true)
+                Text(if (f.live && f.homeScore != null) "${f.homeScore}  –  ${f.awayScore}" else "vs", color = if (f.live) Pal.text else Pal.dim,
+                    fontSize = if (f.live) 24.sp else 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp))
+                TeamCell(f.away!!, Modifier.weight(1f), end = false)
+            } else Text(f.name, color = Pal.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
         }
-        if (f.home != null && f.away != null) Row(verticalAlignment = Alignment.CenterVertically) {
-            TeamCell(f.home!!, Modifier.weight(1f), end = false)
-            Text(if (f.live && f.homeScore != null) "${f.homeScore}  –  ${f.awayScore}" else "vs", color = if (f.live) Pal.text else Pal.dim,
-                fontSize = if (f.live) 22.sp else 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 18.dp))
-            TeamCell(f.away!!, Modifier.weight(1f), end = true)
-        } else Text(f.name, color = Pal.text, fontWeight = FontWeight.SemiBold)
-        f.venue?.let { Text(it, color = Pal.dim, fontSize = 12.sp) }
         val tvNote = g.tv?.let { l ->
             "Diffusé sur ${l.channel}" + if (kotlin.math.abs(l.start - f.start) >= 90 * 60_000L) " à " + SimpleDateFormat("HH:mm EEEE", Locale.FRANCE).format(Date(l.start)) else ""
         }
         if (g.channels.isEmpty()) Text(tvNote?.let { "$it — cette chaîne n'est pas dans votre liste" }
             ?: listOfNotNull(f.usualBroadcaster, "aucune chaîne de votre liste ne l'annonce encore").joinToString(" · ").replaceFirstChar { it.uppercase() },
-            color = Pal.dim, fontSize = 12.sp)
+            color = Pal.dim, fontSize = 13.sp)
         else {
-            tvNote?.let { Text(it, color = Pal.dim, fontSize = 12.sp) }
+            val open = f.channelsOpen(now)
+            listOfNotNull(tvNote, f.opensNote.takeUnless { open }).takeIf { it.isNotEmpty() }?.let { Text(it.joinToString("  ·  "), color = Pal.dim, fontSize = 13.sp) }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                g.channels.take(8).forEach { ch -> Pill(ch.name, { state.playChannel(ch) }, Icons.Filled.PlayArrow, primary = f.live) }
+                g.channels.take(8).forEach { ch -> Pill(ch.name, { if (f.channelsOpen()) state.playChannel(ch) }, Icons.Filled.PlayArrow, primary = f.live, enabled = open) }
             }
         }
     }
@@ -185,9 +194,10 @@ private fun GameCard(state: AppState, g: Game) {
 @Composable
 private fun TeamCell(t: Team, modifier: Modifier, end: Boolean) = Row(modifier, verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = if (end) Arrangement.End else Arrangement.Start) {
-    if (end) Text(t.name, color = Pal.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(end = 10.dp))
-    AsyncImage(t.logo, null, Modifier.size(36.dp), contentScale = ContentScale.Fit)
-    if (!end) Text(t.name, color = Pal.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(start = 10.dp))
+    // The name gives way, not the crest.
+    if (end) Text(t.name, color = Pal.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(end = 12.dp))
+    AsyncImage(t.logo, null, Modifier.size(42.dp), contentScale = ContentScale.Fit, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
+    if (!end) Text(t.name, color = Pal.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(start = 12.dp))
 }
 
 private suspend fun load(state: AppState, c: Catalog, chosen: Set<String>, days: Int): List<Game> {
