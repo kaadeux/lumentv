@@ -56,13 +56,56 @@ object Vlc {
         // high-quality resampler, which VLC also uses to follow the clock of live streams.
         MediaPlayerFactory("--no-video-title-show", "--quiet", "--network-caching=3000", "--live-caching=3000", "--no-snapshot-preview",
             "--avcodec-hw=any", "--aout=${System.getenv("LUMEN_AOUT") ?: Store.audioOut}", "--audio-resampler=samplerate")
+            .also { f -> PlaybackLog.attach(f) }
+    }
+}
+
+/**
+ * What playback went through (starts, buffering, stalls, reconnections, VLC network warnings), in
+ * %APPDATA%\LumenTV\lecture.log, at most 300 KB (then lecture.old.log). Addresses are removed: they hold the
+ * subscription's login.
+ */
+object PlaybackLog {
+    private val file = File(Store.dir, "lecture.log")
+    private val time = java.text.SimpleDateFormat("dd/MM HH:mm:ss", java.util.Locale.FRANCE)
+    private val url = Regex("[a-zA-Z][a-zA-Z0-9+.-]*://\\S+")
+    // VLC's network side: what explains a stall (connection cut, slow server, end of data, reconnect).
+    private val modules = setOf("http", "access", "tls", "stream", "cache_read", "prefetch", "main", "mkv", "mp4", "es", "ts", "adaptive")
+    private val words = Regex("(?i)reconnect|connection|timeout|timed out|eof|end of|cannot|failed|error|refus|reset|buffer|too slow|seek")
+    private var log: uk.co.caprica.vlcj.log.NativeLog? = null
+    private var minute = 0L
+    private var inMinute = 0
+
+    /** At most 20 VLC lines a minute: some warnings repeat many times a second. */
+    @Synchronized private fun allowed(): Boolean {
+        val m = System.currentTimeMillis() / 60_000
+        if (m != minute) { minute = m; inMinute = 0 }
+        return ++inMinute <= 20
+    }
+
+    @Synchronized fun line(text: String) {
+        runCatching {
+            if (file.length() > 300_000) { File(Store.dir, "lecture.old.log").delete(); file.renameTo(File(Store.dir, "lecture.old.log")) }
+            file.appendText("${time.format(java.util.Date())}  ${text.replace(url, "<adresse>")}\n")
+        }
+    }
+
+    fun attach(f: MediaPlayerFactory) {
+        log = runCatching {
+            f.application().newLog().apply {
+                level = uk.co.caprica.vlcj.log.LogLevel.WARNING
+                addLogListener { level, module, _, _, _, _, _, message ->
+                    if (module in modules && words.containsMatchIn(message) && allowed()) line("vlc $level $module: $message")
+                }
+            }
+        }.getOrNull()
     }
 }
 
 /**
  * One player window at a time; opening something else while it is open replaces what plays.
  * Keys: Espace pause · ←/→ 10 s · ↑/↓ volume · F ou double-clic plein écran · M muet · N épisode suivant · Échap.
- * Films and episodes read several minutes ahead (VLC prefetch), so a slow server does not stall the picture.
+ * A stream that stalls or drops is reopened where it stopped (see watchStream); what happens is kept in [PlaybackLog].
  */
 class PlayerWindow private constructor(private val state: AppState) {
     private val frame = JFrame("Lumen TV")
@@ -86,6 +129,7 @@ class PlayerWindow private constructor(private val state: AppState) {
     private var liveTime = -1L
     private var liveTimeChangedAt = 0L
     private var openedAt = 0L
+    private var stallSince = 0L
     /** Recap / intro / credits of the current episode (TheIntroDB), or null: then the learned markers are used. */
     @Volatile private var segments: Segments? = null
     private var skippedRecap = false
@@ -153,9 +197,12 @@ class PlayerWindow private constructor(private val state: AppState) {
             override fun finished(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater {
                 // Live never ends; a film "ending" more than a minute early is a dropped connection, not the end.
                 val len = player.status().length()
-                if (item?.live == true || (len > 0 && liveTime in 1 until len - 60_000)) scheduleReconnect("Flux interrompu") else onFinished()
+                val early = item?.live == true || (len > 0 && liveTime in 1 until len - 60_000)
+                PlaybackLog.line(if (early) "fin de flux inattendue à ${fmt(liveTime)} sur ${fmt(len)}" else "fin normale")
+                if (early) scheduleReconnect("Flux interrompu") else onFinished()
             }
             override fun error(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater {
+                PlaybackLog.line("erreur VLC à ${fmt(liveTime.coerceAtLeast(0))}")
                 // Live, or a film already playing: retried; a film that never started shows why.
                 if (item?.live == true || liveTime > 0) { scheduleReconnect("Flux indisponible"); return@invokeLater }
                 message.foreground = Ui.danger
@@ -165,6 +212,11 @@ class PlayerWindow private constructor(private val state: AppState) {
             override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { player.audio().setVolume(volume.value); message.foreground = Ui.dim; message.text = "";playPause.set(icon = Ui.PAUSE); applyLanguages(); describeVideo() }
             override fun paused(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { playPause.set(icon = Ui.PLAY) }
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = SwingUtilities.invokeLater {
+                // Buffering after the start is a stall: its length goes to the log.
+                if (newCache < 100f && liveTime > 0 && stallSince == 0L) stallSince = System.currentTimeMillis()
+                if (newCache >= 100f && stallSince > 0) {
+                    PlaybackLog.line("mise en mémoire à ${fmt(liveTime)} : ${(System.currentTimeMillis() - stallSince) / 100 / 10.0} s"); stallSince = 0
+                }
                 if (message.foreground == Ui.danger) return@invokeLater
                 message.text = if (newCache < 100f) "Mise en mémoire… ${newCache.toInt()} %" else ""
             }
@@ -215,7 +267,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         if (item == null) { ScreenGuard.started(); presenceKey = state.presenceKey(); lastBeat = 0 }
         if (it.uid != item?.uid) liveAttempt = 0 // a reconnection (same item, other position) keeps counting
         item = it
-        reconnectAt = 0; liveTime = -1; liveTimeChangedAt = System.currentTimeMillis(); openedAt = liveTimeChangedAt
+        reconnectAt = 0; stallSince = 0; liveTime = -1; liveTimeChangedAt = System.currentTimeMillis(); openedAt = liveTimeChangedAt
         lastSaved = System.currentTimeMillis()
         nextDismissed = false; skipped = false; learnIntroAt = 0; behindLive = false; skippedRecap = false
         segments = null
@@ -240,11 +292,10 @@ class PlayerWindow private constructor(private val state: AppState) {
             if (it.startMs > 5_000) add(":start-time=${it.startMs / 1000}")
             // A connection the server drops is reopened by VLC itself (from the same byte for files).
             if (it.url.startsWith("http")) add(":http-reconnect")
-            if (!it.live && it.url.startsWith("http")) {
-                // Read several minutes ahead: a slow or bursty server no longer stalls films and episodes.
-                // Small start buffer for a quick start; the prefetch keeps reading minutes ahead in the background.
-                add(":network-caching=1500"); add(":stream-filter=prefetch"); add(":prefetch-buffer-size=196608")
-            }
+            // Films and episodes: an ordinary 5 s buffer, read at the pace of playback like other players. The former
+            // read-ahead (VLC prefetch, 190 MB as fast as possible) made provider servers cut or throttle the stream.
+            if (!it.live && it.url.startsWith("http")) add(":network-caching=${System.getenv("LUMEN_VOD_CACHING") ?: "5000"}")
+            PlaybackLog.line("lecture ${it.kind} « ${it.title}${it.subtitle?.let { s -> " · $s" }.orEmpty()} »" + if (it.startMs > 0) " à ${fmt(it.startMs)}" else "")
         }
         // VLC draws into the window: it must be on screen before playback starts.
         frame.isVisible = true
@@ -371,6 +422,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         val delay = listOf(1, 2, 4, 8, 15)[(liveAttempt - 1).coerceAtMost(4)]
         reconnectAt = System.currentTimeMillis() + delay * 1000L
         trace("reconnect #$liveAttempt in $delay s: $reason (${it.title})")
+        PlaybackLog.line("reconnexion n°$liveAttempt dans $delay s : $reason (à ${fmt(liveTime.coerceAtLeast(0))})")
         message.foreground = Ui.danger
         message.text = "$reason · nouvelle tentative dans $delay s (essai $liveAttempt)"
     }

@@ -63,10 +63,12 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
             .build()
     }
 
+    // Up to 2 minutes ahead (ExoPlayer also caps the buffer in bytes, about 130 MB, so memory stays bounded), and
+    // the last 10 s kept for an instant "−10 s".
     private val loadControl = if (settings.bufferMode == "stable") {
-        DefaultLoadControl.Builder().setBufferDurationsMs(30_000, 90_000, 4_000, 8_000).build()
+        DefaultLoadControl.Builder().setBufferDurationsMs(30_000, 120_000, 4_000, 8_000).setBackBuffer(10_000, true).build()
     } else {
-        DefaultLoadControl.Builder().setBufferDurationsMs(15_000, 50_000, 1_500, 4_000).build()
+        DefaultLoadControl.Builder().setBufferDurationsMs(20_000, 120_000, 1_500, 4_000).setBackBuffer(10_000, true).build()
     }
 
     val player: ExoPlayer = ExoPlayer.Builder(context, DefaultRenderersFactory(context).setEnableDecoderFallback(true))
@@ -88,6 +90,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
     private var attempt = 0
     private var retryRunnable: Runnable? = null
     private var released = false
+    private var stallSince = 0L
 
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
@@ -99,6 +102,11 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
                 retryIn = if (state == Player.STATE_READY) 0 else s.retryIn,
             )
             if (state == Player.STATE_READY) attempt = 0
+            // A wait for data after playback started is a stall: logged with its length (adb logcat -s Player).
+            if (state == Player.STATE_BUFFERING && player.currentPosition > 0 && stallSince == 0L) stallSince = android.os.SystemClock.elapsedRealtime()
+            if (state == Player.STATE_READY && stallSince > 0) {
+                Log.i(TAG, "stall at ${player.currentPosition / 1000} s: ${android.os.SystemClock.elapsedRealtime() - stallSince} ms"); stallSince = 0
+            }
             // The provider closed a live stream: reopen it instead of leaving the last picture frozen.
             val spec = current
             if (state == Player.STATE_ENDED && spec?.live == true) scheduleRetry(spec, "Flux interrompu")
@@ -184,6 +192,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
 
     private fun prepare(spec: StreamSpec, positionMs: Long) {
         movedAt = android.os.SystemClock.elapsedRealtime()
+        stallSince = 0
         val okHttp = OkHttpDataSource.Factory(http).apply {
             spec.userAgent?.let { setUserAgent(it) }
             spec.referer?.let { setDefaultRequestProperties(mapOf("Referer" to it)) }
