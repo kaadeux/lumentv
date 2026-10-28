@@ -57,6 +57,7 @@ import com.lumentv.ui.components.ScreenTitle
 import com.lumentv.ui.components.TvButton
 import com.lumentv.ui.components.TvTextField
 import com.lumentv.ui.player.PlayerLauncher
+import com.lumentv.ui.components.ignoreHeldOk
 import com.lumentv.ui.theme.Palette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -141,7 +142,7 @@ private fun EventDialog(vm: MainViewModel, e: SportEvent, onDismiss: () -> Unit)
     val scope = rememberCoroutineScope()
     val now = System.currentTimeMillis()
     Dialog(onDismissRequest = onDismiss) {
-        Column(Modifier.width(600.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp)) {
+        Column(Modifier.ignoreHeldOk().width(600.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp)) {
             Text("${e.sport.emoji}  ${listOfNotNull(e.sport.label, e.competition).joinToString(" · ")}", style = MaterialTheme.typography.labelLarge, color = Palette.Accent)
             Text(e.label, style = MaterialTheme.typography.headlineSmall, color = Palette.Text, maxLines = 2)
             Text("${dayLabel(e.start)} ${timeRange(e.start, e.stop)}" + if (e.isLive(now)) " · en direct" else "",

@@ -38,6 +38,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.lumentv.ui.components.FocusSurface
+import com.lumentv.ui.components.ignoreHeldOk
 import com.lumentv.ui.theme.Palette
 import java.io.File
 
@@ -72,7 +73,7 @@ fun FileBrowserDialog(title: String, extensions: Set<String>, onPick: (File) -> 
     }
 
     Dialog(onDismissRequest = { if (dir == null) onDismiss() else dir = dir!!.parentFile?.takeIf { p -> roots.none { it.second == dir } } }) {
-        Column(Modifier.width(620.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp)) {
+        Column(Modifier.ignoreHeldOk().width(620.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
             Text(dir?.absolutePath ?: "Choisissez un emplacement", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1)
             Column(Modifier.padding(vertical = 10.dp)) {

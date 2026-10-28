@@ -53,13 +53,27 @@ import com.lumentv.ui.theme.Palette
 
 data class MenuOption(val label: String, val checked: Boolean = false, val action: () -> Unit)
 
+/**
+ * For the root of a dialog: a long press on OK opens it while the key is still held, and that key's repeats and its
+ * release reach the dialog and "click" the focused choice. OK only counts once it has been pressed again in here.
+ */
+@Composable
+fun Modifier.ignoreHeldOk(): Modifier {
+    var armed by remember { mutableStateOf(false) }
+    return onPreviewKeyEvent { e ->
+        val ok = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
+        if (!ok || armed) return@onPreviewKeyEvent false
+        if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) { armed = true; false } else true
+    }
+}
+
 /** A list of choices in a centred panel. Back closes it. */
 @Composable
 fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Unit, subtitle: String? = null) {
     Dialog(onDismissRequest = onDismiss) {
         val first = remember { FocusRequester() }
         Column(
-            Modifier.width(460.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp),
+            Modifier.ignoreHeldOk().width(460.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp),
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
             if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 3)
@@ -87,7 +101,7 @@ fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Uni
 fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         val focus = remember { FocusRequester() }
-        Column(Modifier.width(480.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(24.dp)) {
+        Column(Modifier.ignoreHeldOk().width(480.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(24.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
             Spacer(Modifier.height(8.dp))
             Text(message, style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim)

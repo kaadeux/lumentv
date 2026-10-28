@@ -71,6 +71,7 @@ import com.lumentv.ui.components.Logo
 import com.lumentv.ui.components.MenuOption
 import com.lumentv.ui.components.OptionsDialog
 import com.lumentv.ui.theme.LumenTheme
+import com.lumentv.ui.components.ignoreHeldOk
 import com.lumentv.ui.theme.Palette
 import kotlinx.coroutines.launch
 
@@ -215,7 +216,7 @@ fun ChannelPicker(graph: AppGraph, onPick: (ChannelRow) -> Unit, onDismiss: () -
         value = graph.library.channels(pid, Groups.ALL, false, s.sort)
     }
     Dialog(onDismissRequest = onDismiss) {
-        Column(Modifier.width(560.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(18.dp)) {
+        Column(Modifier.ignoreHeldOk().width(560.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(18.dp)) {
             Text("Choisir une chaîne", style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(bottom = 8.dp))
             FilterField(filter, "Nom ou numéro de la chaîne") { filter = it }
             val f = normalize(filter)
