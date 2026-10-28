@@ -20,9 +20,10 @@ import java.util.concurrent.TimeUnit
 /**
  * A competition of the official calendar. [path] is ESPN's (free scoreboard, no key) or, when [sportsDb], a
  * TheSportsDB league id (free key) for what ESPN lacks. [sport] is a [SportsCatalog] id. [tvFr]: usual broadcaster in
- * France, shown when no channel of the playlist announces a game.
+ * France, shown when no channel of the playlist announces a game. [badgesFrom]: the same league on TheSportsDB, for the
+ * club crests ESPN lacks or gets wrong (it gives Vannes the flag of Vanuatu, Perpignan the one of the USA).
  */
-data class League(val id: String, val sport: String, val label: String, val path: String, val tvFr: String? = null, val sportsDb: Boolean = false)
+data class League(val id: String, val sport: String, val label: String, val path: String, val tvFr: String? = null, val sportsDb: Boolean = false, val badgesFrom: String? = null)
 
 data class Team(val name: String, val short: String?, val abbr: String?, val logo: String?) {
     /** Names a guide may use for this team, normalised: "Paris Saint-Germain", "PSG", "Le Havre AC" → "le havre", "havre". */
@@ -75,35 +76,67 @@ class FixtureClient(http: OkHttpClient) {
 
     suspend fun fixtures(leagues: Collection<League>, days: Int): List<Fixture> = withContext(Dispatchers.IO) {
         val day = SimpleDateFormat("yyyyMMdd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
-        val dash = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
         val now = System.currentTimeMillis()
         // ESPN days are US days: start one day back so tonight's European games are not missed.
         val dates = (-1..days.coerceIn(1, SportsFunnel.MAX_DAYS)).map { now + it * 86_400_000L }
         // Formatted here, once: SimpleDateFormat is not thread-safe, and the requests below run in parallel.
         val compact = dates.map { day.format(it) }
-        val dashed = dates.map { dash.format(it) }
+        val end = now + (days.coerceIn(1, SportsFunnel.MAX_DAYS) + 1) * 86_400_000L
+        val rounds = days / 7 + 2
         coroutineScope {
-            leagues.flatMap { l -> (if (l.sportsDb) dashed else compact).map { d -> async { day(l, d) } } }.awaitAll().flatten()
-        }.distinctBy { it.id }.filter { it.state == "in" || (it.state == "pre" && it.start > now - 3 * 3_600_000L) }
+            val crests = leagues.mapNotNull { l -> l.badgesFrom?.let { id -> id to async { rounds(l, id, rounds) } } }.toMap()
+            leagues.flatMap { l ->
+                if (l.sportsDb) listOf(async { rounds(l, l.path, rounds) })
+                else compact.map { d -> async { day(l, d).let { list -> l.badgesFrom?.let { id -> withCrests(list, crests.getValue(id).await()) } ?: list } } }
+            }.awaitAll().flatten()
+        }.distinctBy { it.id }.filter { it.state == "in" || (it.state == "pre" && it.start > now - 3 * 3_600_000L && it.start < end) }
             .sortedWith(compareBy({ !it.live }, { it.start }))
     }
 
-    private fun day(l: League, date: String): List<Fixture> {
-        val key = "${l.path}/$date"
+    private fun day(l: League, date: String): List<Fixture> =
+        cached("${l.path}/$date") { get("https://site.api.espn.com/apis/site/v2/sports/${l.path}/scoreboard?dates=$date")?.let { parse(l, it) } }
+
+    /**
+     * The next [count] rounds of a TheSportsDB league: its free key gives at most 3 games per day request (Pro D2 plays
+     * 8 on a Friday) but whole rounds, found from the next game's round number.
+     */
+    private fun rounds(l: League, id: String, count: Int): List<Fixture> = cached("sdb/$id/$count") {
+        val next = get("https://www.thesportsdb.com/api/v1/json/123/eventsnextleague.php?id=$id")?.let { body ->
+            ((json.parseToJsonElement(body) as? JsonObject)?.get("events") as? JsonArray)?.firstOrNull() as? JsonObject
+        } ?: return@cached null
+        val round = next.s("intRound")?.toIntOrNull() ?: return@cached null
+        val season = next.s("strSeason") ?: return@cached null
+        (round until round + count).flatMap { r ->
+            parseSportsDb(l, get("https://www.thesportsdb.com/api/v1/json/123/eventsround.php?id=$id&r=$r&s=$season") ?: return@cached null)
+        }
+    }
+
+    /** ESPN's missing or wrong crests (a country's flag for a club) replaced by TheSportsDB's for the same game. */
+    private fun withCrests(list: List<Fixture>, other: List<Fixture>): List<Fixture> = list.map { f ->
+        fun bad(t: Team?) = t != null && (t.logo == null || "/countries/" in t.logo)
+        if (!bad(f.home) && !bad(f.away)) return@map f
+        val same = other.firstOrNull { o ->
+            kotlin.math.abs(o.start - f.start) < 2 * 3_600_000L && sameClub(f.home, o.home) && sameClub(f.away, o.away)
+        } ?: return@map f.copy(home = f.home?.takeUnless { bad(it) } ?: f.home?.copy(logo = null), away = f.away?.takeUnless { bad(it) } ?: f.away?.copy(logo = null))
+        f.copy(home = if (bad(f.home)) f.home?.copy(logo = same.home?.logo) else f.home, away = if (bad(f.away)) f.away?.copy(logo = same.away?.logo) else f.away)
+    }
+
+    /** "Bayonne" and "Aviron Bayonnais", "La Rochelle" and "Stade Rochelais": a common word start. */
+    private fun sameClub(a: Team?, b: Team?): Boolean {
+        fun stems(t: Team) = normalize(t.name).split(' ').filter { it.length >= 4 && it !in clubWords }.map { it.take(5) }.toSet()
+        return a != null && b != null && stems(a).intersect(stems(b)).isNotEmpty()
+    }
+
+    /** One more try on failure; a failure is not cached, so the next visit asks again instead of showing nothing. */
+    private fun cached(key: String, load: () -> List<Fixture>?): List<Fixture> {
         synchronized(cache) { cache[key]?.let { (t, list) -> if (System.currentTimeMillis() - t < 5 * 60_000) return list } }
-        val url = if (l.sportsDb) "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=$date&l=${l.path}"
-            else "https://site.api.espn.com/apis/site/v2/sports/${l.path}/scoreboard?dates=$date"
-        // One more try on failure; a failed day is not cached, so the next visit asks again instead of showing it empty.
-        val list = (1..2).firstNotNullOfOrNull {
-            runCatching {
-                http.newCall(Request.Builder().url(url).build()).execute().use { r ->
-                    if (!r.isSuccessful) null else if (l.sportsDb) parseSportsDb(l, r.body!!.string()) else parse(l, r.body!!.string())
-                }
-            }.getOrNull()
-        } ?: return emptyList()
+        val list = (1..2).firstNotNullOfOrNull { runCatching { load() }.getOrNull() } ?: return emptyList()
         synchronized(cache) { cache[key] = System.currentTimeMillis() to list }
         return list
     }
+
+    private fun get(url: String): String? =
+        http.newCall(Request.Builder().url(url).build()).execute().use { r -> if (r.isSuccessful) r.body!!.string() else null }
 
     private fun parse(l: League, body: String): List<Fixture> {
         val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
@@ -193,6 +226,7 @@ class FixtureClient(http: OkHttpClient) {
     private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != "null" }
 
     companion object {
+        private val clubWords = setOf("stade", "union", "club", "rugby", "olympique", "sporting")
         val leagues = listOf(
             League("fra1", "football", "Ligue 1", "soccer/fra.1", "Ligue 1+ ou beIN Sports"),
             League("fra2", "football", "Ligue 2", "soccer/fra.2", "beIN Sports"),
@@ -204,7 +238,7 @@ class FixtureClient(http: OkHttpClient) {
             League("esp1", "football", "Liga", "soccer/esp.1", "beIN Sports"),
             League("ita1", "football", "Serie A", "soccer/ita.1", "beIN Sports"),
             League("ger1", "football", "Bundesliga", "soccer/ger.1", "beIN Sports"),
-            League("top14", "rugby", "Top 14", "rugby/270559", "Canal+"),
+            League("top14", "rugby", "Top 14", "rugby/270559", "Canal+", badgesFrom = "4430"),
             League("prod2", "rugby", "Pro D2", "5172", "Canal+", sportsDb = true),
             League("rcc", "rugby", "Champions Cup (rugby)", "rugby/271937", "France Télévisions ou beIN Sports"),
             League("6n", "rugby", "Six Nations", "rugby/180659", "France 2"),
