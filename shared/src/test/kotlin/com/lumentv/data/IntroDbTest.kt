@@ -25,4 +25,12 @@ class IntroDbTest {
         assertNotNull(from?.intro); assertNotNull(from?.credits)
         assertTrue(db.segments("66732", 1, 1)?.intro != null)
     }
+
+    @Test fun introOverTheRecapIsDropped() {
+        val wrong = Segments(0L until 115_000L, 1_800L until 118_500L, null)
+        assertTrue(wrong.sane().intro == null)
+        val right = Segments(0L until 115_000L, 363_000L until 484_000L, null)
+        assertTrue(right.sane().intro == right.intro)
+        assertTrue(wrong.sane().fill(Segments(null, 363_000L until 484_000L, null)).intro == right.intro)
+    }
 }

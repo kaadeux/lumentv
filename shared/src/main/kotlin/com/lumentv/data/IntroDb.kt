@@ -17,7 +17,13 @@ data class Segments(val recap: LongRange?, val intro: LongRange?, val credits: L
     val known get() = recap != null || intro != null
 
     /** This one, its missing parts taken from [other]. */
-    fun fill(other: Segments) = Segments(recap ?: other.recap, intro ?: other.intro, credits ?: other.credits)
+    fun fill(other: Segments) = Segments(recap ?: other.recap, intro ?: other.intro, credits ?: other.credits).sane()
+
+    /**
+     * Community entries are sometimes wrong: an "intro" lying over the recap (the recap timed twice) is dropped, so
+     * another database can give the real one (From S2E7: recap, a scene, then the intro).
+     */
+    fun sane(): Segments = if (recap != null && intro != null && intro.first < recap.last - 3_000) copy(intro = null) else this
 }
 
 /**
@@ -47,7 +53,8 @@ class IntroDb(http: OkHttpClient) {
         for (source in sources) {
             val m = merged
             if (m != null && (m.recap != null || "recap" in absent) && (m.intro != null || "intro" in absent) && m.credits != null) break
-            val (found, none) = runCatching { source() }.getOrNull() ?: continue
+            val (raw, none) = runCatching { source() }.getOrNull() ?: continue
+            val found = raw.sane()
             merged = m?.fill(found) ?: found
             absent += none
         }
