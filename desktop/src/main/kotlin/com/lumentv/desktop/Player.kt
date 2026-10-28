@@ -292,9 +292,12 @@ class PlayerWindow private constructor(private val state: AppState) {
             if (it.startMs > 5_000) add(":start-time=${it.startMs / 1000}")
             // A connection the server drops is reopened by VLC itself (from the same byte for files).
             if (it.url.startsWith("http")) add(":http-reconnect")
-            // Films and episodes: an ordinary 5 s buffer, read at the pace of playback like other players. The former
-            // read-ahead (VLC prefetch, 190 MB as fast as possible) made provider servers cut or throttle the stream.
-            if (!it.live && it.url.startsWith("http")) add(":network-caching=${System.getenv("LUMEN_VOD_CACHING") ?: "5000"}")
+            // Films and episodes: 5 s before the picture, then about a minute read ahead (32 MB, then only at the pace
+            // of playback) to ride over the pauses of provider servers. The former 190 MB read in one go was too much.
+            if (!it.live && it.url.startsWith("http")) {
+                add(":network-caching=${System.getenv("LUMEN_VOD_CACHING") ?: "5000"}")
+                add(":stream-filter=prefetch"); add(":prefetch-buffer-size=${System.getenv("LUMEN_VOD_AHEAD_KB") ?: "32768"}")
+            }
             PlaybackLog.line("lecture ${it.kind} « ${it.title}${it.subtitle?.let { s -> " · $s" }.orEmpty()} »" + if (it.startMs > 0) " à ${fmt(it.startMs)}" else "")
         }
         // VLC draws into the window: it must be on screen before playback starts.
@@ -444,7 +447,9 @@ class PlayerWindow private constructor(private val state: AppState) {
                 liveTime = t; liveTimeChangedAt = now
                 if (t > 0 && now - openedAt > 30_000) liveAttempt = 0 // plays again for good
             }
-            now - liveTimeChangedAt > 20_000 -> scheduleReconnect(if (it.live) "Signal perdu" else "Lecture bloquée")
+            // Films: a server that stops sending on an open connection recovers at once on a new one, so 10 s is
+            // enough; live streams get 20 s (they can pause briefly on their own).
+            now - liveTimeChangedAt > (if (it.live) 20_000 else 10_000) -> scheduleReconnect(if (it.live) "Signal perdu" else "Lecture bloquée")
         }
     }
 
