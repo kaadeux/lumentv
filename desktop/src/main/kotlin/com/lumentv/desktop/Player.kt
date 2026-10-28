@@ -147,9 +147,14 @@ class PlayerWindow private constructor(private val state: AppState) {
         surface.addMouseMotionListener(object : MouseAdapter() { override fun mouseMoved(e: MouseEvent) = wake() })
         keys(frame.rootPane)
         player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
-            override fun finished(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { if (item?.live == true) scheduleReconnect("Flux interrompu") else onFinished() }
+            override fun finished(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater {
+                // Live never ends; a film "ending" more than a minute early is a dropped connection, not the end.
+                val len = player.status().length()
+                if (item?.live == true || (len > 0 && liveTime in 1 until len - 60_000)) scheduleReconnect("Flux interrompu") else onFinished()
+            }
             override fun error(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater {
-                if (item?.live == true) { scheduleReconnect("Flux indisponible"); return@invokeLater }
+                // Live, or a film already playing: retried; a film that never started shows why.
+                if (item?.live == true || liveTime > 0) { scheduleReconnect("Flux indisponible"); return@invokeLater }
                 message.foreground = Ui.danger
                 message.text = "Lecture impossible : le flux ne répond pas, ou l'abonnement est déjà utilisé sur un autre écran."
             }
@@ -205,7 +210,7 @@ class PlayerWindow private constructor(private val state: AppState) {
     fun play(it: PlayItem) {
         saveNow()
         if (item == null) { ScreenGuard.started(); presenceKey = state.presenceKey(); lastBeat = 0 }
-        if (it !== item) liveAttempt = 0
+        if (it.uid != item?.uid) liveAttempt = 0 // a reconnection (same item, other position) keeps counting
         item = it
         reconnectAt = 0; liveTime = -1; liveTimeChangedAt = System.currentTimeMillis(); openedAt = liveTimeChangedAt
         lastSaved = System.currentTimeMillis()
@@ -230,6 +235,8 @@ class PlayerWindow private constructor(private val state: AppState) {
         val opts = buildList {
             if (it.userAgent.isNotBlank()) add(":http-user-agent=${it.userAgent}")
             if (it.startMs > 5_000) add(":start-time=${it.startMs / 1000}")
+            // A connection the server drops is reopened by VLC itself (from the same byte for files).
+            if (it.url.startsWith("http")) add(":http-reconnect")
             if (!it.live && it.url.startsWith("http")) {
                 // Read several minutes ahead: a slow or bursty server no longer stalls films and episodes.
                 // Small start buffer for a quick start; the prefetch keeps reading minutes ahead in the background.
@@ -345,37 +352,48 @@ class PlayerWindow private constructor(private val state: AppState) {
         if (showNext) nextCard.set(label = "Épisode suivant dans ${(len - pos) / 1000} s")
     }
 
-    /** Live only: shows the countdown and reopens the channel when it is due (see watchLive). */
+    /** Shows the countdown and reopens the stream when it is due (see watchStream). Films and episodes: 5 tries. */
     private fun scheduleReconnect(reason: String) {
-        val it = item?.takeIf { it.live } ?: return
+        val it = item ?: return
         if (reconnectAt > 0 || !frame.isVisible) return
+        if (!it.live && liveAttempt >= 5) {
+            message.foreground = Ui.danger
+            message.text = "Lecture interrompue : le serveur ne répond plus. Relancez la lecture pour reprendre ici."
+            return
+        }
         liveAttempt++
         val delay = listOf(1, 2, 4, 8, 15)[(liveAttempt - 1).coerceAtMost(4)]
         reconnectAt = System.currentTimeMillis() + delay * 1000L
-        trace("live reconnect #$liveAttempt in $delay s: $reason (${it.title})")
+        trace("reconnect #$liveAttempt in $delay s: $reason (${it.title})")
         message.foreground = Ui.danger
         message.text = "$reason · nouvelle tentative dans $delay s (essai $liveAttempt)"
     }
 
-    /** A live channel whose time no longer moves for 20 s (stuck picture, stalled stream) is reopened; pause excepted. */
-    private fun watchLive(it: PlayItem) {
+    /**
+     * A stream whose time no longer moves for 20 s while it should play (stalled server, stuck picture) is reopened:
+     * live at the live point, a film or an episode where it stopped. Pause and the end of the file excepted.
+     */
+    private fun watchStream(it: PlayItem) {
         val now = System.currentTimeMillis()
-        if (reconnectAt > 0) { if (now >= reconnectAt) { reconnectAt = 0; play(it) }; return }
+        if (reconnectAt > 0) {
+            if (now >= reconnectAt) { reconnectAt = 0; play(if (it.live) it else it.copy(startMs = liveTime.coerceAtLeast(it.startMs))) }
+            return
+        }
         val t = player.status().time()
         when {
-            player.status().state() == State.PAUSED -> liveTimeChangedAt = now
+            player.status().state().let { s -> s == State.PAUSED || s == State.ENDED || s == State.STOPPED } -> liveTimeChangedAt = now
             t != liveTime -> {
                 liveTime = t; liveTimeChangedAt = now
                 if (t > 0 && now - openedAt > 30_000) liveAttempt = 0 // plays again for good
             }
-            now - liveTimeChangedAt > 20_000 -> scheduleReconnect("Signal perdu")
+            now - liveTimeChangedAt > 20_000 -> scheduleReconnect(if (it.live) "Signal perdu" else "Lecture bloquée")
         }
     }
 
     private fun tick() {
         val it = item ?: return
         if (!frame.isVisible) return
-        if (it.live) watchLive(it)
+        watchStream(it)
         val pos = player.status().time(); val len = player.status().length()
         if (!it.live && len > 0) {
             if (!seek.isDragging) { seek.played = pos.toFloat() / len; seek.repaint() }
