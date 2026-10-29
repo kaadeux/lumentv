@@ -13,10 +13,22 @@ object SportsFunnel {
     /** The saved period, or the default one. */
     fun days(saved: Int?): Int = saved?.takeIf { it in DAY_CHOICES } ?: DAYS
 
+    /** The order the sports are offered in; the others follow. */
+    private val ORDER = listOf("football", "rugby", "basket", "combat", "moteur", "nfl")
+
     /** Sports that have at least one competition in the official calendar. */
     val sports: List<Sport> = SportsCatalog.all.filter { s -> FixtureClient.leagues.any { it.sport == s.id } }
+        .sortedBy { s -> ORDER.indexOf(s.id).let { if (it < 0) ORDER.size else it } }
 
-    fun leaguesOf(sports: Set<String>): List<League> = FixtureClient.leagues.filter { it.sport in sports }
+    fun leaguesOf(sports: Set<String>): List<League> =
+        FixtureClient.leagues.filter { it.sport in sports }.sortedBy { l -> this.sports.indexOfFirst { it.id == l.sport } }
+
+    /** What a filter button says: "Toutes", "Ligue 1", "Ligue 1, Top 14", "4 compétitions". */
+    fun summary(chosen: List<String>, none: String, plural: String): String = when (chosen.size) {
+        0 -> none
+        1, 2 -> chosen.joinToString(", ")
+        else -> "${chosen.size} $plural"
+    }
 
     /**
      * The competitions to load, sport by sport: the ones ticked for that sport, or all of its competitions when none

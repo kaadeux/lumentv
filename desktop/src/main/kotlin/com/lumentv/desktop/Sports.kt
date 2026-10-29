@@ -16,12 +16,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -78,13 +82,16 @@ fun SportsScreen(state: AppState) {
     val chosen = funnel.effectiveLeagues(sports, leagues).map { it.id }.toSet()
     val days = funnel.days(state.setting("sport_days").toIntOrNull())
     var tick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); tick++ } }
+    // Again every 30 s while a game is live (score, minute, half-time), every 5 min otherwise.
+    var live by remember { mutableStateOf(false) }
+    LaunchedEffect(live) { while (true) { delay(if (live) FixtureClient.LIVE_REFRESH_MS else 5 * 60_000L); tick++ } }
     // Every minute, so the channels unlock on screen one hour before kick-off.
     val now by produceState(System.currentTimeMillis()) { while (true) { delay(60_000L); value = System.currentTimeMillis() } }
     // The guide arriving later only adds channels: the games already shown stay on screen meanwhile.
     val games by produceState<List<Game>?>(null, chosen, days, tick, c, state.guide) {
         val t0 = System.currentTimeMillis()
-        value = if (chosen.isEmpty()) emptyList() else runCatching { load(state, c, chosen, days) }.getOrDefault(emptyList())
+        value = if (chosen.isEmpty()) emptyList() else runCatching { load(state, c, chosen, days) }.getOrElse { value ?: emptyList() }
+        live = FixtureClient.hasLive(value.orEmpty().map { it.f })
         System.getenv("LUMEN_TRACE")?.let { java.io.File(it).appendText("sports ${value?.size} games in ${System.currentTimeMillis() - t0} ms (guide ${state.guide.size} channels)\n") }
     }
     fun save(key: String, values: Collection<String>) = state.setSetting(key, values.sorted().joinToString("\n"))
@@ -92,37 +99,42 @@ fun SportsScreen(state: AppState) {
     val clubs = remember(all) { funnel.clubs(all.map { it.f }) }
     val kept = remember(all, teams) { funnel.byClubs(all.map { it.f }, teams).toSet() }
     val shown = all.filter { it.f in kept }
+    val leagueList = funnel.leaguesOf(sports)
+    var picker by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Sports", style = MaterialTheme.typography.headlineSmall, color = Pal.text) }
         item {
             Text("Matchs en cours et à venir (calendrier officiel, sans les rediffusions), avec les chaînes qui les diffusent.", color = Pal.dim)
         }
-        item { Step("1. Sport") }
+        // The sports as chips (the main choice), then the rest as three menus on one line.
         item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 funnel.sports.forEach { sp -> ChoiceChip("${sp.emoji}  ${sp.label}", sp.id in sports) { save("sport_ids", if (sp.id in sports) sports - sp.id else sports + sp.id) } }
             }
         }
-        if (sports.isNotEmpty()) {
-            item { Step("2. Compétition  ·  aucune cochée = toutes") }
-            item {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    funnel.leaguesOf(sports).forEach { l -> ChoiceChip(l.label, l.id in leagues) { save("sport_leagues", if (l.id in leagues) leagues - l.id else leagues + l.id) } }
-                }
-            }
-            item { Step("3. Période") }
-            item {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    funnel.DAY_CHOICES.forEach { n -> ChoiceChip("$n jours", n == days) { state.setSetting("sport_days", n.toString()) } }
-                }
-            }
-            if (clubs.isNotEmpty()) {
-                item { Step("4. Club / équipe  ·  aucun coché = tous") }
-                item {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        clubs.forEach { cl -> ChoiceChip(cl, cl in teams, small = true) { save("sport_teams", if (cl in teams) teams - cl else teams + cl) } }
+        if (sports.isNotEmpty()) item {
+            val comps = leagueList.filter { it.id in leagues }.map { it.label }
+            val picked = teams.filter { it in clubs }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Menu("Compétition", funnel.summary(comps, "Toutes", "compétitions"), comps.isNotEmpty(), picker == "leagues", { picker = if (it) "leagues" else null }) {
+                    MenuEntry(if (comps.isEmpty()) "✓  Toutes" else "     Toutes") { save("sport_leagues", leagues - leagueList.map { it.id }.toSet()) }
+                    leagueList.forEach { l ->
+                        val on = l.id in leagues
+                        MenuEntry((if (on) "✓  " else "     ") + (if (sports.size > 1) SportsCatalog.byId(l.sport)?.emoji?.let { "$it  " }.orEmpty() else "") + l.label) {
+                            save("sport_leagues", if (on) leagues - l.id else leagues + l.id)
+                        }
                     }
+                }
+                if (clubs.isNotEmpty() || picked.isNotEmpty()) Menu("Équipe", funnel.summary(picked, "Toutes", "équipes"), picked.isNotEmpty(), picker == "clubs", { picker = if (it) "clubs" else null }) {
+                    MenuEntry(if (picked.isEmpty()) "✓  Tous les matchs" else "     Tous les matchs") { save("sport_teams", emptyList()) }
+                    clubs.forEach { cl ->
+                        val on = cl in teams
+                        MenuEntry((if (on) "✓  " else "     ") + cl) { save("sport_teams", if (on) teams - cl else teams + cl) }
+                    }
+                }
+                Menu("Période", "$days jours", false, picker == "days", { picker = if (it) "days" else null }) {
+                    funnel.DAY_CHOICES.forEach { n -> MenuEntry((if (n == days) "✓  " else "     ") + "$n jours", close = true) { state.setSetting("sport_days", n.toString()); picker = null } }
                 }
             }
         }
@@ -143,8 +155,23 @@ fun SportsScreen(state: AppState) {
     }
 }
 
+/** A filter as one button ("Compétition · Toutes ▾") opening a list; ticking leaves it open to tick several. */
 @Composable
-private fun Step(text: String) = Text(text, color = Pal.accent, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+private fun Menu(title: String, value: String, active: Boolean, open: Boolean, onOpen: (Boolean) -> Unit, content: @Composable () -> Unit) {
+    androidx.compose.foundation.layout.Box {
+        Row(Modifier.clip(RoundedCornerShape(50)).background(if (active) Pal.accent.copy(alpha = 0.25f) else Pal.panelHigh)
+            .combinedClickable { onOpen(!open) }.padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("$title · ", color = Pal.dim, fontSize = 13.sp)
+            Text(value, color = Pal.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 260.dp))
+            Icon(Icons.Filled.ArrowDropDown, null, tint = Pal.dim, modifier = Modifier.size(18.dp))
+        }
+        androidx.compose.material3.DropdownMenu(open, { onOpen(false) }, containerColor = Pal.panel, modifier = Modifier.heightIn(max = 420.dp)) { content() }
+    }
+}
+
+@Composable
+private fun MenuEntry(label: String, close: Boolean = false, onClick: () -> Unit) =
+    androidx.compose.material3.DropdownMenuItem({ Text(label, color = Pal.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }, onClick)
 
 @Composable
 private fun ChoiceChip(label: String, on: Boolean, small: Boolean = false, onClick: () -> Unit) =
@@ -165,7 +192,7 @@ private fun GameCard(state: AppState, g: Game, now: Long) {
             Column(Modifier.width(120.dp)) {
                 if (f.live) {
                     Text("● EN DIRECT", color = liveRed, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    if (f.detail.isNotBlank()) Text(f.detail, color = liveRed, fontSize = 13.sp)
+                    Text(f.clock, color = liveRed, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 } else Text(hm.format(Date(f.start)), color = Pal.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
             }
             if (f.home != null && f.away != null) {

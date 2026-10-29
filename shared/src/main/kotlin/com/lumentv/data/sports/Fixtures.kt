@@ -60,6 +60,8 @@ data class Fixture(
     /** "⚽ Football · Ligue 1 · Journée 10" */
     val details get() = listOfNotNull(SportsCatalog.byId(league.sport)?.let { "${it.emoji} ${it.label}" }, league.label, round).joinToString(" · ")
     val live get() = state == "in"
+    /** Where a live game stands: "67'", "Mi-temps", "QT3 5:21"… or "En cours" when the calendar does not say. */
+    val clock get() = detail.ifBlank { "En cours" }
     /** "Habituellement sur Canal+", or null when unknown. */
     val usualBroadcaster get() = league.tvFr?.let { "Habituellement sur $it" }
     /** The channels can be opened during the game and from [OPEN_BEFORE_MS] before kick-off, not earlier. */
@@ -135,9 +137,17 @@ class FixtureClient(http: OkHttpClient) {
         return a != null && b != null && stems(a).intersect(stems(b)).isNotEmpty()
     }
 
-    /** One more try on failure; a failure is not cached, so the next visit asks again instead of showing nothing. */
+    /**
+     * One more try on failure; a failure is not cached, so the next visit asks again instead of showing nothing. Kept
+     * 5 minutes, but only [LIVE_REFRESH_MS] while one of its games is live or about to start: the score follows.
+     */
     private fun cached(key: String, load: () -> List<Fixture>?): List<Fixture> {
-        synchronized(cache) { cache[key]?.let { (t, list) -> if (System.currentTimeMillis() - t < 5 * 60_000) return list } }
+        synchronized(cache) {
+            cache[key]?.let { (t, list) ->
+                val age = System.currentTimeMillis() - t
+                if (age < (if (hasLive(list)) LIVE_REFRESH_MS - 2_000 else 5 * 60_000L)) return list
+            }
+        }
         val list = (1..2).firstNotNullOfOrNull { runCatching { load() }.getOrNull() } ?: return emptyList()
         synchronized(cache) { cache[key] = System.currentTimeMillis() to list }
         return list
@@ -187,13 +197,27 @@ class FixtureClient(http: OkHttpClient) {
             if (status in setOf("FT", "AET", "AOT", "Match Finished", "CANC", "PST") || now > start + 2 * 3_600_000L) return@mapNotNull null
             val live = now >= start
             Fixture(
-                id = "sdb" + (o.s("idEvent") ?: return@mapNotNull null), league = l, start = start, state = if (live) "in" else "pre", detail = "",
+                id = "sdb" + (o.s("idEvent") ?: return@mapNotNull null), league = l, start = start, state = if (live) "in" else "pre",
+                detail = if (live) sportsDbStatus(status, o.s("strProgress")) else "",
                 home = o.s("strHomeTeam")?.let { Team(it, null, null, o.s("strHomeTeamBadge")) },
                 away = o.s("strAwayTeam")?.let { Team(it, null, null, o.s("strAwayTeamBadge")) },
                 name = o.s("strEvent").orEmpty(),
                 homeScore = o.s("intHomeScore")?.takeIf { live }, awayScore = o.s("intAwayScore")?.takeIf { live },
                 round = o.s("intRound")?.takeIf { it != "0" }?.let { "Journée $it" }, venue = o.s("strVenue"),
             )
+        }
+    }
+
+    /** TheSportsDB's live status ("1H", "HT", "2H", and the minute when it gives one), or "" when it does not say. */
+    private fun sportsDbStatus(status: String, progress: String?): String {
+        val minute = progress?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() }?.let { "$it'" }
+        return when (status.uppercase()) {
+            "HT" -> "Mi-temps"
+            "1H" -> minute ?: "1re mi-temps"
+            "2H" -> minute ?: "2e mi-temps"
+            "ET" -> "Prolongations"
+            "P", "PEN" -> "Tirs au but"
+            else -> minute.orEmpty()
         }
     }
 
@@ -234,6 +258,12 @@ class FixtureClient(http: OkHttpClient) {
     private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != "null" }
 
     companion object {
+        /** How often a list with a live game is asked again (score, minute, half-time). */
+        const val LIVE_REFRESH_MS = 30_000L
+
+        /** A game live, or starting within 15 minutes: worth following closely. */
+        fun hasLive(list: List<Fixture>, now: Long = System.currentTimeMillis()) = list.any { it.live || it.start - now in 0..15 * 60_000L }
+
         private val clubWords = setOf("stade", "union", "club", "rugby", "olympique", "sporting")
         val leagues = listOf(
             League("fra1", "football", "Ligue 1", "soccer/fra.1", "Ligue 1+ ou beIN Sports"),

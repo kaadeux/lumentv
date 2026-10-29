@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
@@ -271,15 +273,19 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
 private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { delay(5 * 60_000L); tick++ } }
     val funnel = com.lumentv.data.sports.SportsFunnel
     val sports = prefs.sports.filter { s -> funnel.sports.any { it.id == s } }.toSet()
     val days = funnel.days(prefs.days)
     val loadKey = Triple(sports, prefs.leagues, days)
-    val games by produceState<List<com.lumentv.data.sports.SportsRepository.Game>?>(null, pid, loadKey, tick) {
+    // Loaded again every 30 s while a game is live (score, minute, half-time), every 5 min otherwise; the list
+    // stays on screen meanwhile.
+    val games by produceState<List<com.lumentv.data.sports.SportsRepository.Game>?>(null, pid, loadKey) {
         value = null
-        value = if (sports.isEmpty()) emptyList() else runCatching { vm.graph.sports.games(pid, prefs) }.getOrDefault(emptyList())
+        while (true) {
+            value = if (sports.isEmpty()) emptyList() else runCatching { vm.graph.sports.games(pid, prefs) }.getOrElse { value ?: emptyList() }
+            val live = com.lumentv.data.sports.FixtureClient.hasLive(value.orEmpty().map { it.fixture })
+            delay(if (live) com.lumentv.data.sports.FixtureClient.LIVE_REFRESH_MS else 5 * 60_000L)
+        }
     }
     var open by remember { mutableStateOf<com.lumentv.data.sports.SportsRepository.Game?>(null) }
     fun save(s: Set<String> = sports, l: Set<String> = prefs.leagues, t: List<String> = prefs.teams, d: Int = days) = scope.launch {
@@ -289,56 +295,27 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
     val clubs = remember(all) { funnel.clubs(all.map { it.fixture }) }
     val shownFixtures = remember(all, prefs.teams) { funnel.byClubs(all.map { it.fixture }, prefs.teams).toSet() }
     val shown = all.filter { it.fixture in shownFixtures }
+    val leagues = funnel.leaguesOf(sports)
+    var picker by remember { mutableStateOf<String?>(null) }
 
     val phone = com.lumentv.ui.LocalPhone.current
-    // Phone: the filters fold behind one summary line, so the games come first.
-    var filtersOpen by remember { mutableStateOf(false) }
-    val showFilters = !phone || filtersOpen || sports.isEmpty()
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxSize()) {
         if (!phone) item { ScreenTitle("Sports") }
-        if (phone && sports.isNotEmpty()) item {
-            val summary = listOf(funnel.sports.filter { it.id in sports }.joinToString(", ") { "${it.emoji} ${it.label}" }, "$days jours") +
-                listOfNotNull(prefs.teams.takeIf { it.isNotEmpty() }?.let { "${it.size} club(s)" })
-            FocusSurface({ filtersOpen = !filtersOpen }, Modifier.fillMaxWidth(), container = Palette.PanelHigh) {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Filtres", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                        Text(summary.joinToString(" · "), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
-                    Text(if (filtersOpen) "Fermer  ▴" else "Modifier  ▾", style = MaterialTheme.typography.labelLarge, color = Palette.Accent)
-                }
-            }
-        }
-        // 1. Sports
-        if (showFilters) item { FilterLabel("1. Sport") }
-        if (showFilters) item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // The sports as chips (the main choice), then the rest as three menus on one line.
+        item {
+            if (phone) androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(funnel.sports, key = { it.id }) { s -> Chip("${s.emoji} ${s.label}", s.id in sports) { save(s = if (s.id in sports) sports - s.id else sports + s.id) } }
+            } else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 funnel.sports.forEach { s -> Chip("${s.emoji} ${s.label}", s.id in sports) { save(s = if (s.id in sports) sports - s.id else sports + s.id) } }
             }
         }
-        if (sports.isNotEmpty() && showFilters) {
-            // 2. Competitions of those sports (none = all)
-            item { FilterLabel("2. Compétition (aucune cochée = toutes)") }
-            item {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    funnel.leaguesOf(sports).forEach { l -> Chip(l.label, l.id in prefs.leagues) { save(l = if (l.id in prefs.leagues) prefs.leagues - l.id else prefs.leagues + l.id) } }
-                }
-            }
-            // 3. How many days ahead
-            item { FilterLabel("3. Période") }
-            item {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    funnel.DAY_CHOICES.forEach { n -> Chip("$n jours", n == days) { if (n != days) save(d = n) } }
-                }
-            }
-            // 4. Clubs among the listed games (none = all)
-            if (clubs.isNotEmpty()) {
-                item { FilterLabel("4. Club / équipe (aucun coché = tous)") }
-                item {
-                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(clubs, key = { it }) { c -> Chip(c, c in prefs.teams) { save(t = if (c in prefs.teams) prefs.teams - c else prefs.teams + c) } }
-                    }
-                }
+        if (sports.isNotEmpty()) item {
+            val comps = leagues.filter { it.id in prefs.leagues }.map { it.label }
+            val picked = prefs.teams.filter { it in clubs }
+            FlowRow(Modifier.padding(top = 2.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MenuButton("Compétition", funnel.summary(comps, "Toutes", "compétitions"), comps.isNotEmpty()) { picker = "leagues" }
+                if (clubs.isNotEmpty() || picked.isNotEmpty()) MenuButton("Équipe", funnel.summary(picked, "Toutes", "équipes"), picked.isNotEmpty()) { picker = "clubs" }
+                MenuButton("Période", "$days jours", false) { picker = "days" }
             }
         }
         when {
@@ -365,6 +342,60 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
         OptionsDialog(g.fixture.label, g.channels.map { row -> MenuOption(row.ch.name) { PlayerLauncher.live(context, row.ch.id, Groups.ALL) } },
             onDismiss = { open = null }, subtitle = g.fixture.league.label + " · choisissez une chaîne")
     }
+    when (picker) {
+        "leagues" -> PickDialog("Compétitions", "Aucune cochée = toutes celles de vos sports",
+            leagues.map { l -> l.id to ((if (sports.size > 1) SportsCatalog.byId(l.sport)?.emoji?.let { "$it  " } else null).orEmpty() + l.label) },
+            prefs.leagues, onToggle = { id -> save(l = if (id in prefs.leagues) prefs.leagues - id else prefs.leagues + id) },
+            onClear = { save(l = prefs.leagues - leagues.map { it.id }.toSet()) }, onDismiss = { picker = null })
+        "clubs" -> PickDialog("Équipes", "Aucune cochée = tous les matchs", (clubs + prefs.teams.filter { it !in clubs }).map { it to it },
+            prefs.teams.toSet(), onToggle = { c -> save(t = if (c in prefs.teams) prefs.teams - c else prefs.teams + c) },
+            onClear = { save(t = emptyList()) }, onDismiss = { picker = null })
+        "days" -> OptionsDialog("Période", funnel.DAY_CHOICES.map { n -> MenuOption("$n jours", n == days) { if (n != days) save(d = n) } }, onDismiss = { picker = null })
+    }
+}
+
+/** A filter as one button: "Compétition · Toutes ▾". Opens its list. */
+@Composable
+private fun MenuButton(title: String, value: String, active: Boolean, onClick: () -> Unit) {
+    FocusSurface(onClick, shape = RoundedCornerShape(20.dp), container = if (active) Palette.Accent.copy(alpha = 0.25f) else Palette.PanelHigh, focusedScale = 1.05f) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("$title · ", style = MaterialTheme.typography.labelLarge, color = Palette.TextDim, maxLines = 1)
+            Text(value, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp))
+            Text("  ▾", style = MaterialTheme.typography.labelLarge, color = Palette.Accent)
+        }
+    }
+}
+
+/** A list to tick several entries in; it stays open until "Terminé" or Back. */
+@Composable
+private fun PickDialog(title: String, subtitle: String, items: List<Pair<String, String>>, selected: Set<String>,
+                       onToggle: (String) -> Unit, onClear: () -> Unit, onDismiss: () -> Unit) {
+    val none = items.none { it.first in selected }
+    Dialog(onDismissRequest = onDismiss) {
+        val first = remember { androidx.compose.ui.focus.FocusRequester() }
+        Column(Modifier.ignoreHeldOk().panelWidth(480.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+            Spacer(Modifier.size(12.dp))
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.heightIn(max = 420.dp)) {
+                item(key = "\u0000all") { PickRow(if (title == "Équipes") "Tous les matchs" else "Toutes", none, Modifier.focusRequester(first)) { onClear() } }
+                items(items, key = { it.first }) { (id, label) -> PickRow(label, id in selected) { onToggle(id) } }
+            }
+            Spacer(Modifier.size(14.dp))
+            TvButton("Terminé", onDismiss, primary = true)
+        }
+        LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    }
+}
+
+@Composable
+private fun PickRow(label: String, on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    FocusSurface(onClick, modifier.fillMaxWidth(), container = Palette.PanelHigh, focusedScale = 1.02f) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(if (on) "✓" else "", style = MaterialTheme.typography.titleMedium, color = Palette.Accent)
+        }
+    }
 }
 
 @Composable
@@ -384,8 +415,10 @@ private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: (
         if (com.lumentv.ui.LocalPhone.current) {
             // Phone: time and channel on one line, then the two teams face to face on the next.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (f.live) Badge("EN DIRECT", Palette.Danger)
-                else Text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start)), style = MaterialTheme.typography.titleLarge)
+                if (f.live) {
+                    Badge("EN DIRECT", Palette.Danger)
+                    Text("  " + f.clock, style = MaterialTheme.typography.titleMedium, color = Palette.Danger, maxLines = 1)
+                } else Text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start)), style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.width(12.dp))
                 val ch = when {
                     g.channels.isNotEmpty() && !f.channelsOpen(now) -> g.channels.first().ch.name
@@ -414,8 +447,10 @@ private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: (
             } else Text(f.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp))
         } else Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.width(120.dp)) {
-                if (f.live) Badge("EN DIRECT", Palette.Danger)
-                else Text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start)), style = MaterialTheme.typography.titleLarge)
+                if (f.live) {
+                    Badge("EN DIRECT", Palette.Danger)
+                    Text(f.clock, style = MaterialTheme.typography.titleMedium, color = Palette.Danger, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+                } else Text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start)), style = MaterialTheme.typography.titleLarge)
             }
             if (f.home != null && f.away != null) {
                 TeamSide(f.home!!, Modifier.weight(1f), end = true)
