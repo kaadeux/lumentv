@@ -73,7 +73,7 @@ fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Uni
     Dialog(onDismissRequest = onDismiss) {
         val first = remember { FocusRequester() }
         Column(
-            Modifier.ignoreHeldOk().width(460.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp),
+            Modifier.ignoreHeldOk().panelWidth(460.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp),
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
             if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 3)
@@ -101,7 +101,7 @@ fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Uni
 fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         val focus = remember { FocusRequester() }
-        Column(Modifier.ignoreHeldOk().width(480.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(24.dp)) {
+        Column(Modifier.ignoreHeldOk().panelWidth(480.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(24.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
             Spacer(Modifier.height(8.dp))
             Text(message, style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim)
@@ -192,7 +192,7 @@ fun PinDialog(title: String, onPin: (String) -> Unit, onDismiss: () -> Unit, err
             if (pin.length == length) { onPin(pin); pin = "" }
         }
         Column(
-            Modifier.width(360.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(24.dp)
+            Modifier.panelWidth(360.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(24.dp)
                 .onPreviewKeyEvent { e ->
                     if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     val digit = when (e.key) {
@@ -237,7 +237,7 @@ fun ProfileDialog(busy: Boolean, error: String?, onSubmit: (String, String) -> U
         var name by remember { mutableStateOf("") }
         var pass by remember { mutableStateOf("") }
         val focus = remember { FocusRequester() }
-        Column(Modifier.width(560.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(24.dp),
+        Column(Modifier.panelWidth(560.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Profil en ligne", style = MaterialTheme.typography.titleLarge, color = Palette.Text)
             Text("Le même nom et la même phrase secrète sur la TV et le PC partagent playlists, favoris, historique et réglages. " +

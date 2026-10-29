@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.components.ButtonRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -98,7 +99,7 @@ fun PlaylistEditScreen(vm: MainViewModel, id: Long, initialType: String) {
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { ScreenTitle(if (id == 0L) "Nouvelle playlist" else "Modifier la playlist") }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ButtonRow {
                 TvButton((if (type == PlaylistType.M3U) "● " else "") + "Lien ou fichier M3U", { type = PlaylistType.M3U })
                 TvButton((if (type == PlaylistType.XTREAM) "● " else "") + "Xtream Codes", { type = PlaylistType.XTREAM })
             }
@@ -128,7 +129,7 @@ fun PlaylistEditScreen(vm: MainViewModel, id: Long, initialType: String) {
         item { TvTextField("User-Agent HTTP (facultatif)", userAgent, { userAgent = it }, Modifier.fillMaxWidth(), placeholder = "Par défaut", keyboardType = KeyboardType.Text) }
         error?.let { item { Text(it, color = Palette.Danger, style = MaterialTheme.typography.bodyLarge) } }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)) {
+            ButtonRow(Modifier.padding(top = 8.dp, bottom = 24.dp)) {
                 TvButton("Enregistrer et charger", { save() }, primary = true)
                 TvButton("Annuler", { vm.back() })
             }

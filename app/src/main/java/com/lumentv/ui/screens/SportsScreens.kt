@@ -2,6 +2,8 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.components.panelWidth
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -142,7 +144,7 @@ private fun EventDialog(vm: MainViewModel, e: SportEvent, onDismiss: () -> Unit)
     val scope = rememberCoroutineScope()
     val now = System.currentTimeMillis()
     Dialog(onDismissRequest = onDismiss) {
-        Column(Modifier.ignoreHeldOk().width(600.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp)) {
+        Column(Modifier.ignoreHeldOk().panelWidth(600.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp)) {
             Text("${e.sport.emoji}  ${listOfNotNull(e.sport.label, e.competition).joinToString(" · ")}", style = MaterialTheme.typography.labelLarge, color = Palette.Accent)
             Text(e.label, style = MaterialTheme.typography.headlineSmall, color = Palette.Text, maxLines = 2)
             Text("${dayLabel(e.start)} ${timeRange(e.start, e.stop)}" + if (e.isLive(now)) " · en direct" else "",
@@ -288,16 +290,33 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
     val shownFixtures = remember(all, prefs.teams) { funnel.byClubs(all.map { it.fixture }, prefs.teams).toSet() }
     val shown = all.filter { it.fixture in shownFixtures }
 
+    val phone = com.lumentv.ui.LocalPhone.current
+    // Phone: the filters fold behind one summary line, so the games come first.
+    var filtersOpen by remember { mutableStateOf(false) }
+    val showFilters = !phone || filtersOpen || sports.isEmpty()
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxSize()) {
-        item { ScreenTitle("Sports") }
+        if (!phone) item { ScreenTitle("Sports") }
+        if (phone && sports.isNotEmpty()) item {
+            val summary = listOf(funnel.sports.filter { it.id in sports }.joinToString(", ") { "${it.emoji} ${it.label}" }, "$days jours") +
+                listOfNotNull(prefs.teams.takeIf { it.isNotEmpty() }?.let { "${it.size} club(s)" })
+            FocusSurface({ filtersOpen = !filtersOpen }, Modifier.fillMaxWidth(), container = Palette.PanelHigh) {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Filtres", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                        Text(summary.joinToString(" · "), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text(if (filtersOpen) "Fermer  ▴" else "Modifier  ▾", style = MaterialTheme.typography.labelLarge, color = Palette.Accent)
+                }
+            }
+        }
         // 1. Sports
-        item { FilterLabel("1. Sport") }
-        item {
+        if (showFilters) item { FilterLabel("1. Sport") }
+        if (showFilters) item {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 funnel.sports.forEach { s -> Chip("${s.emoji} ${s.label}", s.id in sports) { save(s = if (s.id in sports) sports - s.id else sports + s.id) } }
             }
         }
-        if (sports.isNotEmpty()) {
+        if (sports.isNotEmpty() && showFilters) {
             // 2. Competitions of those sports (none = all)
             item { FilterLabel("2. Compétition (aucune cochée = toutes)") }
             item {
@@ -362,7 +381,33 @@ private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: (
         // "⚽ Football · Ligue 1 · Journée 10 · Stade Océane, Le Havre"
         Text(listOfNotNull(f.details, f.venue).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        if (com.lumentv.ui.LocalPhone.current) {
+            // Phone: time and channel on one line, then each team on its own line (the width of a TV row is not there).
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (f.live) Badge("EN DIRECT", Palette.Danger)
+                else Text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start)), style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.width(12.dp))
+                val ch = when {
+                    g.channels.isNotEmpty() && !f.channelsOpen(now) -> g.channels.first().ch.name + " · dès " +
+                        java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start - com.lumentv.data.sports.Fixture.OPEN_BEFORE_MS))
+                    g.channels.isNotEmpty() -> "▶ " + g.channels.first().ch.name + if (g.channels.size > 1) "  +${g.channels.size - 1}" else ""
+                    g.tv != null -> "Sur ${g.tv}"
+                    else -> f.usualBroadcaster ?: "Chaîne inconnue"
+                }
+                Text(ch, style = MaterialTheme.typography.labelLarge, color = if (g.channels.isNotEmpty() && f.channelsOpen(now)) Palette.Text else Palette.TextDim,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            }
+            if (f.home != null && f.away != null) {
+                listOf(f.home!! to f.homeScore, f.away!! to f.awayScore).forEach { (t, score) ->
+                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        coil.compose.AsyncImage(t.logo, null, Modifier.size(28.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(t.short ?: t.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        if (f.live && score != null) Text(score, style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+            } else Text(f.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp))
+        } else Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.width(120.dp)) {
                 if (f.live) Badge("EN DIRECT", Palette.Danger)
                 else Text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start)), style = MaterialTheme.typography.titleLarge)

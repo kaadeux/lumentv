@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,9 +66,15 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private const val WINDOW_MIN = 120
-private const val DP_PER_MIN = 4.4f
-private const val CHANNEL_COL = 150
+/** Grid size: 2 h of programmes beside 150 dp of channel names on the TV; 90 min beside the logos on a phone. */
+private object Grid {
+    var windowMin = 120
+    var dpPerMin = 4.4f
+    var channelCol = 150
+}
+private val WINDOW_MIN get() = Grid.windowMin
+private val DP_PER_MIN get() = Grid.dpPerMin
+private val CHANNEL_COL get() = Grid.channelCol
 
 private data class FocusTarget(val channelId: Long, val time: Long)
 
@@ -80,6 +87,9 @@ fun GuideScreen(vm: MainViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val p = active ?: return EmptyState("Aucune playlist", "Ajoutez une playlist dans les paramètres.")
+    val phone = com.lumentv.ui.LocalPhone.current
+    val screenWidth = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+    if (phone) { Grid.windowMin = 90; Grid.channelCol = 58; Grid.dpPerMin = ((screenWidth - 24 - 58 - 6) / 90f).coerceAtLeast(2f) }
 
     var group by remember(p.id) { mutableStateOf(vm.liveGroup ?: Groups.ALL) }
     var chooseGroup by remember { mutableStateOf(false) }
@@ -111,6 +121,17 @@ fun GuideScreen(vm: MainViewModel) {
     }
 
     Column(Modifier.fillMaxSize()) {
+        // Phone: no remote arrows to move in time, so buttons do it; a tap on a programme shows its card.
+        if (phone) Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TvButton(when (group) { Groups.ALL -> "Groupe : toutes les chaînes  ▾"; Groups.FAVORITES -> "Groupe : favoris  ▾"; else -> "Groupe : $group  ▾" }, { chooseGroup = true },
+                Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                fun move(minutes: Int) { val next = windowStart + minutes * 60_000L; if (next in (minStart - WINDOW_MIN * 60_000L)..maxStart) windowStart = next }
+                TvButton("◀ 1 h", { move(-60) }, Modifier.weight(1f))
+                TvButton("Maintenant", { windowStart = floorTo30(System.currentTimeMillis()) - 30 * 60_000L }, Modifier.weight(1.3f))
+                TvButton("1 h ▶", { move(60) }, Modifier.weight(1f))
+            }
+        } else
         // Header: focused programme
         Row(Modifier.fillMaxWidth().height(96.dp), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
@@ -128,9 +149,11 @@ fun GuideScreen(vm: MainViewModel) {
             TvButton(when (group) { Groups.ALL -> "Toutes les chaînes"; Groups.FAVORITES -> "Favoris"; else -> group }, { chooseGroup = true })
         }
 
+        if (phone) Text(dayLabel(windowStart), style = MaterialTheme.typography.labelLarge, color = Palette.Text, modifier = Modifier.padding(bottom = 4.dp))
         // Time ruler
         Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-            Text(dayLabel(windowStart), style = MaterialTheme.typography.labelMedium, color = Palette.TextDim, modifier = Modifier.width(CHANNEL_COL.dp))
+            // Phone: the column holds only logos, the day goes on its own line above.
+            Text(if (phone) "" else dayLabel(windowStart), style = MaterialTheme.typography.labelMedium, color = Palette.TextDim, modifier = Modifier.width(CHANNEL_COL.dp))
             Box(Modifier.width((WINDOW_MIN * DP_PER_MIN).dp)) {
                 for (i in 0 until WINDOW_MIN / 30) {
                     val t = windowStart + i * 30 * 60_000L
@@ -157,7 +180,8 @@ fun GuideScreen(vm: MainViewModel) {
                         GuideRow(
                             vm, row, windowStart, windowEnd, epgVersion, target,
                             onFocus = { pr -> selected = row to pr },
-                            onClick = { pr -> open(row, pr) },
+                            onClick = { pr -> if (phone && pr != null) details = row to pr else open(row, pr) },
+                            onChannel = { PlayerLauncher.live(context, row.ch.id, group) },
                             onLongClick = { pr -> if (pr != null) details = row to pr },
                             onEdge = { forward, time ->
                                 val next = windowStart + (if (forward) 60 else -60) * 60_000L
@@ -205,18 +229,23 @@ private fun GuideRow(
     onClick: (ProgramEntity?) -> Unit,
     onLongClick: (ProgramEntity?) -> Unit,
     onEdge: (forward: Boolean, time: Long) -> Boolean,
+    onChannel: () -> Unit = {},
 ) {
     val programs by produceState<List<ProgramEntity>?>(null, row.ch.id, windowStart, epgVersion) {
         value = vm.graph.epg.programs(row, windowStart, windowEnd)
     }
     Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
+        val phone = com.lumentv.ui.LocalPhone.current
         Row(
-            Modifier.width(CHANNEL_COL.dp).fillMaxHeight().clip(RoundedCornerShape(8.dp)).background(Palette.Panel).padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            Modifier.width(CHANNEL_COL.dp).fillMaxHeight().clip(RoundedCornerShape(8.dp)).background(Palette.Panel)
+                .then(if (phone) Modifier.clickable(onClick = onChannel) else Modifier).padding(horizontal = if (phone) 4.dp else 8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = if (phone) Arrangement.Center else Arrangement.Start,
         ) {
-            Logo(row.ch.logo, row.ch.name, size = 32.dp)
-            Spacer(Modifier.width(8.dp))
-            Text(row.ch.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Palette.Text)
+            Logo(row.ch.logo, row.ch.name, size = if (phone) 40.dp else 32.dp)
+            if (!phone) {
+                Spacer(Modifier.width(8.dp))
+                Text(row.ch.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Palette.Text)
+            }
         }
         Spacer(Modifier.width(4.dp))
         val list = programs.orEmpty()

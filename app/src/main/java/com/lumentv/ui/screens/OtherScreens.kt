@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.components.hint
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -109,7 +110,8 @@ fun FavoritesScreen(vm: MainViewModel) {
     }
     val d = data ?: return Loading()
     if (d.first.isEmpty() && d.second.isEmpty() && d.third.isEmpty()) {
-        return EmptyState("Aucun favori", "Maintenez le bouton OK sur une chaîne, un film ou une série pour l'ajouter ici.")
+        return EmptyState("Aucun favori", hint("Maintenez le bouton OK sur une chaîne, un film ou une série pour l'ajouter ici.",
+            "Sur une chaîne, touchez ⋮ ; sur un film ou une série, ouvrez sa fiche puis « Ajouter aux favoris »."))
     }
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item { ScreenTitle("Favoris") }
@@ -149,7 +151,7 @@ fun SearchScreen(vm: MainViewModel) {
         item { ScreenTitle("Recherche") }
         item {
             TvTextField("Chaîne, film, série, épisode ou programme", query, { query = it }, Modifier.fillMaxWidth(),
-                placeholder = "Appuyez sur OK pour saisir…", keyboardType = KeyboardType.Text)
+                placeholder = hint("Appuyez sur OK pour saisir…", "Touchez ici pour écrire…"), keyboardType = KeyboardType.Text)
         }
         if (!results.isEmpty) item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 10.dp)) {

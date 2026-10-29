@@ -2,6 +2,11 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.components.hint
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -92,7 +97,72 @@ fun LiveScreen(vm: MainViewModel) {
     var menuFor by remember { mutableStateOf<ChannelRow?>(null) }
     var groupMenu by remember { mutableStateOf<GroupInfo?>(null) }
 
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    var previewFor by remember { mutableStateOf<ChannelRow?>(null) }
+    var groupPicker by remember { mutableStateOf(false) }
+    val phone = com.lumentv.ui.LocalPhone.current
+    val channelColumn: @Composable () -> Unit = {
+            Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    when (group) { Groups.ALL -> "Chaînes"; Groups.FAVORITES -> "Favoris"; else -> group },
+                    style = MaterialTheme.typography.titleLarge, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (group != Groups.FAVORITES) TvButton(
+                    when (settings.sort) { "az" -> "A → Z"; "za" -> "Z → A"; else -> "Ordre" },
+                    { scope.launch { vm.graph.settings.set(Keys.sort, when (settings.sort) { "provider" -> "az"; "az" -> "za"; else -> "provider" }) } },
+                )
+            }
+            FilterField(filter) { filter = it }
+            val list = channels?.let { all ->
+                val f = normalize(filter)
+                if (f.isEmpty()) all else all.filter { it.ch.nameNorm.contains(f) || it.ch.number.toString().startsWith(f) }
+            }
+            when {
+                locked -> EmptyState("Groupe verrouillé", "Saisissez le code PIN pour afficher ces chaînes.") {
+                    TvButton("Déverrouiller", { pinFor = group; pinError = null }, primary = true)
+                }
+                list == null -> Loading()
+                list.isEmpty() && filter.isNotBlank() -> EmptyState("Aucune chaîne", "Rien ne correspond à « $filter » dans cette liste.")
+                list.isEmpty() -> EmptyState(
+                    if (group == Groups.FAVORITES) "Pas encore de favoris" else "Aucune chaîne",
+                    if (group == Groups.FAVORITES) hint("Maintenez OK sur une chaîne pour l'ajouter aux favoris.", "Touchez ⋮ à droite d'une chaîne, puis « Ajouter aux favoris ».") else "Ce groupe est vide ou toutes ses chaînes sont masquées.",
+                )
+                else -> {
+                    val state = rememberLazyListState()
+                    LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize()) {
+                        items(list, key = { it.ch.id }) { row ->
+                            ChannelItem(
+                                vm, row, epgVersion,
+                                onClick = {
+                                    if (row.ch.groupName in vm.lockedCache && row.ch.groupName !in vm.unlocked.value) { pinFor = row.ch.groupName; pinError = null }
+                                    else PlayerLauncher.live(context, row.ch.id, group)
+                                },
+                                onLongClick = { menuFor = row },
+                                onFocus = { focused = row },
+                                onMore = if (phone) ({ menuFor = row }) else null,
+                            )
+                        }
+                    }
+                }
+            }
+            }
+
+    if (phone) Column(Modifier.fillMaxSize()) {
+        // Phone: the group is a big button (the list opens in a window), then the channels over the whole width.
+        val g = groups?.firstOrNull { it.name == group }
+        FocusSurface(onClick = { groupPicker = true }, onLongClick = { g?.let { if (it.name != Groups.ALL && it.name != Groups.FAVORITES) groupMenu = it } },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), container = Palette.PanelHigh) {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Groupe", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                    Text(when (group) { Groups.ALL -> "Toutes les chaînes"; Groups.FAVORITES -> "★ Favoris"; else -> group },
+                        style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Text("Changer  ▾", style = MaterialTheme.typography.labelLarge, color = Palette.Accent)
+            }
+        }
+        channelColumn()
+    } else Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         // Groups
         Column(Modifier.width(190.dp).fillMaxHeight()) {
             Text("Groupes", style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(bottom = 10.dp))
@@ -122,51 +192,7 @@ fun LiveScreen(vm: MainViewModel) {
         }
 
         // Channels
-        Column(Modifier.weight(1f).fillMaxHeight()) {
-            Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    when (group) { Groups.ALL -> "Chaînes"; Groups.FAVORITES -> "Favoris"; else -> group },
-                    style = MaterialTheme.typography.titleLarge, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                if (group != Groups.FAVORITES) TvButton(
-                    when (settings.sort) { "az" -> "A → Z"; "za" -> "Z → A"; else -> "Ordre" },
-                    { scope.launch { vm.graph.settings.set(Keys.sort, when (settings.sort) { "provider" -> "az"; "az" -> "za"; else -> "provider" }) } },
-                )
-            }
-            FilterField(filter) { filter = it }
-            val list = channels?.let { all ->
-                val f = normalize(filter)
-                if (f.isEmpty()) all else all.filter { it.ch.nameNorm.contains(f) || it.ch.number.toString().startsWith(f) }
-            }
-            when {
-                locked -> EmptyState("Groupe verrouillé", "Saisissez le code PIN pour afficher ces chaînes.") {
-                    TvButton("Déverrouiller", { pinFor = group; pinError = null }, primary = true)
-                }
-                list == null -> Loading()
-                list.isEmpty() && filter.isNotBlank() -> EmptyState("Aucune chaîne", "Rien ne correspond à « $filter » dans cette liste.")
-                list.isEmpty() -> EmptyState(
-                    if (group == Groups.FAVORITES) "Pas encore de favoris" else "Aucune chaîne",
-                    if (group == Groups.FAVORITES) "Maintenez OK sur une chaîne pour l'ajouter aux favoris." else "Ce groupe est vide ou toutes ses chaînes sont masquées.",
-                )
-                else -> {
-                    val state = rememberLazyListState()
-                    LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize()) {
-                        items(list, key = { it.ch.id }) { row ->
-                            ChannelItem(
-                                vm, row, epgVersion,
-                                onClick = {
-                                    if (row.ch.groupName in vm.lockedCache && row.ch.groupName !in vm.unlocked.value) { pinFor = row.ch.groupName; pinError = null }
-                                    else PlayerLauncher.live(context, row.ch.id, group)
-                                },
-                                onLongClick = { menuFor = row },
-                                onFocus = { focused = row },
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        Column(Modifier.weight(1f).fillMaxHeight()) { channelColumn() }
 
         // Preview of the focused channel
         Column(Modifier.width(250.dp).fillMaxHeight().clip(RoundedCornerShape(14.dp)).background(Palette.Panel).padding(18.dp)) {
@@ -184,6 +210,7 @@ fun LiveScreen(vm: MainViewModel) {
     menuFor?.let { row ->
         val canCatchup = row.ch.catchupDays > 0
         OptionsDialog(row.ch.name, buildList {
+            if (phone) add(MenuOption("Voir le programme") { previewFor = row })
             add(MenuOption(if (row.isFavorite) "Retirer des favoris" else "Ajouter aux favoris") {
                 scope.launch { val fav = vm.graph.library.toggleFavorite(row.ch.playlistId, PrefKind.CHANNEL, row.ch.uid); vm.show(if (fav) "Ajouté aux favoris" else "Retiré des favoris") }
             })
@@ -198,6 +225,28 @@ fun LiveScreen(vm: MainViewModel) {
             add(MenuOption("Corriger le guide TV de la chaîne") { vm.open(Screen.EpgFix(row.ch.id)) })
             if (canCatchup) add(MenuOption("Rattrapage (${row.ch.catchupDays} j) : ouvrir le guide") { vm.guideChannel = row.ch.id; vm.openRoot(Screen.Guide) })
         }, onDismiss = { menuFor = null })
+    }
+
+    previewFor?.let { row ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { previewFor = null }) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp)
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                ChannelPreview(vm, row, epgVersion)
+                TvButton("Regarder", { previewFor = null; PlayerLauncher.live(context, row.ch.id, group) }, primary = true)
+            }
+        }
+    }
+
+    if (groupPicker) {
+        val all = listOf(GroupInfo(Groups.ALL, p.channelCount, false, false), GroupInfo(Groups.FAVORITES, 0, false, false)) + groups.orEmpty()
+        val current = groups?.firstOrNull { it.name == group }
+        OptionsDialog("Groupes", all.map { g ->
+            MenuOption(when (g.name) { Groups.ALL -> "Toutes les chaînes"; Groups.FAVORITES -> "★ Favoris"; else -> g.name } +
+                (if (g.locked) "  🔒" else "") + (if (g.count > 0) "  ·  ${g.count}" else ""), checked = g.name == group) {
+                if (g.locked && g.name !in vm.unlocked.value) { pinFor = g.name; pinError = null }
+                group = g.name; vm.liveGroup = g.name
+            }
+        } + listOfNotNull(current?.let { g -> MenuOption("⚙  Masquer ou verrouiller « ${g.name} »…") { groupMenu = g } }), onDismiss = { groupPicker = false })
     }
 
     groupMenu?.let { g ->
@@ -229,7 +278,8 @@ fun LiveScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun ChannelItem(vm: MainViewModel, row: ChannelRow, epgVersion: Int, onClick: () -> Unit, onLongClick: () -> Unit, onFocus: () -> Unit) {
+private fun ChannelItem(vm: MainViewModel, row: ChannelRow, epgVersion: Int, onClick: () -> Unit, onLongClick: () -> Unit, onFocus: () -> Unit,
+                        onMore: (() -> Unit)? = null) {
     val nowNext by produceState<com.lumentv.data.repo.NowNext?>(null, row.ch.id, epgVersion) { value = vm.graph.epg.nowNext(row) }
     FocusSurface(
         onClick = onClick, onLongClick = onLongClick, focusedScale = 1.01f,
@@ -251,6 +301,10 @@ private fun ChannelItem(vm: MainViewModel, row: ChannelRow, epgVersion: Int, onC
                     Spacer(Modifier.height(4.dp))
                     ProgressLine(progressOf(now.start, now.stop), Modifier.fillMaxWidth(0.6f))
                 }
+            }
+            // Phone: options without having to know about the long press.
+            if (onMore != null) Box(Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).clickable(onClick = onMore), contentAlignment = Alignment.Center) {
+                Text("⋮", style = MaterialTheme.typography.titleLarge, color = Palette.TextDim)
             }
         }
     }

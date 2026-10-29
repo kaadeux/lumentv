@@ -2,6 +2,9 @@
 
 package com.lumentv.ui.player
 
+import androidx.compose.foundation.clickable
+import com.lumentv.ui.components.panelWidth
+
 import android.os.Bundle
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.WindowManager
@@ -91,16 +94,28 @@ class PlayerActivity : ComponentActivity() {
     private val vm: PlayerViewModel by viewModels { PlayerViewModel.Factory((application as LumenApp).graph) }
     private var controller by mutableStateOf<PlayerController?>(null)
     private var inPip by mutableStateOf(false)
+    private var phone = false
     private val notificationPermission = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        phone = !com.lumentv.ui.Device.isTv(this)
+        if (phone) {
+            // Phone: the video sideways (either way round) over the whole screen; a swipe from the edge shows the bars.
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+                hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
         if (savedInstanceState == null) vm.load(intent)
         val graph = (application as LumenApp).graph
         setContent {
             LumenTheme {
-                controller?.let { PlayerScreen(vm, it, inPip, onExit = { finish() }, onMini = { mini() }) } ?: Box(Modifier.fillMaxSize().background(Color.Black))
+                androidx.compose.runtime.CompositionLocalProvider(com.lumentv.ui.LocalPhone provides phone) {
+                    controller?.let { PlayerScreen(vm, it, inPip, onExit = { finish() }, onMini = { mini() }) } ?: Box(Modifier.fillMaxSize().background(Color.Black))
+                }
             }
         }
         lifecycleScope.launch {
@@ -119,6 +134,15 @@ class PlayerActivity : ComponentActivity() {
             startActivity(android.content.Intent(this, com.lumentv.ui.MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
             finish()
         } else vm.toast = "Le mini-lecteur est disponible pour les chaînes en direct."
+    }
+
+    // Phone: leaving for the home screen while a video plays keeps it in a small window, as other video apps do.
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (phone && controller?.player?.isPlaying == true && android.os.Build.VERSION.SDK_INT >= 26 &&
+            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            runCatching { enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()) }
+        }
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
@@ -166,9 +190,10 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
     var tick by remember { mutableIntStateOf(0) }
     val root = remember { FocusRequester() }
     val live = vm.mode == Mode.LIVE
+    val phone = com.lumentv.ui.LocalPhone.current
     // The screen follows the video's frame rate (50 Hz for French channels, 23.976 Hz for films): no judder.
     androidx.compose.runtime.LaunchedEffect(state.frameRate) {
-        if (vm.settings.matchFrameRate && state.frameRate > 0f && !inPip) (context as? android.app.Activity)?.let { matchDisplay(it, state.frameRate) }
+        if (!phone && vm.settings.matchFrameRate && state.frameRate > 0f && !inPip) (context as? android.app.Activity)?.let { matchDisplay(it, state.frameRate) }
     }
     val now = System.currentTimeMillis() + tick * 0
     val infoVisible = now < infoUntil || state.error != null || !state.playing && !live || live && state.buffering
@@ -248,7 +273,7 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
             panel != Panel.NONE -> panel = Panel.NONE
             showNext -> nextDismissed = true
             digits.isNotEmpty() -> digits = ""
-            infoVisible && state.error == null && (live || state.playing) -> infoUntil = 0
+            !phone && infoVisible && state.error == null && (live || state.playing) -> infoUntil = 0
             else -> { vm.saveProgress(c); onExit() }
         }
     }
@@ -323,6 +348,8 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
             },
             modifier = Modifier.fillMaxSize(),
         )
+        if (phone && panel == Panel.NONE) Box(Modifier.fillMaxSize().phoneGestures(c.player.isCurrentMediaItemSeekable && !live,
+            onTap = { if (infoVisible && (live || state.playing)) infoUntil = 0 else showInfo() }, onSeek = { seek(it) }))
 
         vm.fatal?.let { msg ->
             CenterCard(msg, null) { TvButton("Retour", onExit, primary = true) }
@@ -343,7 +370,10 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
                 state.error!!,
                 if (state.retryIn > 0) "Nouvelle tentative dans ${state.retryIn} s (essai ${state.attempt})" else null,
             ) {
-                Text(if (live) "OK : réessayer · Haut / Bas : autre chaîne" else "OK : réessayer · Retour : quitter", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+                if (phone) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TvButton("Réessayer", { c.retryNow() }, primary = true)
+                    TvButton("Quitter", { vm.saveProgress(c); onExit() })
+                } else Text(if (live) "OK : réessayer · Haut / Bas : autre chaîne" else "OK : réessayer · Retour : quitter", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
             }
         } else if (state.buffering) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -361,24 +391,56 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
 
         if (inPip) return@Box
         if (infoVisible && panel == Panel.NONE) {
-            if (live) LiveInfoBar(vm, state.videoInfo) else VodBar(vm, position, duration, state.playing)
+            if (phone) PhoneControls(
+                title = if (live) vm.channel?.ch?.name ?: vm.title else vm.title,
+                subtitle = if (live) vm.channel?.let { "N° ${it.ch.number}" + (state.videoInfo?.let { v -> " · $v" } ?: "") } else vm.subtitle,
+                live = live, playing = state.playing, position = position, duration = duration,
+                seekable = c.player.isCurrentMediaItemSeekable,
+                programme = {
+                    val now = vm.nowNext.now
+                    if (now != null) {
+                        Text(timeRange(now.start, now.stop) + "  " + now.title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        ProgressLine(progressOf(now.start, now.stop), Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                        vm.nowNext.next?.let { n -> Text("Ensuite ${timeRange(n.start, n.stop).substringBefore(" –")} · ${n.title}", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1) }
+                    } else Text("Pas d'information de programme", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+                },
+                a = PhoneActions(
+                    back = { vm.saveProgress(c); onExit() },
+                    playPause = { if (state.error != null) c.retryNow() else if (c.player.isPlaying) c.player.pause() else c.player.play(); showInfo() },
+                    seekBy = { seek(it) },
+                    seekTo = { c.player.seekTo(it); showInfo(4000) },
+                    options = { panel = Panel.OPTIONS },
+                    subtitles = { panel = Panel.SUBS },
+                    channels = { panel = Panel.CHANNELS },
+                    zap = { vm.zap(-it); showInfo() },
+                    next = if (vm.mode == Mode.EPISODE && vm.nextEpisode != null) ({ playNext() }) else null,
+                    touched = { showInfo(5000) },
+                ),
+            )
+            else if (live) LiveInfoBar(vm, state.videoInfo) else VodBar(vm, position, duration, state.playing)
         }
 
         if (panel == Panel.NONE && (showSkip || showNext)) {
-            Box(Modifier.fillMaxSize().padding(end = 48.dp, bottom = if (infoVisible) 150.dp else 48.dp), contentAlignment = Alignment.BottomEnd) {
+            Box(Modifier.fillMaxSize().padding(end = if (phone) 20.dp else 48.dp, bottom = if (infoVisible) (if (phone) 110.dp else 150.dp) else (if (phone) 24.dp else 48.dp)),
+                contentAlignment = Alignment.BottomEnd) {
                 if (showNext) {
                     val n = vm.nextEpisode!!
-                    Column(Modifier.width(380.dp).clip(RoundedCornerShape(14.dp)).background(Color.White).padding(18.dp)) {
+                    Column(Modifier.then(if (phone) Modifier.width(320.dp) else Modifier.panelWidth(380.dp)).clip(RoundedCornerShape(14.dp)).background(Color.White)
+                        .then(if (phone) Modifier.clickable { playNext() } else Modifier).padding(18.dp)) {
                         Text("Épisode suivant" + if (vm.settings.autoNext) " dans ${(remaining / 1000).coerceAtLeast(0)} s" else "",
                             style = MaterialTheme.typography.labelLarge, color = Palette.Accent)
                         Text("S${n.season} E${n.episode} · ${n.title}", style = MaterialTheme.typography.titleMedium, color = Palette.OnFocus,
                             maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text("OK : lancer maintenant · Retour : finir celui-ci", style = MaterialTheme.typography.bodySmall, color = Color(0xFF555B66),
+                        if (phone) Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            TvButton("Lancer", { playNext() }, primary = true)
+                            TvButton("Finir celui-ci", { nextDismissed = true })
+                        } else Text("OK : lancer maintenant · Retour : finir celui-ci", style = MaterialTheme.typography.bodySmall, color = Color(0xFF555B66),
                             modifier = Modifier.padding(top = 6.dp))
                     }
                 } else {
-                    Text("⏭  $skipLabel   (OK)", style = MaterialTheme.typography.titleMedium, color = Palette.OnFocus,
-                        modifier = Modifier.clip(RoundedCornerShape(24.dp)).background(Color.White).padding(horizontal = 22.dp, vertical = 12.dp))
+                    Text("⏭  $skipLabel" + if (phone) "" else "   (OK)", style = MaterialTheme.typography.titleMedium, color = Palette.OnFocus,
+                        modifier = Modifier.clip(RoundedCornerShape(24.dp)).background(Color.White).then(if (phone) Modifier.clickable { skipIntro() } else Modifier)
+                            .padding(horizontal = 22.dp, vertical = 12.dp))
                 }
             }
         }
@@ -446,7 +508,7 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
 @Composable
 private fun CenterCard(title: String, subtitle: String?, extra: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(Modifier.width(520.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Scrim).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.panelWidth(520.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Scrim).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(title, style = MaterialTheme.typography.titleLarge, color = Color.White)
             subtitle?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim, modifier = Modifier.padding(top = 6.dp)) }
             Spacer(Modifier.height(12.dp))
@@ -539,6 +601,8 @@ private fun ChannelsPanel(vm: PlayerViewModel, onDismiss: () -> Unit) {
             }
         }
         focused?.let { MiniGuide(vm, it, epgVersion, onDismiss) }
+        // Phone: a tap beside the lists closes them.
+        if (com.lumentv.ui.LocalPhone.current) Box(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onDismiss))
     }
     LaunchedEffect(Unit) { delay(50); runCatching { start.requestFocus() } }
 }

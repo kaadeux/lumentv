@@ -1,9 +1,11 @@
-@file:OptIn(ExperimentalTvMaterial3Api::class)
+@file:OptIn(ExperimentalTvMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package com.lumentv.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -42,6 +44,23 @@ import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import com.lumentv.ui.theme.Palette
 
+/** A row of buttons on the TV; on a phone they wrap onto several lines instead of running off the screen. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun ButtonRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    if (com.lumentv.ui.LocalPhone.current) androidx.compose.foundation.layout.FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
+    else Row(modifier, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) { content() }
+}
+
+/** The hint for the device: "Maintenez OK…" on the TV, "Maintenez le doigt…" on a phone. */
+@Composable
+fun hint(tv: String, phone: String) = if (com.lumentv.ui.LocalPhone.current) phone else tv
+
+/** A panel's width on the TV; the whole width on a phone (dialogs, empty states). */
+@Composable
+fun Modifier.panelWidth(width: Dp): Modifier = if (com.lumentv.ui.LocalPhone.current) fillMaxWidth() else width(width)
+
 /** The one focusable building block: clear white focus, slight zoom, rounded corners. */
 @Composable
 fun FocusSurface(
@@ -55,6 +74,17 @@ fun FocusSurface(
     selected: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    // Phone: a plain touch target (tap, long press), without the TV's focus zoom and white highlight.
+    if (com.lumentv.ui.LocalPhone.current) {
+        Box(
+            modifier.clip(shape).background(if (selected) Palette.AccentSoft else container)
+                .then(if (selected) Modifier.border(1.dp, Palette.Accent, shape) else Modifier)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        ) {
+            androidx.compose.runtime.CompositionLocalProvider(androidx.tv.material3.LocalContentColor provides Palette.Text) { content() }
+        }
+        return
+    }
     Surface(
         onClick = onClick,
         onLongClick = onLongClick,
@@ -91,13 +121,18 @@ fun TvButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, i
                 Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
             }
-            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = if (com.lumentv.ui.LocalPhone.current) 2 else 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
 fun ScreenTitle(text: String, modifier: Modifier = Modifier, trailing: @Composable () -> Unit = {}) {
+    // Phone: the title is already in the bar at the top; only the buttons beside it stay.
+    if (com.lumentv.ui.LocalPhone.current) {
+        Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { trailing() }
+        return
+    }
     Row(modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text, style = MaterialTheme.typography.headlineMedium, color = Palette.Text, modifier = Modifier.weight(1f))
         trailing()
@@ -107,7 +142,7 @@ fun ScreenTitle(text: String, modifier: Modifier = Modifier, trailing: @Composab
 @Composable
 fun EmptyState(title: String, message: String, modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(520.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.panelWidth(520.dp)) {
             Text(title, style = MaterialTheme.typography.headlineSmall, color = Palette.Text, textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
             Text(message, style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim, textAlign = TextAlign.Center)
@@ -164,6 +199,17 @@ fun Badge(text: String, color: Color = Palette.Accent) {
 
 @Composable
 fun SettingRow(title: String, value: String?, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null) {
+    // Phone: the value goes under the title (side by side, a long value would squeeze the title).
+    if (com.lumentv.ui.LocalPhone.current) return FocusSurface(onClick = onClick, modifier = modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) { Icon(icon, null, Modifier.size(22.dp)); Spacer(Modifier.width(14.dp)) }
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                if (value != null) Text(value, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
+            Text("›", style = MaterialTheme.typography.headlineSmall, color = Palette.TextDim)
+        }
+    }
     FocusSurface(onClick = onClick, modifier = modifier.fillMaxWidth(), focusedScale = 1.01f) {
         Row(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) { Icon(icon, null, Modifier.size(22.dp)); Spacer(Modifier.width(14.dp)) }

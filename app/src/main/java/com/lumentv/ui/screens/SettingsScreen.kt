@@ -2,6 +2,8 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.components.hint
+import com.lumentv.ui.components.ButtonRow
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -59,6 +61,7 @@ private val languages = listOf("" to "Automatique", "fr" to "Français", "en" to
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
+    val phoneDevice = com.lumentv.ui.LocalPhone.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -96,7 +99,7 @@ fun SettingsScreen(vm: MainViewModel) {
         items(list, key = { it.id }) { p ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PlaylistCard(p, p.id == active?.id, p.id in busy) { playlistMenu = p }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ButtonRow {
                     val running = p.id in busy
                     TvButton(if (running) "Rechargement en cours…" else "Recharger la liste", { if (!running) vm.refresh(p.id) },
                         icon = Icons.Filled.Refresh, primary = p.id == active?.id)
@@ -105,7 +108,7 @@ fun SettingsScreen(vm: MainViewModel) {
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+            ButtonRow(Modifier.padding(vertical = 6.dp)) {
                 TvButton("Ajouter une playlist M3U", { vm.open(Screen.PlaylistEdit(0, PlaylistType.M3U)) }, icon = Icons.Filled.Add, primary = list.isEmpty())
                 TvButton("Ajouter un compte Xtream", { vm.open(Screen.PlaylistEdit(0, PlaylistType.XTREAM)) }, icon = Icons.Filled.Add)
             }
@@ -114,7 +117,7 @@ fun SettingsScreen(vm: MainViewModel) {
         if (vm.graph.profile.enabled) {
             item { Group("Profil en ligne") }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                ButtonRow {
                     if (profile.name == null) {
                         TvButton("Se connecter à un profil", { profileError = null; profileDialog = true }, icon = Icons.Filled.Add)
                         Text("Retrouvez vos favoris et votre historique sur tous vos appareils.", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
@@ -134,7 +137,7 @@ fun SettingsScreen(vm: MainViewModel) {
         if (vm.graph.updater.enabled) {
             item { Group("Mises à jour") }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                ButtonRow {
                     TvButton("Rechercher une mise à jour", {
                         scope.launch {
                             vm.show("Recherche d'une mise à jour…")
@@ -156,7 +159,7 @@ fun SettingsScreen(vm: MainViewModel) {
         item { Group("Lecture") }
         item { SettingRow("Mémoire tampon", if (settings.bufferMode == "stable") "Stable (connexion faible)" else "Normale (démarrage rapide)", {
             scope.launch { vm.graph.settings.set(Keys.buffer, if (settings.bufferMode == "stable") "normal" else "stable") } }) }
-        item { SettingRow("Fréquence de l'écran", if (settings.matchFrameRate) "Adaptée à la vidéo (image fluide)" else "Fixe", {
+        if (!phoneDevice) item { SettingRow("Fréquence de l'écran", if (settings.matchFrameRate) "Adaptée à la vidéo (image fluide)" else "Fixe", {
             scope.launch { vm.graph.settings.set(Keys.matchFrameRate, !settings.matchFrameRate) } }) }
         item { SettingRow("Format d'image", resizeLabel(settings.resizeMode), { menu = "resize" }) }
         item { SettingRow("Langue audio préférée", languages.firstOrNull { it.first == settings.audioLang }?.second ?: settings.audioLang, { menu = "audio" }) }
@@ -179,7 +182,8 @@ fun SettingsScreen(vm: MainViewModel) {
         item { Group("Contrôle parental") }
         item { SettingRow(if (settings.pinHash.isEmpty()) "Définir un code PIN" else "Changer le code PIN", null, { pinStep = if (settings.pinHash.isEmpty()) "new" else "current"; pinError = null }) }
         if (settings.pinHash.isNotEmpty()) item { SettingRow("Supprimer le code PIN", null, { pinStep = "remove"; pinError = null }) }
-        item { Text("Maintenez OK sur un groupe de chaînes (écran Direct) pour le verrouiller.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(start = 4.dp)) }
+        item { Text(hint("Maintenez OK sur un groupe de chaînes (écran Direct) pour le verrouiller.",
+            "Dans Direct, touchez « Changer » puis « Masquer ou verrouiller » pour verrouiller un groupe."), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(start = 4.dp)) }
 
         item { Group("Réseau") }
         item { SettingRow("User-Agent par défaut", settings.defaultUserAgent.ifBlank { "Automatique (Lumen TV)" }, { menu = "ua" }) }

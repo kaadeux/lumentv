@@ -2,6 +2,8 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.components.ButtonRow
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,6 +79,25 @@ private const val ALL = "\u0001all"
 @Composable
 private fun CategoryColumn(title: String, cats: List<CategoryCount>?, extra: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit,
                            onLong: (String) -> Unit) {
+    if (com.lumentv.ui.LocalPhone.current) {
+        // Phone: one button showing the category; the list opens in a window.
+        var open by remember { mutableStateOf(false) }
+        val label = extra.firstOrNull { it.first == selected }?.second ?: selected
+        FocusSurface({ open = true }, Modifier.fillMaxWidth().padding(bottom = 8.dp), container = Palette.PanelHigh) {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Catégorie", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                    Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Text("Changer  ▾", style = MaterialTheme.typography.labelLarge, color = Palette.Accent)
+            }
+        }
+        if (open) OptionsDialog(title, extra.map { (id, l) -> MenuOption(l, checked = id == selected) { onSelect(id) } } +
+            cats.orEmpty().map { c -> MenuOption("${c.category}  ·  ${c.count}", checked = c.category == selected) { onSelect(c.category) } } +
+            listOfNotNull(cats?.firstOrNull { it.category == selected }?.let { MenuOption("⚙  Masquer « ${it.category} »…") { onLong(it.category) } }),
+            onDismiss = { open = false })
+        return
+    }
     Column(Modifier.width(190.dp).fillMaxHeight()) {
         Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(bottom = 10.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -96,6 +117,19 @@ private fun CategoryColumn(title: String, cats: List<CategoryCount>?, extra: Lis
         }
     }
 }
+
+/** TV: picker on the left, grid on the right. Phone: picker above, grid below (the grid fills what is left). */
+@Composable
+private fun VodLayout(content: @Composable () -> Unit) {
+    if (com.lumentv.ui.LocalPhone.current) Column(Modifier.fillMaxSize()) { content() }
+    else Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { content() }
+}
+
+/** 5 posters a row on the TV; on a phone as many as fit, about 3 upright and 6 sideways. */
+@Composable
+private fun posterCells(): GridCells = if (com.lumentv.ui.LocalPhone.current) GridCells.Adaptive(104.dp) else GridCells.Fixed(5)
+@Composable
+private fun gridGap() = if (com.lumentv.ui.LocalPhone.current) 10.dp else 14.dp
 
 @Composable
 private fun PosterTile(title: String, image: String?, subtitle: String?, progress: Float?, favorite: Boolean, onClick: () -> Unit, onLong: () -> Unit) {
@@ -128,15 +162,15 @@ fun MoviesScreen(vm: MainViewModel) {
     val progress = remember(history) { history.filter { it.kind == HistoryKind.MOVIE }.associateBy { it.uid } }
     var filter by remember(p.id, cat) { mutableStateOf("") }
 
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    VodLayout {
         CategoryColumn("Films", cats, listOf(RECENT to "Ajoutés récemment", ALL to "Tous les films"), cat, { cat = it; vm.movieCategory = it }, { catMenu = it })
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.fillMaxSize()) {
         FilterField(filter, if (cat == ALL || cat == RECENT) "Rechercher un film" else "Rechercher dans « $cat »") { filter = it }
         val list = movies?.let { all -> normalize(filter).let { f -> if (f.isEmpty()) all else all.filter { it.m.nameNorm.contains(f) } } }
         when {
             list == null -> Loading()
             list.isEmpty() -> EmptyState("Aucun film", if (filter.isBlank()) "Cette catégorie est vide." else "Rien ne correspond à « $filter ».")
-            else -> LazyVerticalGrid(GridCells.Fixed(5), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
+            else -> LazyVerticalGrid(posterCells(), horizontalArrangement = Arrangement.spacedBy(gridGap()), verticalArrangement = Arrangement.spacedBy(gridGap()),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 20.dp, start = 6.dp, end = 6.dp),
                 modifier = Modifier.fillMaxSize()) {
                 items(list, key = { it.m.id }) { r ->
@@ -171,15 +205,15 @@ fun SeriesScreen(vm: MainViewModel) {
         value = vm.graph.library.series(p.id, if (cat == ALL) null else cat)
     }
     var filter by remember(p.id, cat) { mutableStateOf("") }
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    VodLayout {
         CategoryColumn("Séries", cats, listOf(ALL to "Toutes les séries"), cat, { cat = it; vm.seriesCategory = it }, { catMenu = it })
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.fillMaxSize()) {
         FilterField(filter, if (cat == ALL) "Rechercher une série" else "Rechercher dans « $cat »") { filter = it }
         val list = series?.let { all -> normalize(filter).let { f -> if (f.isEmpty()) all else all.filter { it.s.nameNorm.contains(f) } } }
         when {
             list == null -> Loading()
             list.isEmpty() -> EmptyState("Aucune série", if (filter.isBlank()) "Cette catégorie est vide." else "Rien ne correspond à « $filter ».")
-            else -> LazyVerticalGrid(GridCells.Fixed(5), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
+            else -> LazyVerticalGrid(posterCells(), horizontalArrangement = Arrangement.spacedBy(gridGap()), verticalArrangement = Arrangement.spacedBy(gridGap()),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 20.dp, start = 6.dp, end = 6.dp),
                 modifier = Modifier.fillMaxSize()) {
                 items(list, key = { it.s.id }) { r ->
@@ -214,14 +248,25 @@ fun MovieDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
     val transfers by vm.graph.transfers.observe().collectAsStateWithLifecycle(emptyList())
     val dl = transfers.firstOrNull { it.kind == com.lumentv.data.db.TransferKind.DOWNLOAD && it.playlistId == playlistId && it.refUid == uid }
 
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-        Poster(m.m.poster, m.m.name, Modifier.width(220.dp).aspectRatio(2f / 3f))
-        Column(Modifier.weight(1f)) {
+    val phone = com.lumentv.ui.LocalPhone.current
+    // Phone: one scrolling column, poster on top; TV: poster on the left.
+    val frame: @Composable (@Composable () -> Unit) -> Unit = { body ->
+        if (phone) Column(Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+            Poster(m.m.poster, m.m.name, Modifier.align(Alignment.CenterHorizontally).width(170.dp).aspectRatio(2f / 3f).padding(bottom = 12.dp))
+            body()
+            Spacer(Modifier.height(24.dp))
+        } else Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+            Poster(m.m.poster, m.m.name, Modifier.width(220.dp).aspectRatio(2f / 3f))
+            Column(Modifier.weight(1f)) { body() }
+        }
+    }
+    frame {
+        run {
             Text(m.m.name, style = MaterialTheme.typography.headlineMedium, color = Palette.Text, maxLines = 2)
             val meta = listOfNotNull(m.m.year ?: info?.releaseDate?.take(4), info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) },
                 m.m.rating?.let { "★ $it" }, info?.genre, m.m.category).joinToString(" · ")
             Text(meta, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, modifier = Modifier.padding(vertical = 8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(vertical = 12.dp)) {
+            ButtonRow(Modifier.padding(vertical = 12.dp)) {
                 if (h != null && h.positionMs > 30_000 && (h.durationMs == 0L || h.positionMs < h.durationMs * 0.95)) {
                     TvButton("Reprendre à ${clock(h.positionMs)}", { PlayerLauncher.movie(context, playlistId, uid, true) }, Modifier.focusRequester(focus), primary = true)
                     TvButton("Depuis le début", { PlayerLauncher.movie(context, playlistId, uid, false) })
@@ -238,7 +283,7 @@ fun MovieDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
                     }
                 }
             }
-            Text(info?.plot ?: "Aucun résumé disponible.", style = MaterialTheme.typography.bodyLarge, color = Palette.Text, maxLines = 8, overflow = TextOverflow.Ellipsis)
+            Text(info?.plot ?: "Aucun résumé disponible.", style = MaterialTheme.typography.bodyLarge, color = Palette.Text, maxLines = if (phone) 40 else 8, overflow = TextOverflow.Ellipsis)
             info?.director?.takeIf { it.isNotBlank() }?.let { Text("Réalisation : $it", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, modifier = Modifier.padding(top = 10.dp)) }
             info?.cast?.takeIf { it.isNotBlank() }?.let { Text("Avec : $it", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 2) }
         }
@@ -298,15 +343,17 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
     }
     val focus = remember { FocusRequester() }
 
-    Column(Modifier.fillMaxSize()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.height(210.dp)) {
-            Poster(s.s.cover, s.s.name, Modifier.width(140.dp).aspectRatio(2f / 3f))
+    val phone = com.lumentv.ui.LocalPhone.current
+    // The top of the page (poster, summary, buttons, seasons) and one episode line, shared by both layouts.
+    val header: @Composable () -> Unit = {
+        Row(horizontalArrangement = Arrangement.spacedBy(if (phone) 14.dp else 24.dp), modifier = if (phone) Modifier else Modifier.height(210.dp)) {
+            Poster(s.s.cover, s.s.name, Modifier.width(if (phone) 96.dp else 140.dp).aspectRatio(2f / 3f))
             Column(Modifier.weight(1f)) {
-                Text(s.s.name, style = MaterialTheme.typography.headlineMedium, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(s.s.name, style = if (phone) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(listOfNotNull(s.s.year, s.s.rating?.let { "★ $it" }, "${seasons.size} saison(s)", s.s.category).joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, modifier = Modifier.padding(vertical = 6.dp))
-                Text(s.s.plot ?: "", style = MaterialTheme.typography.bodyMedium, color = Palette.Text, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
+                Text(s.s.plot ?: "", style = MaterialTheme.typography.bodyMedium, color = Palette.Text, maxLines = if (phone) 3 else 4, overflow = TextOverflow.Ellipsis)
+                ButtonRow(Modifier.padding(top = 12.dp)) {
                     if (lastWatched != null) TvButton("Reprendre : ${lastWatched.title.take(40)}", {
                         PlayerLauncher.episode(context, playlistId, uid, lastWatched.uid, true)
                     }, Modifier.focusRequester(focus), primary = true)
@@ -329,29 +376,26 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
                 }
             }
         } else Spacer(Modifier.height(10.dp))
-        when {
-            eps == null -> Loading("Chargement des épisodes…")
-            eps.isEmpty() -> EmptyState("Aucun épisode", error ?: "Le fournisseur ne liste aucun épisode pour cette série.")
-            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(eps.filter { it.season == season }, key = { it.id }) { e ->
+    }
+    val episodeRow: @Composable (EpisodeEntity) -> Unit = { e ->
                     val h = progress[e.uid]
                     val dl = transfers.firstOrNull { it.playlistId == playlistId && it.refUid == e.uid }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     FocusSurface({ PlayerLauncher.episode(context, playlistId, uid, e.uid, h != null && h.positionMs > 30_000) }, Modifier.weight(1f), focusedScale = 1.01f,
                         onLongClick = { epMenu = e }) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("E${e.episode}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(56.dp))
+                            Text("E${e.episode}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(if (phone) 40.dp else 56.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(e.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 e.plot?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                                 if (h != null && h.durationMs > 0) ProgressLine(h.positionMs.toFloat() / h.durationMs, Modifier.fillMaxWidth(0.5f).padding(top = 4.dp))
                             }
-                            if (e.durationSecs > 0) Text(duration(e.durationSecs), style = MaterialTheme.typography.bodySmall)
+                            if (e.durationSecs > 0 && !phone) Text(duration(e.durationSecs), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     // Right of each episode: mark it watched / not watched…
                     val seen = watched(e)
-                    FocusSurface({ markWatched(listOf(e), !seen) }, Modifier.width(76.dp), focusedScale = 1.05f) {
+                    FocusSurface({ markWatched(listOf(e), !seen) }, Modifier.width(if (phone) 54.dp else 76.dp), focusedScale = 1.05f) {
                         Text(if (seen) "✓ Vu" else "○ Vu", style = MaterialTheme.typography.titleMedium,
                             color = if (seen) androidx.compose.ui.graphics.Color(0xFF4CD787) else Palette.TextDim,
                             modifier = Modifier.padding(vertical = 14.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -366,7 +410,7 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
                                 vm.show("Téléchargement de l'épisode ${e.episode} lancé · suivez-le dans Téléchargés")
                             }
                         }
-                    }, Modifier.width(76.dp), focusedScale = 1.05f) {
+                    }, Modifier.width(if (phone) 54.dp else 76.dp), focusedScale = 1.05f) {
                         Text(when (dl?.status) {
                             com.lumentv.data.db.TransferStatus.DONE -> "▶ ✓"
                             com.lumentv.data.db.TransferStatus.RUNNING -> if (dl.totalBytes > 0) "${dl.bytes * 100 / dl.totalBytes} %" else "…"
@@ -375,7 +419,25 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     }
                     }
-                }
+    }
+    if (phone) {
+        // Phone: the whole page scrolls as one, so the episodes are not squeezed under the header.
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize()) {
+            item { header() }
+            when {
+                eps == null -> item { Loading("Chargement des épisodes…") }
+                eps.isEmpty() -> item { EmptyState("Aucun épisode", error ?: "Le fournisseur ne liste aucun épisode pour cette série.") }
+                else -> items(eps.filter { it.season == season }, key = { it.id }) { e -> episodeRow(e) }
+            }
+            item { Spacer(Modifier.height(16.dp)) }
+        }
+    } else Column(Modifier.fillMaxSize()) {
+        header()
+        when {
+            eps == null -> Loading("Chargement des épisodes…")
+            eps.isEmpty() -> EmptyState("Aucun épisode", error ?: "Le fournisseur ne liste aucun épisode pour cette série.")
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(eps.filter { it.season == season }, key = { it.id }) { e -> episodeRow(e) }
             }
         }
     }

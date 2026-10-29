@@ -2,6 +2,8 @@
 
 package com.lumentv.ui.player
 
+import com.lumentv.ui.components.panelWidth
+
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -82,7 +84,11 @@ class MultiViewActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val graph = (application as LumenApp).graph
         val ids = intent.getLongArrayExtra(PlayerLauncher.CHANNEL_IDS) ?: LongArray(0)
-        setContent { LumenTheme { MultiView(graph, ids.toList(), onExit = { finish() }) } }
+        val phone = !com.lumentv.ui.Device.isTv(this)
+        if (phone) requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        setContent { LumenTheme { androidx.compose.runtime.CompositionLocalProvider(com.lumentv.ui.LocalPhone provides phone) {
+            MultiView(graph, ids.toList(), onExit = { finish() })
+        } } }
     }
 }
 
@@ -216,7 +222,7 @@ fun ChannelPicker(graph: AppGraph, onPick: (ChannelRow) -> Unit, onDismiss: () -
         value = graph.library.channels(pid, Groups.ALL, false, s.sort)
     }
     Dialog(onDismissRequest = onDismiss) {
-        Column(Modifier.ignoreHeldOk().width(560.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(18.dp)) {
+        Column(Modifier.ignoreHeldOk().panelWidth(560.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(18.dp)) {
             Text("Choisir une chaîne", style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(bottom = 8.dp))
             FilterField(filter, "Nom ou numéro de la chaîne") { filter = it }
             val f = normalize(filter)

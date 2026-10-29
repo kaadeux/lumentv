@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.components.hint
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -69,7 +70,7 @@ fun DownloadsScreen(vm: MainViewModel) {
                             TransferStatus.SCHEDULED -> "En attente"
                             TransferStatus.DONE -> "Prêt · ${size(t.bytes)}"
                             TransferStatus.FAILED -> "Échec : ${t.error ?: "erreur inconnue"}"
-                            else -> "En pause · ${size(t.bytes)} (OK pour reprendre)"
+                            else -> "En pause · ${size(t.bytes)}" + hint(" (OK pour reprendre)", " (touchez pour reprendre)")
                         }
                         Text(listOfNotNull(t.subtitle, status).joinToString(" · "), style = MaterialTheme.typography.bodySmall, maxLines = 1,
                             overflow = TextOverflow.Ellipsis, color = if (t.status == TransferStatus.FAILED) Palette.Danger else androidx.compose.ui.graphics.Color.Unspecified)
@@ -80,7 +81,7 @@ fun DownloadsScreen(vm: MainViewModel) {
             }
         }
         item {
-            Text("OK : regarder · appui long : options · dossier : ${vm.graph.transfers.folder().absolutePath}",
+            Text(hint("OK : regarder · appui long : options", "Toucher : regarder · appui long : options") + " · dossier : ${vm.graph.transfers.folder().absolutePath}",
                 style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(top = 10.dp, bottom = 24.dp))
         }
     }

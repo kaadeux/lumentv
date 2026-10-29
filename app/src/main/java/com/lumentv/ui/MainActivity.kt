@@ -92,14 +92,24 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val firstLaunch = savedInstanceState == null
+        val phone = !Device.isTv(this)
         setContent {
             LumenTheme {
                 var unlocked by remember { mutableStateOf(com.lumentv.core.Access.isUnlocked(this)) }
                 if (!unlocked) AccessScreen(onUnlocked = { unlocked = true }, onQuit = { finish() })
                 else {
-                    AppShell(vm, firstLaunch)
-                    MiniPlayerHost(vm.graph)
-                    UpdateHost(vm)
+                    androidx.compose.runtime.CompositionLocalProvider(LocalPhone provides phone) {
+                        if (phone) {
+                            val w = Device.testWidthDp()
+                            Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
+                                Box(if (w > 0) Modifier.width(w.dp).fillMaxHeight() else Modifier.fillMaxSize()) {
+                                    PhoneShell(vm, firstLaunch) { ScreenContent(vm, it) }; ToastHost(vm)
+                                }
+                            }
+                        } else AppShell(vm, firstLaunch)
+                        if (!phone) MiniPlayerHost(vm.graph)
+                        UpdateHost(vm)
+                    }
                 }
             }
         }
@@ -116,7 +126,6 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     val active by vm.active.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val toast by vm.toast.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val contentFocus = remember { FocusRequester() }
@@ -180,7 +189,16 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
         SideNav(items, vm.root, active?.name, contentFocus, mini != null, onMini = { miniMenu = true }) { vm.openRoot(it) }
         Box(Modifier.weight(1f).fillMaxHeight().padding(start = 16.dp, top = 20.dp, end = 24.dp, bottom = 16.dp)
             .onFocusChanged { contentHasFocus = it.hasFocus }.focusRequester(contentFocus).focusGroup()) {
-            when (val s = vm.current) {
+            ScreenContent(vm, vm.current)
+        }
+    }
+    ToastHost(vm)
+}
+
+/** The screen itself, the same on the TV and the phone (each lays itself out for the device). */
+@Composable
+fun ScreenContent(vm: MainViewModel, screen: Screen) {
+            when (val s = screen) {
                 Screen.Live -> LiveScreen(vm)
                 Screen.Guide -> GuideScreen(vm)
                 Screen.Favorites -> FavoritesScreen(vm)
@@ -196,10 +214,14 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
                 is Screen.SeriesDetail -> SeriesDetailScreen(vm, s.playlistId, s.uid)
                 is Screen.PlaylistEdit -> PlaylistEditScreen(vm, s.id, s.type)
                 is Screen.EpgFix -> EpgFixScreen(vm, s.channelId)
+                Screen.More -> Unit
             }
-        }
-    }
+}
 
+/** Short messages at the bottom of the screen ("Ajouté aux favoris"…). */
+@Composable
+fun ToastHost(vm: MainViewModel) {
+    val toast by vm.toast.collectAsStateWithLifecycle()
     toast?.let { msg ->
         Box(Modifier.fillMaxSize().padding(bottom = 28.dp), contentAlignment = Alignment.BottomCenter) {
             Text(
@@ -211,7 +233,7 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
     }
 }
 
-private var startupDone = false
+internal var startupDone = false
 
 @Composable
 private fun SideNav(items: List<NavItem>, selected: Screen, playlistName: String?, content: FocusRequester,

@@ -27,6 +27,8 @@ sealed interface Screen {
     data object Sports : Screen
     data object SportsSettings : Screen
     data object Recordings : Screen
+    /** Phone only: the destinations that are not bottom tabs. */
+    data object More : Screen
     data class MovieDetail(val playlistId: Long, val uid: String) : Screen
     data class SeriesDetail(val playlistId: Long, val uid: String) : Screen
     data class PlaylistEdit(val id: Long, val type: String) : Screen
