@@ -412,7 +412,7 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
                     options = { panel = Panel.OPTIONS },
                     subtitles = { panel = Panel.SUBS },
                     channels = { panel = Panel.CHANNELS },
-                    zap = { vm.zap(-it); showInfo() },
+                    zap = { vm.zap(it); showInfo() }, // ▲ = previous number, ▼ = next, as in the list
                     next = if (vm.mode == Mode.EPISODE && vm.nextEpisode != null) ({ playNext() }) else null,
                     touched = { showInfo(5000) },
                 ),

@@ -93,12 +93,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val firstLaunch = savedInstanceState == null
         val phone = !Device.isTv(this)
+        // Phone: the menus stay upright (sideways they would be cramped); a tablet turns freely. The player goes sideways itself.
+        if (phone && resources.configuration.smallestScreenWidthDp < 600) requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         setContent {
-            LumenTheme {
+            LumenTheme { androidx.compose.runtime.CompositionLocalProvider(LocalPhone provides phone) {
                 var unlocked by remember { mutableStateOf(com.lumentv.core.Access.isUnlocked(this)) }
                 if (!unlocked) AccessScreen(onUnlocked = { unlocked = true }, onQuit = { finish() })
                 else {
-                    androidx.compose.runtime.CompositionLocalProvider(LocalPhone provides phone) {
+                    run {
                         if (phone) {
                             val w = Device.testWidthDp()
                             Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
@@ -111,6 +113,7 @@ class MainActivity : ComponentActivity() {
                         UpdateHost(vm)
                     }
                 }
+            }
             }
         }
         lifecycleScope.launch {
