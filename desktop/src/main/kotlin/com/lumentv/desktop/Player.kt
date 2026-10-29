@@ -121,8 +121,13 @@ class PlayerWindow private constructor(private val state: AppState) {
     private var learnIntroAt = 0L
     private var speedIndex = 2
     private var overlayOn = false
-    /** A live channel that was paused plays behind live until "Revenir au direct". */
-    private var behindLive = false
+    /**
+     * A live channel paused, or held up by a stall, plays behind live: by [lagMs] in all. "Revenir au direct" shows
+     * during the pause and, once the delay reaches [com.lumentv.core.LiveLag.MIN_MS], for a while after it grew ([com.lumentv.core.LiveLag.SHOWN_MS]).
+     */
+    private var lagMs = 0L
+    private var lagAt = 0L
+    private var pausedSince = 0L
     // Live watchdog: a channel that stops (stream closed, error, picture stuck) is reopened, 1 s to 15 s apart.
     private var liveAttempt = 0
     /** Tracks picked in the menus for this episode/film ("" = subtitles off), kept over reconnections. */
@@ -162,7 +167,7 @@ class PlayerWindow private constructor(private val state: AppState) {
     private val nextBtn = Bubble(Ui.NEXT, tooltip = "Épisode suivant (N)") { playNext() }
     private val skipIntro = Bubble(label = "Passer le récap / l'intro", subtle = true, size = 38) { skipIntro() }
     private val nextCard = Bubble(Ui.NEXT, "Épisode suivant", subtle = true, size = 38) { playNext() }
-    private val backToLive = Bubble(label = "Revenir au direct", subtle = true, size = 38) { goLive() }
+    private val backToLive = Bubble(label = "Revenir au direct", subtle = true, size = 32) { goLive() }
     private val nextClose = Bubble(Ui.CLOSE, tooltip = "Finir celui-ci", subtle = true, size = 38) { nextDismissed = true; refreshActions() }
     private val top = ShadePanel(fromTop = true).apply { layout = BorderLayout() }
     private val bottom = ShadePanel(fromTop = false)
@@ -220,6 +225,7 @@ class PlayerWindow private constructor(private val state: AppState) {
                 // Buffering after the start is a stall: its length goes to the log.
                 if (newCache < 100f && liveTime > 0 && stallSince == 0L) stallSince = System.currentTimeMillis()
                 if (newCache >= 100f && stallSince > 0) {
+                    if (item?.live == true) addLag(System.currentTimeMillis() - stallSince)
                     PlaybackLog.line("mise en mémoire à ${fmt(liveTime)} : ${(System.currentTimeMillis() - stallSince) / 100 / 10.0} s"); stallSince = 0
                 }
                 if (message.foreground == Ui.danger) return@invokeLater
@@ -275,7 +281,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         item = it
         reconnectAt = 0; stallSince = 0; liveTime = -1; liveTimeChangedAt = System.currentTimeMillis(); openedAt = liveTimeChangedAt
         lastSaved = System.currentTimeMillis()
-        nextDismissed = false; skipped = false; learnIntroAt = 0; behindLive = false; skippedRecap = false
+        nextDismissed = false; skipped = false; learnIntroAt = 0; lagMs = 0; lagAt = 0; pausedSince = 0; skippedRecap = false
         segments = null
         if (it.kind == Kind.EPISODE) trace("episode S${it.season}E${it.episode} tmdb=${it.tmdb}")
         if (it.kind == Kind.EPISODE && it.tmdb != null) {
@@ -340,7 +346,11 @@ class PlayerWindow private constructor(private val state: AppState) {
 
     private fun skip(ms: Long) { if (item?.live == false) player.controls().skipTime(ms) }
     private fun togglePause() {
-        if (item?.live == true && player.status().isPlaying) behindLive = true
+        if (item?.live == true) {
+            val now = System.currentTimeMillis()
+            if (player.status().isPlaying) pausedSince = now
+            else if (pausedSince > 0) { addLag(now - pausedSince); pausedSince = 0 }
+        }
         player.controls().pause()
         refreshActions()
     }
@@ -348,9 +358,13 @@ class PlayerWindow private constructor(private val state: AppState) {
     /** Reopens the channel: back to what is on now. */
     private fun goLive() {
         val it = item ?: return
-        behindLive = false
-        player.media().play(it.url, *(if (it.userAgent.isNotBlank()) arrayOf(":http-user-agent=${it.userAgent}") else emptyArray()))
-        refreshActions()
+        PlaybackLog.line("retour au direct (${lagMs / 1000} s de retard)")
+        play(it) // same path as any opening (relay, options); resets the delay
+    }
+
+    private fun addLag(ms: Long) {
+        lagMs += ms
+        if (ms >= 1_000) lagAt = System.currentTimeMillis()
     }
     private fun setVolume(v: Int) {
         volume.value = v.coerceIn(0, 100); volume.repaint(); player.audio().setVolume(volume.value); volumePrefs.putInt("volume", volume.value)
@@ -417,8 +431,9 @@ class PlayerWindow private constructor(private val state: AppState) {
         val showNext = it?.next != null && !nextDismissed && len > 120_000 &&
             (if (creditsStart != null) pos >= creditsStart && pos < len else len - pos in 1..credits)
         nextCard.isVisible = showNext; nextClose.isVisible = showNext
-        backToLive.isVisible = it?.live == true && behindLive
-        backToLive.set(label = if (player.status().isPlaying) "En différé · Revenir au direct" else "En pause · Revenir au direct")
+        val shown = it?.live == true && (pausedSince > 0 || lagMs >= com.lumentv.core.LiveLag.MIN_MS && System.currentTimeMillis() - lagAt < com.lumentv.core.LiveLag.SHOWN_MS)
+        backToLive.isVisible = shown
+        if (shown) backToLive.set(label = if (pausedSince > 0) "En pause · Revenir au direct" else "${lagMs / 1000} s de retard · Revenir au direct")
         if (showNext) nextCard.set(label = "Épisode suivant dans ${(len - pos) / 1000} s")
     }
 

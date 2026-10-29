@@ -264,6 +264,9 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
         }
     }
     LaunchedEffect(vm.index, vm.mode) { showInfo() }
+    // Live behind by a pause or stalls: "Revenir au direct" during the pause and for a while after the delay grew.
+    val lagButton = live && vm.mode == Mode.LIVE && state.error == null && (state.pausedLive ||
+        state.lagMs >= com.lumentv.core.LiveLag.MIN_MS && tick >= 0 && android.os.SystemClock.elapsedRealtime() - state.lagAt < com.lumentv.core.LiveLag.SHOWN_MS)
     LaunchedEffect(digits) {
         if (digits.isNotEmpty()) { delay(1600); digits.toIntOrNull()?.let { vm.goToNumber(it) }; digits = "" }
     }
@@ -299,13 +302,17 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
                     AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> { vm.zap(1); true }
                     AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_CHANNEL_DOWN -> { vm.zap(-1); true }
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                        if (state.error != null) c.retryNow() else if (infoVisible) panel = Panel.CHANNELS else showInfo(); true
+                        if (state.error != null) c.retryNow() else if (lagButton) c.goLive() else if (infoVisible) panel = Panel.CHANNELS else showInfo(); true
                     }
                     AndroidKeyEvent.KEYCODE_DPAD_LEFT, AndroidKeyEvent.KEYCODE_GUIDE, AndroidKeyEvent.KEYCODE_TV_INPUT -> { panel = Panel.CHANNELS; true }
                     AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_MENU, AndroidKeyEvent.KEYCODE_SETTINGS -> { panel = Panel.OPTIONS; true }
                     AndroidKeyEvent.KEYCODE_INFO -> { showInfo(8000); true }
                     AndroidKeyEvent.KEYCODE_LAST_CHANNEL -> { vm.previousChannel(); true }
                     AndroidKeyEvent.KEYCODE_CAPTIONS -> { panel = Panel.SUBS; true }
+                    // The remote's play / pause key pauses a channel too; "Revenir au direct" then catches up.
+                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { if (c.player.playWhenReady) c.player.pause() else c.player.play(); showInfo(); true }
+                    AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> { c.player.pause(); showInfo(); true }
+                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> { c.player.play(); true }
                     else -> false
                 } else when (code) {
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
@@ -418,6 +425,16 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
                 ),
             )
             else if (live) LiveInfoBar(vm, state.videoInfo) else VodBar(vm, position, duration, state.playing)
+        }
+
+        if (panel == Panel.NONE && lagButton) {
+            Box(Modifier.fillMaxSize().padding(end = if (phone) 20.dp else 48.dp, bottom = if (infoVisible) (if (phone) 110.dp else 150.dp) else (if (phone) 24.dp else 48.dp)),
+                contentAlignment = Alignment.BottomEnd) {
+                val what = if (state.pausedLive) "En pause" else "${state.lagMs / 1000} s de retard"
+                Text("$what · Revenir au direct" + if (phone) "" else "  (OK)", style = MaterialTheme.typography.labelLarge, color = Color.White,
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(Palette.Scrim).then(if (phone) Modifier.clickable { c.goLive() } else Modifier)
+                        .padding(horizontal = 16.dp, vertical = 8.dp))
+            }
         }
 
         if (panel == Panel.NONE && (showSkip || showNext)) {

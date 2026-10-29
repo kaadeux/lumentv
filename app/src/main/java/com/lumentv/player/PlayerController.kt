@@ -47,6 +47,12 @@ data class PlaybackState(
     val videoInfo: String? = null,
     /** Frames per second of the video (from the stream, else measured on the first decoded frames), 0 until known. */
     val frameRate: Float = 0f,
+    /** Live: how far behind live the picture is, from pauses and stalls (see [com.lumentv.core.LiveLag]). */
+    val lagMs: Long = 0,
+    /** When [lagMs] last grew (elapsedRealtime), 0 = never. */
+    val lagAt: Long = 0,
+    /** Live and paused by the viewer. */
+    val pausedLive: Boolean = false,
 )
 
 data class TrackOption(val label: String, val selected: Boolean, internal val group: Tracks.Group?, internal val index: Int)
@@ -126,6 +132,12 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
     private var retryRunnable: Runnable? = null
     private var released = false
     private var stallSince = 0L
+    private var pausedSince = 0L
+
+    private fun addLag(ms: Long) {
+        val s = _state.value
+        _state.value = s.copy(lagMs = s.lagMs + ms, lagAt = if (ms >= 1_000) android.os.SystemClock.elapsedRealtime() else s.lagAt)
+    }
 
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
@@ -140,11 +152,22 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
             // A wait for data after playback started is a stall: logged with its length (adb logcat -s Player).
             if (state == Player.STATE_BUFFERING && player.currentPosition > 0 && stallSince == 0L) stallSince = android.os.SystemClock.elapsedRealtime()
             if (state == Player.STATE_READY && stallSince > 0) {
-                Log.i(TAG, "stall at ${player.currentPosition / 1000} s: ${android.os.SystemClock.elapsedRealtime() - stallSince} ms"); stallSince = 0
+                val ms = android.os.SystemClock.elapsedRealtime() - stallSince
+                Log.i(TAG, "stall at ${player.currentPosition / 1000} s: $ms ms"); stallSince = 0
+                if (current?.live == true) addLag(ms)
             }
             // The provider closed a live stream: reopen it instead of leaving the last picture frozen.
             val spec = current
             if (state == Player.STATE_ENDED && spec?.live == true) scheduleRetry(spec, "Flux interrompu")
+        }
+
+        /** A pause of a live channel: the picture resumes where it stopped, that long behind live. */
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (current?.live != true) return
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (!playWhenReady && pausedSince == 0L) pausedSince = now
+            else if (playWhenReady && pausedSince > 0) { addLag(now - pausedSince); pausedSince = 0 }
+            _state.value = _state.value.copy(pausedLive = !playWhenReady)
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -230,6 +253,8 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
     private fun prepare(spec: StreamSpec, positionMs: Long) {
         movedAt = android.os.SystemClock.elapsedRealtime()
         stallSince = 0
+        pausedSince = 0
+        _state.value = _state.value.copy(lagMs = 0, lagAt = 0, pausedLive = false)
         meterReset = true
         val okHttp = OkHttpDataSource.Factory(http).apply {
             spec.userAgent?.let { setUserAgent(it) }
@@ -263,6 +288,12 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         val r = Runnable { retryRunnable = null; if (!released && current === spec) prepare(spec, position) }
         retryRunnable = r
         main.postDelayed(r, delaySec * 1000L)
+    }
+
+    /** Live: reopens the channel, back to what the provider sends now ("Revenir au direct"). */
+    fun goLive() {
+        Log.i(TAG, "back to live, ${_state.value.lagMs / 1000} s behind")
+        retryNow()
     }
 
     /** Retry right now (the "Réessayer" button, or the network came back). */
