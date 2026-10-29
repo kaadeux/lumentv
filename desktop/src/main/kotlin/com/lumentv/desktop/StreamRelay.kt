@@ -12,7 +12,9 @@ import java.net.Socket
 import java.util.concurrent.TimeUnit
 
 /**
- * A small HTTP relay on 127.0.0.1 between VLC and the provider, for films and episodes. VLC waits for ever on a
+ * A small HTTP relay on 127.0.0.1 between VLC and the provider. Every stream goes through it, so through the app's
+ * private client (encrypted DNS, HTTPS when the server allows it) rather than VLC's own network code. For films and
+ * episodes it also rides over stalls: VLC waits for ever on a
  * connection the server stops feeding; the relay notices after a few seconds without data and reopens it at the
  * same byte (Range), while VLC still plays from its buffer: nothing shows. The TV's player does the same by itself.
  * One upstream connection at a time per request (the subscription allows one screen); VLC's seeks are passed on.
@@ -22,9 +24,11 @@ object StreamRelay {
     private const val SILENCE_MS = 6_000L
     private const val MAX_RESUMES = 20
 
-    private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
+    private val http = with(com.lumentv.core.PrivateNet) { OkHttpClient.Builder().private() }.connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(SILENCE_MS, TimeUnit.MILLISECONDS).retryOnConnectionFailure(true).build()
-    private class Target(val url: String, val userAgent: String)
+    /** Live channels: no byte to resume at; a longer silence is allowed before the player's own reconnection. */
+    private val liveHttp = http.newBuilder().readTimeout(15, TimeUnit.SECONDS).build()
+    private class Target(val url: String, val userAgent: String, val live: Boolean)
     private val targets = object : LinkedHashMap<String, Target>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Target>) = size > 8
     }
@@ -36,9 +40,9 @@ object StreamRelay {
     }
 
     /** The address VLC should open instead of [url]. */
-    fun wrap(url: String, userAgent: String): String {
+    fun wrap(url: String, userAgent: String, live: Boolean = false): String {
         val token = java.util.UUID.randomUUID().toString().replace("-", "")
-        synchronized(targets) { targets[token] = Target(url, userAgent) }
+        synchronized(targets) { targets[token] = Target(url, userAgent, live) }
         // The file name is kept so VLC still recognises the container (.mkv, .mp4…).
         return "http://127.0.0.1:${server.localPort}/$token/${url.substringBefore('?').substringAfterLast('/')}"
     }
@@ -65,7 +69,7 @@ object StreamRelay {
             val first = upstream.header("Content-Range")?.let { Regex("bytes (\\d+)-").find(it)?.groupValues?.get(1)?.toLongOrNull() } ?: 0L
             val length = upstream.header("Content-Length")?.toLongOrNull()
             val last = length?.let { first + it - 1 }
-            val canResume = upstream.code == 206 || upstream.header("Accept-Ranges")?.contains("bytes") == true
+            val canResume = !target.live && (upstream.code == 206 || upstream.header("Accept-Ranges")?.contains("bytes") == true)
             val at = longArrayOf(first) // next byte to send, kept even when the copy fails half-way
             var resumes = 0
             while (true) {
@@ -104,6 +108,6 @@ object StreamRelay {
         if (t.userAgent.isNotBlank()) b.header("User-Agent", t.userAgent)
         b.header("Accept-Encoding", "identity") // the bytes as they are: sizes and Range positions must match the file
         if (range != null) b.header("Range", range)
-        http.newCall(b.build()).execute()
+        (if (t.live) liveHttp else http).newCall(b.build()).execute()
     }.getOrNull()
 }

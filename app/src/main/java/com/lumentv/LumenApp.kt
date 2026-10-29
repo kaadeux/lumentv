@@ -17,6 +17,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import com.lumentv.core.PrivateNet
+import com.lumentv.core.PrivateNet.private
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -27,7 +29,11 @@ class AppGraph(app: Application) {
     val settings = SettingsStore(app)
     val db = AppDatabase.create(app)
 
+    init { PrivateNet.init(java.io.File(app.filesDir, "https_hosts.txt")) }
+
+    /** Encrypted DNS and HTTPS whenever the server allows it (see PrivateNet): the internet provider sees less. */
     val http: OkHttpClient = OkHttpClient.Builder()
+        .private()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .followRedirects(true)

@@ -149,6 +149,10 @@ fun SettingsScreen(vm: MainViewModel) {
             }
         }
 
+        item {
+            val (title, detail) = remember { com.lumentv.core.PrivateNet.summary() }
+            SettingRow("Confidentialité : $title", detail, { vm.show("Votre fournisseur d'accès voit que vous utilisez internet et combien, pas ce que vous regardez quand la connexion est protégée.") })
+        }
         item { Group("Lecture") }
         item { SettingRow("Mémoire tampon", if (settings.bufferMode == "stable") "Stable (connexion faible)" else "Normale (démarrage rapide)", {
             scope.launch { vm.graph.settings.set(Keys.buffer, if (settings.bufferMode == "stable") "normal" else "stable") } }) }

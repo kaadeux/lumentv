@@ -33,7 +33,9 @@ object Kind { const val CHANNEL = "ch"; const val MOVIE = "mv"; const val SERIES
  * so syncing is a plain merge with the server copy.
  */
 class AppState(private val scope: CoroutineScope) {
-    val http: OkHttpClient = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS)
+    init { com.lumentv.core.PrivateNet.init(java.io.File(Store.dir, "https_hosts.txt")) }
+    /** Encrypted DNS and HTTPS whenever the server allows it (see PrivateNet): the internet provider sees less. */
+    val http: OkHttpClient = with(com.lumentv.core.PrivateNet) { OkHttpClient.Builder().private() }.connectTimeout(15, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS)
         .followRedirects(true).followSslRedirects(true).retryOnConnectionFailure(true).build()
     val library = Library(http)
     /** Official sports calendar (live and upcoming games). */

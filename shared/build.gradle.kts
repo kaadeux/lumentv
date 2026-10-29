@@ -14,6 +14,7 @@ kotlin {
 
 dependencies {
     api("com.squareup.okhttp3:okhttp:4.12.0")
+    api("com.squareup.okhttp3:okhttp-dnsoverhttps:4.12.0")
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     // XmlPullParser is built into Android; the Windows app adds kxml2 as the implementation.

@@ -70,6 +70,10 @@ private fun app() = application {
         LumenTheme {
             val scope = rememberCoroutineScope()
             val state = remember { AppState(scope) }
+            // Posters and logos through the same private client (encrypted DNS), not Coil's own.
+            coil3.compose.setSingletonImageLoaderFactory { ctx ->
+                coil3.ImageLoader.Builder(ctx).components { add(coil3.network.okhttp.OkHttpNetworkFetcherFactory(callFactory = { state.http })) }.build()
+            }
             var unlocked by remember { mutableStateOf(Access.isUnlocked()) }
             if (!unlocked) AccessScreen { unlocked = true } else {
                 LaunchedEffect(Unit) { state.start() }

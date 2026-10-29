@@ -125,6 +125,19 @@ fun SettingsScreen(state: AppState) {
         }
 
         item {
+            Card("Confidentialité") {
+                // Read again every few seconds: servers are moved to HTTPS as the app reaches them.
+                val summary by androidx.compose.runtime.produceState(com.lumentv.core.PrivateNet.summary()) {
+                    while (true) { kotlinx.coroutines.delay(5_000); value = com.lumentv.core.PrivateNet.summary() }
+                }
+                Text(summary.first, color = Pal.text, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                Text(summary.second, color = Pal.dim, style = MaterialTheme.typography.bodySmall)
+                Text("Votre fournisseur d'accès voit que vous utilisez internet et combien, pas ce que vous regardez quand la connexion est protégée.",
+                    color = Pal.dim, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        item {
             Card("À propos") {
                 Text("Lumen TV ${BuildInfo.VERSION} pour Windows · lecture par le moteur VLC intégré.", color = Pal.text)
                 Text("Raccourcis du lecteur : Espace pause · ←/→ 10 s · ↑/↓ volume · F plein écran · N épisode suivant · Échap fermer.", color = Pal.dim)
