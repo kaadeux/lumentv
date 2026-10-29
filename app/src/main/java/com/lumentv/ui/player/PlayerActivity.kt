@@ -600,10 +600,11 @@ private fun matchDisplay(activity: android.app.Activity, fps: Float) {
         val k = kotlin.math.round(rate / fps).coerceAtLeast(1f)
         return if (k > 3f) 1f else kotlin.math.abs(rate - k * fps) / (k * fps)
     }
-    if (error(current.refreshRate) < 0.0005f) return
+    if (error(current.refreshRate) < 0.0005f) return android.util.Log.i("Player", "screen ${current.refreshRate} Hz already fits $fps fps").let { }
     val best = display.supportedModes
         .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight && error(it.refreshRate) < 0.002f }
-        .minWithOrNull(compareBy<android.view.Display.Mode>({ error(it.refreshRate) }, { -it.refreshRate })) ?: return
+        .minWithOrNull(compareBy<android.view.Display.Mode>({ error(it.refreshRate) }, { -it.refreshRate }))
+        ?: return android.util.Log.i("Player", "no screen mode fits $fps fps").let { }
     if (best.modeId == current.modeId) return
     android.util.Log.i("Player", "screen ${current.refreshRate} Hz -> ${best.refreshRate} Hz for $fps fps")
     activity.window.attributes = activity.window.attributes.also { it.preferredDisplayModeId = best.modeId }

@@ -89,20 +89,38 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
 
     private val main = Handler(Looper.getMainLooper())
 
-    // Live streams rarely state their frame rate: it is measured from the gaps between the first decoded frames.
+    // Streams rarely state their frame rate: it is measured by counting the frames decoded over 10 s of steady
+    // playback, from 3 s after a start or a wait (the decoder runs ahead meanwhile and would inflate the count),
+    // then snapped to the usual rates. (The per-frame callback is never called on some boxes.)
     @Volatile private var meterReset = true
-    private var lastPtsUs = -1L
-    private val gaps = ArrayList<Long>()
-    private val frameMeter = androidx.media3.exoplayer.video.VideoFrameMetadataListener { ptsUs, _, _, _ ->
-        if (meterReset) { meterReset = false; gaps.clear(); lastPtsUs = -1L }
-        if (gaps.size >= 40) return@VideoFrameMetadataListener
-        if (lastPtsUs >= 0) (ptsUs - lastPtsUs).takeIf { it in 8_000..100_000 }?.let { gaps += it }
-        lastPtsUs = ptsUs
-        if (gaps.size == 40) {
-            val fps = 1_000_000f / gaps.sorted()[20]
-            main.post { if (_state.value.frameRate <= 0f) _state.value = _state.value.copy(frameRate = fps) }
+    private var meterPos = -1L
+    private var meterFrames = 0L
+    private var steadySince = 0L
+    private val frameMeter = object : Runnable {
+        override fun run() {
+            if (released) return
+            main.postDelayed(this, 1_000)
+            if (_state.value.frameRate > 0f) return
+            val c = player.videoDecoderCounters?.also { it.ensureUpdated() }
+            val steady = player.isPlaying && player.playbackState == Player.STATE_READY && player.playbackParameters.speed == 1f && c != null
+            val frames = c?.let { (it.renderedOutputBufferCount + it.skippedOutputBufferCount + it.droppedBufferCount).toLong() } ?: 0L
+            val pos = player.currentPosition
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (meterReset || !steady) { meterReset = false; steadySince = if (steady) now else 0L; meterPos = -1; return }
+            if (steadySince == 0L) steadySince = now
+            if (now - steadySince < 3_000) return
+            if (meterPos < 0 || frames < meterFrames || pos < meterPos) { meterPos = pos; meterFrames = frames; return }
+            val span = pos - meterPos
+            if (span > 20_000) { meterPos = pos; meterFrames = frames; return } // a jump, not playback
+            if (span < 10_000) return
+            val raw = (frames - meterFrames) * 1000f / span
+            val fps = snapFrameRate(raw)
+            Log.i(TAG, "frame rate measured: $raw -> $fps")
+            if (fps > 0f) _state.value = _state.value.copy(frameRate = fps)
+            else { meterPos = pos; meterFrames = frames }
         }
     }
+
     private var current: StreamSpec? = null
     private var attempt = 0
     private var retryRunnable: Runnable? = null
@@ -136,7 +154,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         override fun onTracksChanged(tracks: Tracks) {
             _tracksVersion.value++
             val f = player.videoFormat
-            f?.frameRate?.takeIf { it > 0f }?.let { r -> if (_state.value.frameRate <= 0f) _state.value = _state.value.copy(frameRate = r) }
+            f?.frameRate?.takeIf { it > 0f }?.let { r -> if (_state.value.frameRate <= 0f) { Log.i(TAG, "frame rate from the stream: $r"); _state.value = _state.value.copy(frameRate = r) } }
             _state.value = _state.value.copy(videoInfo = f?.let { v ->
                 listOfNotNull(
                     if (v.height > 0) "${v.height}p" else null,
@@ -192,7 +210,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
 
     init {
         player.addListener(listener)
-        player.setVideoFrameMetadataListener(frameMeter)
+        main.postDelayed(frameMeter, 1_000)
         main.postDelayed(watchdog, 2_000)
         runCatching {
             connectivity.registerNetworkCallback(
@@ -312,6 +330,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         released = true
         cancelRetry()
         main.removeCallbacks(watchdog)
+        main.removeCallbacks(frameMeter)
         runCatching { connectivity.unregisterNetworkCallback(netCallback) }
         player.removeListener(listener)
         player.release()
@@ -346,4 +365,14 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         /** A live channel whose clock or picture stays still this long (while meant to play) is reconnected. */
         private const val STALL_MS = 20_000L
     }
+}
+
+/** 23.9 → 23.976, 24.8 → 25, 59.2 → 59.94…; 0 when the count fits no usual rate (a hiccup: measured again). */
+internal fun snapFrameRate(raw: Float): Float = when (raw) {
+    in 23.3f..24.6f -> 23.976f // films: 23.976 far more often than 24
+    in 24.6f..25.6f -> 25f
+    in 29.2f..30.6f -> 29.97f
+    in 48.5f..51f -> 50f
+    in 58.5f..61f -> 59.94f
+    else -> 0f
 }
