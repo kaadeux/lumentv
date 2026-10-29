@@ -24,7 +24,12 @@ class PrivateNetTest {
         http.newCall(Request.Builder().url("http://httpbin.org/anything/movie/1.mkv").build()).execute().use { r ->
             assertEquals("https", r.request.url.scheme)
         }
+        // Refused over HTTPS: asked again over plain HTTP, as before the upgrade.
+        http.newCall(Request.Builder().url("http://httpbin.org/status/403").build()).execute().use { r ->
+            assertEquals("http", r.request.url.scheme)
+        }
         assertTrue("httpbin.org" in PrivateNet.secureHosts)
+        PrivateNet.cleartextHosts.clear()
         assertTrue(PrivateNet.cleartextHosts.isEmpty())
         println(PrivateNet.summary())
     }

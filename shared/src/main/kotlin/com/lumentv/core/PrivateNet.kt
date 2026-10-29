@@ -103,7 +103,11 @@ object PrivateNet {
             val secure = req.newBuilder().url(url.newBuilder().scheme("https").port(443).build()).build()
             val d = decisions[url.host]
             if (d != null && d > 0) {
-                return try { chain.proceed(secure) } catch (e: SSLException) { mark(url.host, false); chain.proceed(req) }
+                // A server whose API works over HTTPS may still refuse a stream there: plain HTTP then, as before.
+                val r = try { chain.proceed(secure) } catch (e: SSLException) { mark(url.host, false); return chain.proceed(req) } catch (e: IOException) { null }
+                if (r != null && r.code < 400) return r
+                r?.close()
+                return chain.proceed(req)
             }
             // Unknown (or refused a day ago): tried on an API call, never on a stream (one screen only).
             val retry = d == null || System.currentTimeMillis() + d > RETRY_REFUSED_MS
