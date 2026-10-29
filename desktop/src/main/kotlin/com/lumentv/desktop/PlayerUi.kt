@@ -205,3 +205,81 @@ class ShadePanel(private val fromTop: Boolean) : javax.swing.JPanel() {
         g.fillRect(0, 0, width, height)
     }
 }
+
+/**
+ * The audio / subtitle picker: a dark panel with a title and one row per track, the current one ticked.
+ * VLC's raw names are made readable: "Track 3 - [English]" → "Anglais", "VFF Forced - [French]" → "Français · VFF forcés".
+ */
+object TrackMenu {
+    private val panelBg = Color(0x16, 0x19, 0x22)
+    private const val CHECK = ""
+
+    fun show(anchor: JComponent, title: String, tracks: List<Pair<Int, String?>>, current: Int, audio: Boolean, onPick: (Int) -> Unit) {
+        val menu = javax.swing.JPopupMenu().apply {
+            background = panelBg
+            border = javax.swing.BorderFactory.createCompoundBorder(javax.swing.BorderFactory.createLineBorder(Color(255, 255, 255, 36)),
+                javax.swing.BorderFactory.createEmptyBorder(8, 6, 8, 6))
+        }
+        val list = javax.swing.JPanel().apply { isOpaque = true; background = panelBg; layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS) }
+        list.add(javax.swing.JLabel(title.uppercase()).apply {
+            font = Ui.font(11, bold = true); foreground = Ui.dim; border = javax.swing.BorderFactory.createEmptyBorder(2, 12, 8, 12)
+            alignmentX = 0f
+        })
+        if (tracks.isEmpty()) list.add(javax.swing.JLabel("Aucune piste").apply { font = Ui.font(14); foreground = Ui.dim; border = javax.swing.BorderFactory.createEmptyBorder(6, 12, 6, 12) })
+        tracks.forEach { (id, desc) ->
+            val (main, detail) = label(id, desc, audio)
+            list.add(Row(main, detail, id == current) { menu.isVisible = false; onPick(id) }.apply { alignmentX = 0f })
+        }
+        menu.add(list)
+        menu.pack()
+        menu.show(anchor, anchor.width - menu.preferredSize.width, -menu.preferredSize.height - 8)
+    }
+
+    private val languages = mapOf("french" to "Français", "english" to "Anglais", "spanish" to "Espagnol", "german" to "Allemand", "italian" to "Italien",
+        "portuguese" to "Portugais", "arabic" to "Arabe", "dutch" to "Néerlandais", "japanese" to "Japonais", "korean" to "Coréen", "russian" to "Russe",
+        "turkish" to "Turc", "polish" to "Polonais", "chinese" to "Chinois", "fre" to "Français", "fra" to "Français", "eng" to "Anglais")
+
+    internal fun label(id: Int, desc: String?, audio: Boolean): Pair<String, String?> {
+        if (id < 0 || desc.isNullOrBlank() || desc.equals("Disable", true)) return (if (audio) "Aucun son" else "Désactivés") to null
+        val lang = Regex("""\[([^\]]+)]""").find(desc)?.groupValues?.get(1)?.trim()
+        val name = desc.replace(Regex("""\s*-?\s*\[[^\]]*]"""), "").trim()
+            .takeUnless { Regex("""(?i)^(track|piste)\s*\d+$""").matches(it) || it.isBlank() }
+            ?.replace(Regex("""(?i)\bforced\b"""), "forcés")?.replace(Regex("""(?i)\bSDH\b"""), "malentendants")
+        val language = lang?.let { languages[it.lowercase()] ?: it.replaceFirstChar { c -> c.uppercase() } }
+        return when {
+            language != null -> language to name
+            name != null -> name to null
+            else -> "Piste $id" to null
+        }
+    }
+
+    private class Row(val main: String, val detail: String?, val selected: Boolean, val onClick: () -> Unit) : JComponent() {
+        private var hover = false
+        init {
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            addMouseListener(object : MouseAdapter() {
+                override fun mouseEntered(e: MouseEvent) { hover = true; repaint() }
+                override fun mouseExited(e: MouseEvent) { hover = false; repaint() }
+                override fun mouseReleased(e: MouseEvent) { onClick() }
+            })
+        }
+        override fun getPreferredSize(): Dimension {
+            val w = getFontMetrics(Ui.font(14, true)).stringWidth(main) + (detail?.let { getFontMetrics(Ui.font(13)).stringWidth("  ·  $it") } ?: 0)
+            return Dimension(maxOf(240, w + 64), 38)
+        }
+        override fun getMaximumSize() = Dimension(Int.MAX_VALUE, 38)
+        override fun paintComponent(g0: Graphics) {
+            val g = Ui.smooth(g0)
+            if (hover || selected) { g.color = if (hover) Color(255, 255, 255, 30) else Color(79, 140, 255, 40); g.fill(RoundRectangle2D.Double(0.0, 1.0, width - 1.0, height - 2.0, 10.0, 10.0)) }
+            if (selected) {
+                g.font = if (Ui.iconFamily != null) Ui.icons(13) else Ui.font(13, true); g.color = Ui.accent
+                val fm = g.fontMetrics; g.drawString(if (Ui.iconFamily != null) CHECK else "✓", 14, (height - fm.height) / 2 + fm.ascent)
+            }
+            g.font = Ui.font(14, selected); g.color = Ui.text
+            var fm = g.fontMetrics
+            val y = (height - fm.height) / 2 + fm.ascent
+            g.drawString(main, 40, y)
+            detail?.let { d -> val x = 40 + fm.stringWidth(main); g.font = Ui.font(13); g.color = Ui.dim; g.drawString("  ·  $d", x, y) }
+        }
+    }
+}

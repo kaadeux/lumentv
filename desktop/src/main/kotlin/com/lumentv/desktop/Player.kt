@@ -125,6 +125,11 @@ class PlayerWindow private constructor(private val state: AppState) {
     private var behindLive = false
     // Live watchdog: a channel that stops (stream closed, error, picture stuck) is reopened, 1 s to 15 s apart.
     private var liveAttempt = 0
+    /** Tracks picked in the menus for this episode/film ("" = subtitles off), kept over reconnections. */
+    private var pickedAudio: String? = null
+    private var pickedSubs: String? = null
+    /** VLC says "playing" again after each pause: the languages are applied once per start only. */
+    private var languagesApplied = false
     private var reconnectAt = 0L
     private var liveTime = -1L
     private var liveTimeChangedAt = 0L
@@ -209,7 +214,7 @@ class PlayerWindow private constructor(private val state: AppState) {
                 message.text = "Lecture impossible : le flux ne répond pas, ou l'abonnement est déjà utilisé sur un autre écran."
             }
             override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) { if (newCount > 0) trace("image") }
-            override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { player.audio().setVolume(volume.value); message.foreground = Ui.dim; message.text = "";playPause.set(icon = Ui.PAUSE); applyLanguages(); describeVideo() }
+            override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { player.audio().setVolume(volume.value); message.foreground = Ui.dim; message.text = ""; playPause.set(icon = Ui.PAUSE); if (!languagesApplied) { languagesApplied = true; applyLanguages() }; describeVideo() }
             override fun paused(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { playPause.set(icon = Ui.PLAY) }
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = SwingUtilities.invokeLater {
                 // Buffering after the start is a stall: its length goes to the log.
@@ -265,7 +270,8 @@ class PlayerWindow private constructor(private val state: AppState) {
     fun play(it: PlayItem) {
         saveNow()
         if (item == null) { ScreenGuard.started(); presenceKey = state.presenceKey(); lastBeat = 0 }
-        if (it.uid != item?.uid) liveAttempt = 0 // a reconnection (same item, other position) keeps counting
+        if (it.uid != item?.uid) { liveAttempt = 0; pickedAudio = null; pickedSubs = null } // a reconnection (same item, other position) keeps counting
+        languagesApplied = false
         item = it
         reconnectAt = 0; stallSince = 0; liveTime = -1; liveTimeChangedAt = System.currentTimeMillis(); openedAt = liveTimeChangedAt
         lastSaved = System.currentTimeMillis()
@@ -499,8 +505,13 @@ class PlayerWindow private constructor(private val state: AppState) {
     }
 
     private fun applyLanguages() {
+        // What was picked in the menus first (a reconnection restarts the stream), else the settings.
+        pickedAudio?.let { d -> player.audio().trackDescriptions().firstOrNull { it.description() == d }?.let { player.audio().setTrack(it.id()) } }
+        pickedSubs?.let { d -> player.subpictures().setTrack(if (d.isEmpty()) -1 else player.subpictures().trackDescriptions().firstOrNull { it.description() == d }?.id() ?: -1) }
+        if (pickedAudio != null && pickedSubs != null) return
         val audio = state.setting("audio_lang"); val subs = state.setting("sub_lang"); val subsOn = state.setting("subs_on") == "true"
-        if (audio.isNotEmpty()) player.audio().trackDescriptions().firstOrNull { matches(it.description(), audio) }?.let { player.audio().setTrack(it.id()) }
+        if (pickedAudio == null && audio.isNotEmpty()) player.audio().trackDescriptions().firstOrNull { matches(it.description(), audio) }?.let { player.audio().setTrack(it.id()) }
+        if (pickedSubs != null) return
         if (subsOn && subs.isNotEmpty()) player.subpictures().trackDescriptions().firstOrNull { matches(it.description(), subs) }?.let { player.subpictures().setTrack(it.id()) }
         else if (!subsOn) player.subpictures().setTrack(-1)
     }
@@ -513,16 +524,14 @@ class PlayerWindow private constructor(private val state: AppState) {
     }
 
     private fun tracksMenu(anchor: JComponent, audio: Boolean) {
-        val menu = JPopupMenu()
-        val tracks = if (audio) player.audio().trackDescriptions() else player.subpictures().trackDescriptions()
+        val tracks = (if (audio) player.audio().trackDescriptions() else player.subpictures().trackDescriptions()).map { it.id() to it.description() }
         val current = if (audio) player.audio().track() else player.subpictures().track()
-        if (tracks.isEmpty()) menu.add("Aucune piste").isEnabled = false
-        tracks.forEach { t ->
-            menu.add((if (t.id() == current) "● " else "   ") + (t.description() ?: "Piste ${t.id()}")).addActionListener {
-                if (audio) player.audio().setTrack(t.id()) else player.subpictures().setTrack(t.id())
-            }
+        TrackMenu.show(anchor, if (audio) "Audio" else "Sous-titres", tracks, current, audio) { id ->
+            val desc = tracks.firstOrNull { it.first == id }?.second
+            // Kept for this film / episode: a pause or a reconnection does not undo it.
+            if (audio) { player.audio().setTrack(id); pickedAudio = desc.orEmpty() }
+            else { player.subpictures().setTrack(id); pickedSubs = if (id < 0) "" else desc.orEmpty() }
         }
-        menu.show(anchor, 0, -menu.preferredSize.height - 6)
     }
 
     private fun close() {
