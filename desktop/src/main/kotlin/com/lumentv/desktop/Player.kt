@@ -472,7 +472,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         }
         refreshActions()
         if (learnIntroAt in 1..System.currentTimeMillis()) { seriesKey()?.let { Markers.setIntroEnd(it, player.status().time() - 15_000) }; learnIntroAt = 0 }
-        if (top.isVisible && System.currentTimeMillis() - lastMove > 3_000 && player.status().isPlaying) {
+        if (top.isVisible && System.currentTimeMillis() - lastMove > 3_000 && player.status().isPlaying && !TrackMenu.isOpen) { // an open menu keeps them
             top.isVisible = false; bottom.isVisible = false; overlay.repaint()
             component.videoSurfaceComponent().cursor = Toolkit.getDefaultToolkit().createCustomCursor(BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), Point(0, 0), "none")
         }
@@ -524,6 +524,7 @@ class PlayerWindow private constructor(private val state: AppState) {
     }
 
     private fun tracksMenu(anchor: JComponent, audio: Boolean) {
+        if (TrackMenu.isOpen) return TrackMenu.dismiss()
         val tracks = (if (audio) player.audio().trackDescriptions() else player.subpictures().trackDescriptions()).map { it.id() to it.description() }
         val current = if (audio) player.audio().track() else player.subpictures().track()
         TrackMenu.show(anchor, if (audio) "Audio" else "Sous-titres", tracks, current, audio) { id ->

@@ -214,14 +214,22 @@ object TrackMenu {
     private val panelBg = Color(0x16, 0x19, 0x22)
     private const val CHECK = ""
 
+    private var close: (() -> Unit)? = null
+
+    /**
+     * Opens above [anchor], drawn in the controls' own window (its popup layer) like the buttons: no window of its own,
+     * as a Swing popup over the video could get a white frame. Closes on a pick, a click elsewhere, Escape, or when the
+     * controls hide.
+     */
     fun show(anchor: JComponent, title: String, tracks: List<Pair<Int, String?>>, current: Int, audio: Boolean, onPick: (Int) -> Unit) {
-        val menu = javax.swing.JPopupMenu().apply {
-            background = panelBg
-            // Opaque colours only: over the video the menu gets a window of its own, where any transparency shows as white.
+        close?.invoke()
+        val owner = javax.swing.SwingUtilities.getWindowAncestor(anchor)
+        val layer = javax.swing.SwingUtilities.getRootPane(anchor)?.layeredPane ?: return
+        val list = javax.swing.JPanel().apply {
+            isOpaque = true; background = panelBg; layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)
             border = javax.swing.BorderFactory.createCompoundBorder(javax.swing.BorderFactory.createLineBorder(Color(0x2C, 0x31, 0x3D)),
                 javax.swing.BorderFactory.createEmptyBorder(8, 6, 8, 6))
         }
-        val list = javax.swing.JPanel().apply { isOpaque = true; background = panelBg; layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS) }
         list.add(javax.swing.JLabel(title.uppercase()).apply {
             font = Ui.font(11, bold = true); foreground = Ui.dim; border = javax.swing.BorderFactory.createEmptyBorder(2, 12, 8, 12)
             alignmentX = 0f
@@ -229,12 +237,35 @@ object TrackMenu {
         if (tracks.isEmpty()) list.add(javax.swing.JLabel("Aucune piste").apply { font = Ui.font(14); foreground = Ui.dim; border = javax.swing.BorderFactory.createEmptyBorder(6, 12, 6, 12) })
         tracks.forEach { (id, desc) ->
             val (main, detail) = label(id, desc, audio)
-            list.add(Row(main, detail, id == current) { menu.isVisible = false; onPick(id) }.apply { alignmentX = 0f })
+            list.add(Row(main, detail, id == current) { close?.invoke(); onPick(id) }.apply { alignmentX = 0f })
         }
-        menu.add(list)
-        menu.pack()
-        menu.show(anchor, anchor.width - menu.preferredSize.width, -menu.preferredSize.height - 8)
+        val size = list.preferredSize
+        val at = javax.swing.SwingUtilities.convertPoint(anchor, 0, 0, layer)
+        list.setBounds((at.x + anchor.width - size.width).coerceAtLeast(8), (at.y - size.height - 8).coerceAtLeast(8), size.width, size.height)
+        layer.add(list, javax.swing.JLayeredPane.POPUP_LAYER)
+        layer.revalidate(); layer.repaint()
+
+        val outside = java.awt.event.AWTEventListener { e ->
+            when {
+                e is MouseEvent && e.id == MouseEvent.MOUSE_PRESSED && !javax.swing.SwingUtilities.isDescendingFrom(e.component, list)
+                    && e.component !== anchor -> close?.invoke()
+                e is java.awt.event.KeyEvent && e.id == java.awt.event.KeyEvent.KEY_PRESSED && e.keyCode == java.awt.event.KeyEvent.VK_ESCAPE -> close?.invoke()
+            }
+        }
+        val hidden = object : java.awt.event.ComponentAdapter() { override fun componentHidden(e: java.awt.event.ComponentEvent) { close?.invoke() } }
+        owner?.addComponentListener(hidden)
+        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(outside, java.awt.AWTEvent.MOUSE_EVENT_MASK or java.awt.AWTEvent.KEY_EVENT_MASK)
+        close = {
+            close = null
+            java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(outside)
+            owner?.removeComponentListener(hidden)
+            layer.remove(list); layer.repaint()
+        }
     }
+
+    /** The menu button clicked again while open: closes it instead of reopening. */
+    val isOpen get() = close != null
+    fun dismiss() { close?.invoke() }
 
     private val languages = mapOf("french" to "Français", "english" to "Anglais", "spanish" to "Espagnol", "german" to "Allemand", "italian" to "Italien",
         "portuguese" to "Portugais", "arabic" to "Arabe", "dutch" to "Néerlandais", "japanese" to "Japonais", "korean" to "Coréen", "russian" to "Russe",
