@@ -217,7 +217,8 @@ object TrackMenu {
     fun show(anchor: JComponent, title: String, tracks: List<Pair<Int, String?>>, current: Int, audio: Boolean, onPick: (Int) -> Unit) {
         val menu = javax.swing.JPopupMenu().apply {
             background = panelBg
-            border = javax.swing.BorderFactory.createCompoundBorder(javax.swing.BorderFactory.createLineBorder(Color(255, 255, 255, 36)),
+            // Opaque colours only: over the video the menu gets a window of its own, where any transparency shows as white.
+            border = javax.swing.BorderFactory.createCompoundBorder(javax.swing.BorderFactory.createLineBorder(Color(0x2C, 0x31, 0x3D)),
                 javax.swing.BorderFactory.createEmptyBorder(8, 6, 8, 6))
         }
         val list = javax.swing.JPanel().apply { isOpaque = true; background = panelBg; layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS) }
