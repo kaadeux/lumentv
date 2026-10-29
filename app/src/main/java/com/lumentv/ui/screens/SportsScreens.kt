@@ -382,30 +382,35 @@ private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: (
         Text(listOfNotNull(f.details, f.venue).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 4.dp))
         if (com.lumentv.ui.LocalPhone.current) {
-            // Phone: time and channel on one line, then each team on its own line (the width of a TV row is not there).
+            // Phone: time and channel on one line, then the two teams face to face on the next.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (f.live) Badge("EN DIRECT", Palette.Danger)
                 else Text(java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start)), style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.width(12.dp))
                 val ch = when {
-                    g.channels.isNotEmpty() && !f.channelsOpen(now) -> g.channels.first().ch.name + " · dès " +
-                        java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start - com.lumentv.data.sports.Fixture.OPEN_BEFORE_MS))
-                    g.channels.isNotEmpty() -> "▶ " + g.channels.first().ch.name + if (g.channels.size > 1) "  +${g.channels.size - 1}" else ""
+                    g.channels.isNotEmpty() && !f.channelsOpen(now) -> g.channels.first().ch.name
+                    g.channels.isNotEmpty() -> "▶ " + g.channels.first().ch.name
                     g.tv != null -> "Sur ${g.tv}"
                     else -> f.usualBroadcaster ?: "Chaîne inconnue"
                 }
-                Text(ch, style = MaterialTheme.typography.labelLarge, color = if (g.channels.isNotEmpty() && f.channelsOpen(now)) Palette.Text else Palette.TextDim,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
-            }
-            if (f.home != null && f.away != null) {
-                listOf(f.home!! to f.homeScore, f.away!! to f.awayScore).forEach { (t, score) ->
-                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        coil.compose.AsyncImage(t.logo, null, Modifier.size(28.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Text(t.short ?: t.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        if (f.live && score != null) Text(score, style = MaterialTheme.typography.titleLarge)
-                    }
+                // What follows the name is never cut: a long channel name gives way instead.
+                val after = when {
+                    g.channels.isNotEmpty() && !f.channelsOpen(now) -> " · dès " +
+                        java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(f.start - com.lumentv.data.sports.Fixture.OPEN_BEFORE_MS))
+                    g.channels.size > 1 -> "  +${g.channels.size - 1}"
+                    else -> null
                 }
+                val color = if (g.channels.isNotEmpty() && f.channelsOpen(now)) Palette.Text else Palette.TextDim
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
+                    Text(ch, style = MaterialTheme.typography.labelLarge, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    after?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = color, maxLines = 1) }
+                }
+            }
+            if (f.home != null && f.away != null) Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                TeamSide(f.home!!, Modifier.weight(1f), end = true, phone = true)
+                Text(if (f.live && f.homeScore != null) "${f.homeScore} – ${f.awayScore}" else "vs", style = MaterialTheme.typography.titleMedium,
+                    color = if (f.live) Palette.Text else Palette.TextDim, modifier = Modifier.padding(horizontal = 10.dp))
+                TeamSide(f.away!!, Modifier.weight(1f), end = false, phone = true)
             } else Text(f.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp))
         } else Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.width(120.dp)) {
@@ -445,10 +450,15 @@ private fun tvTimeNote(g: com.lumentv.data.sports.SportsRepository.Game): String
 }
 
 @Composable
-private fun TeamSide(t: com.lumentv.data.sports.Team, modifier: Modifier, end: Boolean) =
+private fun TeamSide(t: com.lumentv.data.sports.Team, modifier: Modifier, end: Boolean, phone: Boolean = false) =
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = if (end) Arrangement.End else Arrangement.Start) {
         // The name gives way, not the crest: a long name ("Clermont Auvergne") used to squeeze the logo out.
-        if (end) Text(t.short ?: t.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(end = 10.dp))
-        coil.compose.AsyncImage(t.logo, null, Modifier.size(36.dp))
-        if (!end) Text(t.short ?: t.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(start = 10.dp))
+        // Phone: smaller, and a long name wraps on two lines rather than being cut.
+        val style = if (phone) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium
+        val lines = if (phone) 2 else 1
+        val gap = if (phone) 6.dp else 10.dp
+        val align = if (end) androidx.compose.ui.text.style.TextAlign.End else androidx.compose.ui.text.style.TextAlign.Start
+        if (end) Text(t.short ?: t.name, style = style, maxLines = lines, overflow = TextOverflow.Ellipsis, textAlign = align, modifier = Modifier.weight(1f, fill = false).padding(end = gap))
+        coil.compose.AsyncImage(t.logo, null, Modifier.size(if (phone) 28.dp else 36.dp))
+        if (!end) Text(t.short ?: t.name, style = style, maxLines = lines, overflow = TextOverflow.Ellipsis, textAlign = align, modifier = Modifier.weight(1f, fill = false).padding(start = gap))
     }
