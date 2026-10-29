@@ -152,6 +152,8 @@ fun SettingsScreen(vm: MainViewModel) {
         item { Group("Lecture") }
         item { SettingRow("Mémoire tampon", if (settings.bufferMode == "stable") "Stable (connexion faible)" else "Normale (démarrage rapide)", {
             scope.launch { vm.graph.settings.set(Keys.buffer, if (settings.bufferMode == "stable") "normal" else "stable") } }) }
+        item { SettingRow("Fréquence de l'écran", if (settings.matchFrameRate) "Adaptée à la vidéo (image fluide)" else "Fixe", {
+            scope.launch { vm.graph.settings.set(Keys.matchFrameRate, !settings.matchFrameRate) } }) }
         item { SettingRow("Format d'image", resizeLabel(settings.resizeMode), { menu = "resize" }) }
         item { SettingRow("Langue audio préférée", languages.firstOrNull { it.first == settings.audioLang }?.second ?: settings.audioLang, { menu = "audio" }) }
         item { SettingRow("Sous-titres", if (settings.subtitlesOn) "Activés" else "Désactivés", {

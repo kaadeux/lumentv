@@ -45,6 +45,8 @@ data class PlaybackState(
     val retryIn: Int = 0,
     val attempt: Int = 0,
     val videoInfo: String? = null,
+    /** Frames per second of the video (from the stream, else measured on the first decoded frames), 0 until known. */
+    val frameRate: Float = 0f,
 )
 
 data class TrackOption(val label: String, val selected: Boolean, internal val group: Tracks.Group?, internal val index: Int)
@@ -86,6 +88,21 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
     val tracksVersion: StateFlow<Int> = _tracksVersion
 
     private val main = Handler(Looper.getMainLooper())
+
+    // Live streams rarely state their frame rate: it is measured from the gaps between the first decoded frames.
+    @Volatile private var meterReset = true
+    private var lastPtsUs = -1L
+    private val gaps = ArrayList<Long>()
+    private val frameMeter = androidx.media3.exoplayer.video.VideoFrameMetadataListener { ptsUs, _, _, _ ->
+        if (meterReset) { meterReset = false; gaps.clear(); lastPtsUs = -1L }
+        if (gaps.size >= 40) return@VideoFrameMetadataListener
+        if (lastPtsUs >= 0) (ptsUs - lastPtsUs).takeIf { it in 8_000..100_000 }?.let { gaps += it }
+        lastPtsUs = ptsUs
+        if (gaps.size == 40) {
+            val fps = 1_000_000f / gaps.sorted()[20]
+            main.post { if (_state.value.frameRate <= 0f) _state.value = _state.value.copy(frameRate = fps) }
+        }
+    }
     private var current: StreamSpec? = null
     private var attempt = 0
     private var retryRunnable: Runnable? = null
@@ -119,6 +136,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         override fun onTracksChanged(tracks: Tracks) {
             _tracksVersion.value++
             val f = player.videoFormat
+            f?.frameRate?.takeIf { it > 0f }?.let { r -> if (_state.value.frameRate <= 0f) _state.value = _state.value.copy(frameRate = r) }
             _state.value = _state.value.copy(videoInfo = f?.let { v ->
                 listOfNotNull(
                     if (v.height > 0) "${v.height}p" else null,
@@ -174,6 +192,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
 
     init {
         player.addListener(listener)
+        player.setVideoFrameMetadataListener(frameMeter)
         main.postDelayed(watchdog, 2_000)
         runCatching {
             connectivity.registerNetworkCallback(
@@ -193,6 +212,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
     private fun prepare(spec: StreamSpec, positionMs: Long) {
         movedAt = android.os.SystemClock.elapsedRealtime()
         stallSince = 0
+        meterReset = true
         val okHttp = OkHttpDataSource.Factory(http).apply {
             spec.userAgent?.let { setUserAgent(it) }
             spec.referer?.let { setDefaultRequestProperties(mapOf("Referer" to it)) }

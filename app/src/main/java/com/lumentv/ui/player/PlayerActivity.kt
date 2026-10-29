@@ -166,6 +166,10 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
     var tick by remember { mutableIntStateOf(0) }
     val root = remember { FocusRequester() }
     val live = vm.mode == Mode.LIVE
+    // The screen follows the video's frame rate (50 Hz for French channels, 23.976 Hz for films): no judder.
+    androidx.compose.runtime.LaunchedEffect(state.frameRate) {
+        if (vm.settings.matchFrameRate && state.frameRate > 0f && !inPip) (context as? android.app.Activity)?.let { matchDisplay(it, state.frameRate) }
+    }
     val now = System.currentTimeMillis() + tick * 0
     val infoVisible = now < infoUntil || state.error != null || !state.playing && !live || live && state.buffering
 
@@ -580,4 +584,27 @@ private fun MiniGuide(vm: PlayerViewModel, row: ChannelRow, epgVersion: Int, onD
             }
         }
     }
+}
+
+/**
+ * Asks the screen for the refresh rate that shows [fps] evenly (same resolution): 25 or 50 fps → 50 Hz, 23.976 → 23.976 Hz,
+ * 29.97 / 59.94 → 59.94 Hz. Nothing when the current rate already fits. The request belongs to the player's window:
+ * leaving the player gives the screen back its usual rate.
+ */
+private fun matchDisplay(activity: android.app.Activity, fps: Float) {
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return
+    val display = activity.window.decorView.display ?: return
+    val current = display.mode
+    // How far a refresh rate is from showing every frame the same number of times (0 = exact).
+    fun error(rate: Float): Float {
+        val k = kotlin.math.round(rate / fps).coerceAtLeast(1f)
+        return if (k > 3f) 1f else kotlin.math.abs(rate - k * fps) / (k * fps)
+    }
+    if (error(current.refreshRate) < 0.0005f) return
+    val best = display.supportedModes
+        .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight && error(it.refreshRate) < 0.002f }
+        .minWithOrNull(compareBy<android.view.Display.Mode>({ error(it.refreshRate) }, { -it.refreshRate })) ?: return
+    if (best.modeId == current.modeId) return
+    android.util.Log.i("Player", "screen ${current.refreshRate} Hz -> ${best.refreshRate} Hz for $fps fps")
+    activity.window.attributes = activity.window.attributes.also { it.preferredDisplayModeId = best.modeId }
 }
