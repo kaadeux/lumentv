@@ -140,7 +140,7 @@ private fun PosterTile(title: String, image: String?, subtitle: String?, progres
             if (progress != null && progress > 0f) ProgressLine(progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp))
         }
         Text(title, style = MaterialTheme.typography.bodySmall, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
-        if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1)
+        if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -149,10 +149,11 @@ fun MoviesScreen(vm: MainViewModel) {
     val active by vm.active.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
-    val history by vm.graph.library.observeHistory(300).collectAsStateWithLifecycle(emptyList())
+    val history by vm.graph.library.observeHistory(600).collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     val p = active ?: return EmptyState("Aucune playlist", "")
     var cat by remember(p.id) { mutableStateOf(vm.movieCategory ?: RECENT) }
+    val resume = resumeMovies(vm, p.id, history)
     var catMenu by remember { mutableStateOf<String?>(null) }
     val cats by produceState<List<CategoryCount>?>(null, p.id, changes, settings.showHidden) { value = vm.graph.library.movieCategories(p.id, settings.showHidden) }
     val movies by produceState<List<MovieRow>?>(null, p.id, cat, changes) {
@@ -173,6 +174,8 @@ fun MoviesScreen(vm: MainViewModel) {
             else -> LazyVerticalGrid(posterCells(), horizontalArrangement = Arrangement.spacedBy(gridGap()), verticalArrangement = Arrangement.spacedBy(gridGap()),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 20.dp, start = 6.dp, end = 6.dp),
                 modifier = Modifier.fillMaxSize()) {
+                if (cat == RECENT && filter.isBlank() && resume.isNotEmpty())
+                    item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(vm, resume, false, "Ajoutés récemment") }
                 items(list, key = { it.m.id }) { r ->
                     val h = progress[r.m.uid]?.takeIf { it.playlistId == p.id }
                     PosterTile(r.m.name, r.m.poster, listOfNotNull(r.m.year, r.m.rating?.let { "★ $it" }).joinToString(" · ").ifEmpty { null },
@@ -196,8 +199,13 @@ fun SeriesScreen(vm: MainViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val history by vm.graph.library.observeHistory(600).collectAsStateWithLifecycle(emptyList())
     val p = active ?: return EmptyState("Aucune playlist", "")
     var cat by remember(p.id) { mutableStateOf(vm.seriesCategory ?: ALL) }
+    val resume = resumeSeries(vm, p.id, history)
+    // The row comes a moment after the posters: back to the top, or the grid would stay on its first poster, below the row.
+    val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    LaunchedEffect(resume.isNotEmpty()) { if (resume.isNotEmpty() && grid.firstVisibleItemIndex <= 1) grid.scrollToItem(0) }
     var catMenu by remember { mutableStateOf<String?>(null) }
     val cats by produceState<List<CategoryCount>?>(null, p.id, changes, settings.showHidden) { value = vm.graph.library.seriesCategories(p.id, settings.showHidden) }
     val series by produceState<List<SeriesRow>?>(null, p.id, cat, changes) {
@@ -213,9 +221,11 @@ fun SeriesScreen(vm: MainViewModel) {
         when {
             list == null -> Loading()
             list.isEmpty() -> EmptyState("Aucune série", if (filter.isBlank()) "Cette catégorie est vide." else "Rien ne correspond à « $filter ».")
-            else -> LazyVerticalGrid(posterCells(), horizontalArrangement = Arrangement.spacedBy(gridGap()), verticalArrangement = Arrangement.spacedBy(gridGap()),
+            else -> LazyVerticalGrid(posterCells(), state = grid, horizontalArrangement = Arrangement.spacedBy(gridGap()), verticalArrangement = Arrangement.spacedBy(gridGap()),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 20.dp, start = 6.dp, end = 6.dp),
                 modifier = Modifier.fillMaxSize()) {
+                if (cat == ALL && filter.isBlank() && resume.isNotEmpty())
+                    item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(vm, resume, true, "Toutes les séries") }
                 items(list, key = { it.s.id }) { r ->
                     PosterTile(r.s.name, r.s.cover, listOfNotNull(r.s.year, r.s.rating?.let { "★ $it" }).joinToString(" · ").ifEmpty { null }, null, r.isFavorite,
                         onClick = { vm.open(Screen.SeriesDetail(p.id, r.s.uid)) },
@@ -314,7 +324,7 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
     val progress = remember(history) { history.filter { it.kind == HistoryKind.EPISODE && it.parentUid == uid }.associateBy { it.uid } }
     val lastWatched = progress.values.maxByOrNull { it.watchedAt }
     // Watched = played to the end (same rule as the PC); "Marquer comme vu" writes such an entry, "non vu" removes it.
-    fun watched(e: EpisodeEntity) = progress[e.uid]?.let { it.durationMs > 0 && it.positionMs >= minOf(it.durationMs * 92 / 100, it.durationMs - 60_000) } == true
+    fun watched(e: EpisodeEntity) = progress[e.uid]?.let { com.lumentv.core.Resume.watched(it.positionMs, it.durationMs) } == true
     fun markWatched(list: List<EpisodeEntity>, on: Boolean) = scope.launch {
         val now = System.currentTimeMillis()
         list.forEachIndexed { i, e ->
@@ -463,3 +473,88 @@ fun clock(ms: Long): String {
     return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
 }
 
+
+// ---- Reprendre la lecture -------------------------------------------------------------------------------------
+
+/** One poster of the "Reprendre la lecture" row. [forget] are the history lines removed with it. */
+private class ResumeItem(val key: String, val title: String, val line: String?, val image: String?, val progress: Float?,
+                         val play: () -> Unit, val forget: List<String>)
+
+/** Films started and not finished, the last watched first. */
+@Composable
+private fun resumeMovies(vm: MainViewModel, pid: Long, history: List<HistoryEntity>): List<ResumeItem> {
+    val context = LocalContext.current
+    return remember(history, pid) {
+        history.filter { it.kind == HistoryKind.MOVIE && it.playlistId == pid && com.lumentv.core.Resume.movieToResume(it.positionMs, it.durationMs) }
+            .take(com.lumentv.core.Resume.LIMIT).map { h ->
+                ResumeItem(h.key, h.title, com.lumentv.core.Resume.remaining(h.positionMs, h.durationMs), h.image,
+                    h.positionMs.toFloat() / h.durationMs.coerceAtLeast(1), { PlayerLauncher.movie(context, pid, h.uid, true) }, listOf(h.key))
+            }
+    }
+}
+
+/**
+ * Series to go on with, the last watched first: the episode left halfway, or the next one when the last was seen to
+ * the end. A series whose last episode was its final one is done and leaves the row.
+ */
+@Composable
+private fun resumeSeries(vm: MainViewModel, pid: Long, history: List<HistoryEntity>): List<ResumeItem> {
+    val context = LocalContext.current
+    val items by produceState(emptyList<ResumeItem>(), history, pid) {
+        value = history.filter { it.kind == HistoryKind.EPISODE && it.playlistId == pid && it.parentUid != null }
+            .groupBy { it.parentUid!! }.values.map { eps -> eps.maxBy { it.watchedAt } to eps.map { it.key } }
+            .sortedByDescending { it.first.watchedAt }
+            .mapNotNull { (h, keys) ->
+                val sUid = h.parentUid!!
+                val cover = vm.graph.library.seriesByUid(pid, sUid)?.s?.cover ?: h.image
+                if (!com.lumentv.core.Resume.watched(h.positionMs, h.durationMs)) {
+                    ResumeItem(sUid, h.title, listOfNotNull(h.subtitle?.substringBefore(" · "), com.lumentv.core.Resume.remaining(h.positionMs, h.durationMs)).joinToString(" · "),
+                        cover, if (h.durationMs > 0) h.positionMs.toFloat() / h.durationMs else null,
+                        { PlayerLauncher.episode(context, pid, sUid, h.uid, true) }, keys)
+                } else {
+                    val eps = vm.graph.library.storedEpisodes(pid, sUid)
+                    val i = eps.indexOfFirst { it.uid == h.uid }
+                    when {
+                        // Episodes not on this device yet (watched elsewhere): the series page fetches them.
+                        eps.isEmpty() || i < 0 -> ResumeItem(sUid, h.title, "Continuer", cover, null, { vm.open(Screen.SeriesDetail(pid, sUid)) }, keys)
+                        i + 1 < eps.size -> eps[i + 1].let { n ->
+                            ResumeItem(sUid, h.title, "Suivant : S${n.season} E${n.episode}", cover, null, { PlayerLauncher.episode(context, pid, sUid, n.uid, false) }, keys)
+                        }
+                        else -> null
+                    }
+                }
+            }.take(com.lumentv.core.Resume.LIMIT)
+    }
+    return items
+}
+
+/** The row above the posters; a long press on one takes it out (and forgets where it was). */
+@Composable
+private fun ResumeRow(vm: MainViewModel, items: List<ResumeItem>, series: Boolean, below: String) {
+    if (items.isEmpty()) return
+    val scope = rememberCoroutineScope()
+    val phone = com.lumentv.ui.LocalPhone.current
+    var removing by remember { mutableStateOf<ResumeItem?>(null) }
+    Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text("Reprendre la lecture", style = MaterialTheme.typography.titleLarge, color = Palette.Text)
+            Spacer(Modifier.width(12.dp))
+            Text(com.lumentv.ui.components.hint("Appui long sur OK pour retirer", "Appui long pour retirer"), style = MaterialTheme.typography.bodySmall,
+                color = Palette.TextDim, modifier = Modifier.padding(bottom = 3.dp))
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(gridGap()), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 10.dp, horizontal = 4.dp)) {
+            items(items, key = { it.key }) { r ->
+                Box(Modifier.width(if (phone) 104.dp else 150.dp)) {
+                    PosterTile(r.title, r.image, r.line, r.progress, false, onClick = r.play, onLong = { removing = r })
+                }
+            }
+        }
+        Text(below, style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(top = 4.dp))
+    }
+    removing?.let { r ->
+        com.lumentv.ui.components.ConfirmDialog("Retirer « ${r.title} » ?",
+            if (series) "La série quitte « Reprendre la lecture ». Les épisodes ne seront plus marqués comme vus."
+            else "Le film quitte « Reprendre la lecture » et repartira du début.", "Retirer",
+            onConfirm = { scope.launch { r.forget.forEach { vm.graph.library.deleteHistory(it) } } }, onDismiss = { removing = null })
+    }
+}

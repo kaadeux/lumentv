@@ -189,6 +189,18 @@ class AppState(private val scope: CoroutineScope) {
         change(sync = false) { it.copy(history = it.history + (key to h)) }
     }
 
+    /** Takes items out of the history (and so out of "Reprendre la lecture"), on every device of the profile. */
+    fun forgetHistory(kind: String, uids: Collection<String>) {
+        val k = activeKeyOrFirst ?: return
+        change { d -> d.copy(history = d.history + uids.mapNotNull { u -> ProfileMerge.itemKey(k, kind, u).let { key -> d.history[key]?.let { key to it.copy(deleted = true, at = now()) } } }) }
+    }
+
+    /** Films, or episodes, of the current playlist still in the history, the last watched first. */
+    fun historyOf(kind: String): List<SyncHistory> {
+        val k = activeKeyOrFirst ?: return emptyList()
+        return doc.history.values.filter { it.playlist == k && !it.deleted && it.kind == kind }.sortedByDescending { it.watchedAt }
+    }
+
     fun clearHistory() = change { d -> d.copy(history = d.history.mapValues { (_, h) -> if (h.playlist == activeKeyOrFirst) h.copy(deleted = true, at = now()) else h }) }
 
     private var syncSoon: Job? = null

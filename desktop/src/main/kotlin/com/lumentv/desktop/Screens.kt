@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
@@ -218,6 +219,7 @@ fun MoviesScreen(state: AppState) {
     var filter by remember { mutableStateOf("") }
     var open by remember { mutableStateOf(System.getenv("LUMEN_OPEN")?.let { n -> c.movies.firstOrNull { it.name.contains(n, true) } }) }
     open?.let { m -> MovieDetail(state, m) { open = null }; return }
+    val resume = resumeMovies(state)
     val cats = remember(c) { c.movies.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" } }
     val favUids = remember(state.doc.favorites, state.activeKey) { state.favorites(Kind.MOVIE).map { it.uid } }
     val list = remember(c, cat, filter, favUids) {
@@ -234,6 +236,8 @@ fun MoviesScreen(state: AppState) {
         Column(Modifier.weight(1f)) {
             Filter(filter, "Rechercher un film") { filter = it }
             LazyVerticalGrid(GridCells.Adaptive(150.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (cat == RECENT && filter.isBlank() && resume.isNotEmpty())
+                    item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(state, resume, "Ajoutés récemment") }
                 items(list, key = { it.uid }) { m ->
                     Poster(m.name, m.poster, listOfNotNull(m.year, m.rating?.let { "★ $it" }).joinToString(" · "), ratio(state.progress(Kind.MOVIE, m.uid)),
                         state.isFavorite(Kind.MOVIE, m.uid)) { open = m }
@@ -252,6 +256,10 @@ fun SeriesScreen(state: AppState) {
     var filter by remember { mutableStateOf("") }
     // LUMEN_OPEN=<name> opens that series at launch (used for screenshots).
     var open by remember { mutableStateOf(System.getenv("LUMEN_OPEN")?.let { n -> c.series.firstOrNull { it.name.equals(n, true) } }) }
+    val resume = resumeSeries(state) { open = it }
+    // The row comes a moment after the posters: back to the top, or the grid would stay on its first poster, below the row.
+    val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    LaunchedEffect(resume.isNotEmpty()) { if (resume.isNotEmpty() && grid.firstVisibleItemIndex <= 1) grid.scrollToItem(0) }
     open?.let { s -> SeriesDetail(state, s) { open = null }; return }
     val cats = remember(c) { c.series.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" } }
     val favUids = remember(state.doc.favorites, state.activeKey) { state.favorites(Kind.SERIES).map { it.uid } }
@@ -263,7 +271,9 @@ fun SeriesScreen(state: AppState) {
         Categories("Séries", listOf(ALL to "Toutes les séries (${c.series.size})", FAVS to "★ Favoris") + cats, cat) { cat = it }
         Column(Modifier.weight(1f)) {
             Filter(filter, "Rechercher une série") { filter = it }
-            LazyVerticalGrid(GridCells.Adaptive(150.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (cat == ALL && filter.isBlank() && resume.isNotEmpty())
+                    item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(state, resume, "Toutes les séries") }
                 items(list, key = { it.uid }) { s ->
                     Poster(s.name, s.cover, listOfNotNull(s.year, s.rating?.let { "★ $it" }).joinToString(" · "), null, state.isFavorite(Kind.SERIES, s.uid)) { open = s }
                 }
@@ -373,3 +383,78 @@ fun HistoryScreen(state: AppState) {
     }
 }
 
+
+// ---- Reprendre la lecture ----------------------------------------------------------------------------------
+
+/** One poster of the "Reprendre la lecture" row; [forget] are the history uids removed with it. */
+private class ResumeItem(val key: String, val title: String, val line: String?, val image: String?, val progress: Float?,
+                         val play: suspend () -> Unit, val kind: String, val forget: List<String>)
+
+/** Films started and not finished, the last watched first. */
+@Composable
+private fun resumeMovies(state: AppState): List<ResumeItem> = remember(state.doc.history, state.activeKey) {
+    state.historyOf(Kind.MOVIE).filter { com.lumentv.core.Resume.movieToResume(it.positionMs, it.durationMs) }.take(com.lumentv.core.Resume.LIMIT).map { h ->
+        ResumeItem(h.uid, h.title, com.lumentv.core.Resume.remaining(h.positionMs, h.durationMs), h.image, ratio(h), { state.resume(h) }, Kind.MOVIE, listOf(h.uid))
+    }
+}
+
+/**
+ * Series to go on with, the last watched first: the episode left halfway, or the next one when the last was seen to
+ * the end. A series whose last episode was its final one is done and leaves the row.
+ */
+@Composable
+private fun resumeSeries(state: AppState, onOpen: (Se) -> Unit): List<ResumeItem> {
+    val c = state.catalog ?: return emptyList()
+    val items by produceState(emptyList<ResumeItem>(), state.doc.history, state.activeKey, c) {
+        value = state.historyOf(Kind.EPISODE).filter { it.parentUid != null }.groupBy { it.parentUid!! }.values
+            .map { eps -> eps.first() to eps.map { it.uid } }
+            .mapNotNull { (h, uids) ->
+                val s = c.series.firstOrNull { it.uid == h.parentUid } ?: return@mapNotNull null
+                if (!com.lumentv.core.Resume.watched(h.positionMs, h.durationMs)) {
+                    ResumeItem(s.uid, s.name, listOfNotNull(h.subtitle?.substringBefore(" · "), com.lumentv.core.Resume.remaining(h.positionMs, h.durationMs)).joinToString(" · "),
+                        s.cover ?: h.image, ratio(h), { state.resume(h) }, Kind.EPISODE, uids)
+                } else {
+                    val eps = runCatching { state.library.episodes(state.active!!, c, s) }.getOrNull()
+                    val i = eps?.indexOfFirst { it.uid == h.uid } ?: -1
+                    when {
+                        eps == null || i < 0 -> ResumeItem(s.uid, s.name, "Continuer", s.cover ?: h.image, null, { onOpen(s) }, Kind.EPISODE, uids)
+                        i + 1 < eps.size -> eps[i + 1].let { n ->
+                            ResumeItem(s.uid, s.name, "Suivant : S${n.season} E${n.episode}", s.cover ?: h.image, null,
+                                { PlayerWindow.open(state, state.episodeItem(s, eps, i + 1, fromStart = true)) }, Kind.EPISODE, uids)
+                        }
+                        else -> null
+                    }
+                }
+            }.take(com.lumentv.core.Resume.LIMIT)
+    }
+    return items
+}
+
+/** The row above the posters; the ✕ of a poster takes it out (and forgets where it was). */
+@Composable
+private fun ResumeRow(state: AppState, items: List<ResumeItem>, below: String) {
+    val scope = rememberCoroutineScope()
+    var removing by remember { mutableStateOf<ResumeItem?>(null) }
+    Column(Modifier.fillMaxWidth()) {
+        Text("Reprendre la lecture", style = MaterialTheme.typography.titleLarge, color = Pal.text)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(vertical = 10.dp)) {
+            items(items, key = { it.key }) { r ->
+                Box(Modifier.width(150.dp)) {
+                    Poster(r.title, r.image, r.line, r.progress, false) { scope.launch { r.play() } }
+                    IconButton({ removing = r }, Modifier.align(Alignment.TopStart).padding(4.dp).size(28.dp).clip(RoundedCornerShape(14.dp)).background(Pal.bg.copy(alpha = 0.75f))) {
+                        Icon(Icons.Filled.Close, "Retirer de Reprendre la lecture", tint = Pal.text, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+        Text(below, style = MaterialTheme.typography.titleLarge, color = Pal.text, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
+    }
+    removing?.let { r ->
+        AlertDialog(onDismissRequest = { removing = null }, containerColor = Pal.panel,
+            title = { Text("Retirer « ${r.title} » ?") },
+            text = { Text(if (r.kind == Kind.EPISODE) "La série quitte « Reprendre la lecture ». Les épisodes ne seront plus marqués comme vus."
+                else "Le film quitte « Reprendre la lecture » et repartira du début.") },
+            confirmButton = { Button({ state.forgetHistory(r.kind, r.forget); removing = null }) { Text("Retirer") } },
+            dismissButton = { TextButton({ removing = null }) { Text("Annuler") } })
+    }
+}
