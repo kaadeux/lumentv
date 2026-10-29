@@ -46,7 +46,7 @@ class FixturesTest {
     @Test fun calendarAnswers() = runBlocking {
         assumeTrue(System.getenv("SPORTS_LIVE") == "1")
         val list = FixtureClient(OkHttpClient()).fixtures(listOf(ligue1, FixtureClient.league("top14")!!, FixtureClient.league("ufc")!!, FixtureClient.league("prod2")!!), SportsFunnel.DAYS)
-        java.io.File("build/fixtures.txt").writeText(list.joinToString("\n") { "${java.util.Date(it.start)} ${it.state} | ${it.details} | ${it.label} | ${it.venue} | ${it.home?.logo} | ${it.away?.logo}" })
+        java.io.File("build/fixtures.txt").writeText(list.joinToString("\n") { "${java.util.Date(it.start)} ${it.state} ${it.clock} ${it.homeScore}-${it.awayScore} | ${it.details} | ${it.label} | ${it.venue} | ${it.home?.logo} | ${it.away?.logo}" })
         assertTrue(list.isNotEmpty())
         // Whole Pro D2 rounds (the day request gives 3 games at most), and no country flag for a club.
         assertTrue(list.count { it.league.id == "prod2" } > 3)

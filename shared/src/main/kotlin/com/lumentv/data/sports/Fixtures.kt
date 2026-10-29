@@ -21,9 +21,11 @@ import java.util.concurrent.TimeUnit
  * A competition of the official calendar. [path] is ESPN's (free scoreboard, no key) or, when [sportsDb], a
  * TheSportsDB league id (free key) for what ESPN lacks. [sport] is a [SportsCatalog] id. [tvFr]: usual broadcaster in
  * France, shown when no channel of the playlist announces a game. [badgesFrom]: the same league on TheSportsDB, for the
- * club crests ESPN lacks or gets wrong (it gives Vannes the flag of Vanuatu, Perpignan the one of the USA).
+ * club crests ESPN lacks or gets wrong (it gives Vannes the flag of Vanuatu, Perpignan the one of the USA). [lnr]: the
+ * league's own results page (LNR), for the live score and clock TheSportsDB's free key gives late or not at all.
  */
-data class League(val id: String, val sport: String, val label: String, val path: String, val tvFr: String? = null, val sportsDb: Boolean = false, val badgesFrom: String? = null)
+data class League(val id: String, val sport: String, val label: String, val path: String, val tvFr: String? = null, val sportsDb: Boolean = false,
+                  val badgesFrom: String? = null, val lnr: String? = null)
 
 data class Team(val name: String, val short: String?, val abbr: String?, val logo: String?) {
     /** Names a guide may use for this team, normalised: "Paris Saint-Germain", "PSG", "Le Havre AC" → "le havre", "havre". */
@@ -96,7 +98,7 @@ class FixtureClient(http: OkHttpClient) {
         coroutineScope {
             val crests = leagues.mapNotNull { l -> l.badgesFrom?.let { id -> id to async { rounds(l, id, rounds) } } }.toMap()
             leagues.flatMap { l ->
-                if (l.sportsDb) listOf(async { rounds(l, l.path, rounds) })
+                if (l.sportsDb) listOf(async { rounds(l, l.path, rounds).let { list -> if (l.lnr != null) withLnr(list, l.lnr) else list } })
                 else compact.map { d -> async { day(l, d).let { list -> l.badgesFrom?.let { id -> withCrests(list, crests.getValue(id).await()) } ?: list } } }
             }.awaitAll().flatten()
         }.distinctBy { it.id }.filter { it.state == "in" || (it.state == "pre" && it.start > now - 3 * 3_600_000L && it.start < end) }
@@ -110,14 +112,16 @@ class FixtureClient(http: OkHttpClient) {
      * The next [count] rounds of a TheSportsDB league: its free key gives at most 3 games per day request (Pro D2 plays
      * 8 on a Friday) but whole rounds, found from the next game's round number.
      */
-    private fun rounds(l: League, id: String, count: Int): List<Fixture> = cached("sdb/$id/$count") {
+    private fun rounds(l: League, id: String, count: Int): List<Fixture> = cached("sdb/$id/$count", ttl = 15 * 60_000L) {
         val next = get("https://www.thesportsdb.com/api/v1/json/123/eventsnextleague.php?id=$id")?.let { body ->
             ((json.parseToJsonElement(body) as? JsonObject)?.get("events") as? JsonArray)?.firstOrNull() as? JsonObject
         } ?: return@cached null
         val round = next.s("intRound")?.toIntOrNull() ?: return@cached null
         val season = next.s("strSeason") ?: return@cached null
         (round until round + count).flatMap { r ->
-            parseSportsDb(l, get("https://www.thesportsdb.com/api/v1/json/123/eventsround.php?id=$id&r=$r&s=$season") ?: return@cached null)
+            // The next round is needed; the later ones are a bonus when the free key refuses them.
+            get("https://www.thesportsdb.com/api/v1/json/123/eventsround.php?id=$id&r=$r&s=$season")?.let { parseSportsDb(l, it) }
+                ?: if (r == round) return@cached null else emptyList()
         }
     }
 
@@ -131,6 +135,68 @@ class FixtureClient(http: OkHttpClient) {
         f.copy(home = if (bad(f.home)) f.home?.copy(logo = same.home?.logo) else f.home, away = if (bad(f.away)) f.away?.copy(logo = same.away?.logo) else f.away)
     }
 
+    private class LnrMatch(val home: String, val away: String, val status: String, val homeScore: Int?, val awayScore: Int?,
+                           val first: Long?, val firstEnd: Long?, val second: Long?, val secondEnd: Long?)
+    private val lnrCache = HashMap<String, Pair<Long, List<LnrMatch>>>()
+
+    /**
+     * The live score and clock from the league's own page, for the games under way (TheSportsDB's free key gave 3-3 in
+     * the 1st half when it was 13-3 in the 2nd). Asked only while a game is on; a game LNR calls over leaves the list.
+     */
+    private fun withLnr(list: List<Fixture>, url: String): List<Fixture> {
+        val now = System.currentTimeMillis()
+        if (list.none { now >= it.start - 10 * 60_000L }) return list
+        val matches = lnrMatches(url) ?: return list
+        return list.mapNotNull { f ->
+            val m = matches.firstOrNull { lnrSame(f.home, it.home) && lnrSame(f.away, it.away) } ?: return@mapNotNull f
+            when {
+                m.status == "not-started" -> f.copy(state = "pre", homeScore = null, awayScore = null, detail = "")
+                m.status != "live" || m.secondEnd != null -> null // over
+                else -> f.copy(state = "in", homeScore = m.homeScore?.toString(), awayScore = m.awayScore?.toString(), detail = lnrClock(m, now))
+            }
+        }
+    }
+
+    /** "US Dax" and "US Dax", "Provence" and "Provence Rugby", "Soyaux Angoulême XV Charente" and "Soyaux-Angoulême XV". */
+    private fun lnrSame(t: Team?, name: String): Boolean {
+        fun stems(n: String) = normalize(n).split(' ', '-').filter { it.length >= 3 && it !in clubWords }.map { it.take(5) }.toSet()
+        return t != null && stems(t.name).intersect(stems(name)).isNotEmpty()
+    }
+
+    /** "Mi-temps", or the minute from the halves' kick-offs: "12'", "54'", "80'+". */
+    private fun lnrClock(m: LnrMatch, now: Long): String {
+        fun min(from: Long) = ((now - from) / 60_000 + 1).toInt()
+        return when {
+            m.second != null -> (40 + min(m.second)).let { if (it > 80) "80'+" else "$it'" }
+            m.firstEnd != null -> "Mi-temps"
+            m.first != null && now >= m.first -> min(m.first).let { if (it > 40) "40'+" else "$it'" }
+            else -> "En cours"
+        }
+    }
+
+    /** The games of the page's score banner (a JSON list in its HTML). */
+    private fun lnrMatches(url: String): List<LnrMatch>? {
+        synchronized(lnrCache) { lnrCache[url]?.let { (t, list) -> if (System.currentTimeMillis() - t < LIVE_REFRESH_MS - 2_000) return list } }
+        val list = runCatching {
+            val page = http.newCall(Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()).execute()
+                .use { r -> if (r.isSuccessful) r.body!!.string() else null } ?: return null
+            val attr = Regex(":matches='([^']*)'").find(page)?.groupValues?.get(1) ?: return null
+            val text = attr.replace("&quot;", "\"").replace("&#039;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+            val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
+            fun JsonObject.time(k: String) = s(k)?.let { runCatching { iso.parse(it)!!.time }.getOrNull() }
+            (json.parseToJsonElement(text) as JsonArray).mapNotNull { e ->
+                val o = e as? JsonObject ?: return@mapNotNull null
+                val score = (o["score"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content?.toIntOrNull() }
+                val timer = o["timer"] as? JsonObject
+                LnrMatch((o["hosting_club"] as? JsonObject)?.s("name") ?: return@mapNotNull null, (o["visiting_club"] as? JsonObject)?.s("name") ?: return@mapNotNull null,
+                    o.s("status").orEmpty(), score?.getOrNull(0), score?.getOrNull(1),
+                    timer?.time("firstPeriodStartDate"), timer?.time("firstPeriodEndDate"), timer?.time("secondPeriodStartDate"), timer?.time("secondPeriodEndDate"))
+            }
+        }.getOrNull() ?: return null
+        synchronized(lnrCache) { lnrCache[url] = System.currentTimeMillis() to list }
+        return list
+    }
+
     /** "Bayonne" and "Aviron Bayonnais", "La Rochelle" and "Stade Rochelais": a common word start. */
     private fun sameClub(a: Team?, b: Team?): Boolean {
         fun stems(t: Team) = normalize(t.name).split(' ').filter { it.length >= 4 && it !in clubWords }.map { it.take(5) }.toSet()
@@ -140,15 +206,17 @@ class FixtureClient(http: OkHttpClient) {
     /**
      * One more try on failure; a failure is not cached, so the next visit asks again instead of showing nothing. Kept
      * 5 minutes, but only [LIVE_REFRESH_MS] while one of its games is live or about to start: the score follows.
+     * [ttl] instead for a calendar only (TheSportsDB's free key allows few requests: the live score comes from LNR).
      */
-    private fun cached(key: String, load: () -> List<Fixture>?): List<Fixture> {
+    private fun cached(key: String, ttl: Long? = null, load: () -> List<Fixture>?): List<Fixture> {
         synchronized(cache) {
             cache[key]?.let { (t, list) ->
                 val age = System.currentTimeMillis() - t
-                if (age < (if (hasLive(list)) LIVE_REFRESH_MS - 2_000 else 5 * 60_000L)) return list
+                if (age < (ttl ?: if (hasLive(list)) LIVE_REFRESH_MS - 2_000 else 5 * 60_000L)) return list
             }
         }
-        val list = (1..2).firstNotNullOfOrNull { runCatching { load() }.getOrNull() } ?: return emptyList()
+        // A failure (TheSportsDB's free key refuses bursts) keeps the last answer rather than emptying the list.
+        val list = (1..2).firstNotNullOfOrNull { runCatching { load() }.getOrNull() } ?: return synchronized(cache) { cache[key]?.second }.orEmpty()
         synchronized(cache) { cache[key] = System.currentTimeMillis() to list }
         return list
     }
@@ -277,7 +345,7 @@ class FixtureClient(http: OkHttpClient) {
             League("ita1", "football", "Serie A", "soccer/ita.1", "beIN Sports"),
             League("ger1", "football", "Bundesliga", "soccer/ger.1", "beIN Sports"),
             League("top14", "rugby", "Top 14", "rugby/270559", "Canal+", badgesFrom = "4430"),
-            League("prod2", "rugby", "Pro D2", "5172", "Canal+", sportsDb = true),
+            League("prod2", "rugby", "Pro D2", "5172", "Canal+", sportsDb = true, lnr = "https://prod2.lnr.fr/calendrier-et-resultats"),
             League("rcc", "rugby", "Champions Cup (rugby)", "rugby/271937", "France Télévisions ou beIN Sports"),
             League("6n", "rugby", "Six Nations", "rugby/180659", "France 2"),
             League("nba", "basket", "NBA", "basketball/nba", "beIN Sports"),
