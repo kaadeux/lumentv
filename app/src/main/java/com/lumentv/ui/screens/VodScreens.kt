@@ -66,6 +66,7 @@ import com.lumentv.ui.components.MenuOption
 import com.lumentv.ui.components.OptionsDialog
 import com.lumentv.ui.components.Poster
 import com.lumentv.ui.components.ProgressLine
+import com.lumentv.ui.components.returnFocus
 import com.lumentv.ui.components.TvButton
 import com.lumentv.ui.player.PlayerLauncher
 import com.lumentv.ui.theme.Palette
@@ -132,9 +133,10 @@ private fun posterCells(): GridCells = if (com.lumentv.ui.LocalPhone.current) Gr
 private fun gridGap() = if (com.lumentv.ui.LocalPhone.current) 10.dp else 14.dp
 
 @Composable
-private fun PosterTile(title: String, image: String?, subtitle: String?, progress: Float?, favorite: Boolean, onClick: () -> Unit, onLong: () -> Unit) {
+private fun PosterTile(title: String, image: String?, subtitle: String?, progress: Float?, favorite: Boolean, onClick: () -> Unit, onLong: () -> Unit,
+                       modifier: Modifier = Modifier) {
     Column {
-        FocusSurface(onClick, Modifier.fillMaxWidth().aspectRatio(2f / 3f), onLongClick = onLong, focusedScale = 1.06f, shape = RoundedCornerShape(8.dp)) {
+        FocusSurface(onClick, modifier.fillMaxWidth().aspectRatio(2f / 3f), onLongClick = onLong, focusedScale = 1.06f, shape = RoundedCornerShape(8.dp)) {
             Poster(image, title, Modifier.fillMaxSize())
             if (favorite) Text("★", color = Palette.Gold, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp))
             if (progress != null && progress > 0f) ProgressLine(progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp))
@@ -161,7 +163,8 @@ fun MoviesScreen(vm: MainViewModel) {
         value = when (cat) { RECENT -> vm.graph.library.recentMovies(p.id); ALL -> vm.graph.library.movies(p.id, null); else -> vm.graph.library.movies(p.id, cat) }
     }
     val progress = remember(history) { history.filter { it.kind == HistoryKind.MOVIE }.associateBy { it.uid } }
-    var filter by remember(p.id, cat) { mutableStateOf("") }
+    var filter by androidx.compose.runtime.saveable.rememberSaveable(p.id, cat) { mutableStateOf("") }
+    val movieGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
 
     VodLayout {
         CategoryColumn("Films", cats, listOf(RECENT to "Ajoutés récemment", ALL to "Tous les films"), cat, { cat = it; vm.movieCategory = it }, { catMenu = it })
@@ -171,7 +174,7 @@ fun MoviesScreen(vm: MainViewModel) {
         when {
             list == null -> Loading()
             list.isEmpty() -> EmptyState("Aucun film", if (filter.isBlank()) "Cette catégorie est vide." else "Rien ne correspond à « $filter ».")
-            else -> LazyVerticalGrid(posterCells(), horizontalArrangement = Arrangement.spacedBy(gridGap()), verticalArrangement = Arrangement.spacedBy(gridGap()),
+            else -> LazyVerticalGrid(posterCells(), state = movieGrid, horizontalArrangement = Arrangement.spacedBy(gridGap()), verticalArrangement = Arrangement.spacedBy(gridGap()),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 20.dp, start = 6.dp, end = 6.dp),
                 modifier = Modifier.fillMaxSize()) {
                 if (cat == RECENT && filter.isBlank() && resume.isNotEmpty())
@@ -180,8 +183,9 @@ fun MoviesScreen(vm: MainViewModel) {
                     val h = progress[r.m.uid]?.takeIf { it.playlistId == p.id }
                     PosterTile(r.m.name, r.m.poster, listOfNotNull(r.m.year, r.m.rating?.let { "★ $it" }).joinToString(" · ").ifEmpty { null },
                         h?.let { if (it.durationMs > 0) it.positionMs.toFloat() / it.durationMs else null }, r.isFavorite,
-                        onClick = { vm.open(Screen.MovieDetail(p.id, r.m.uid)) },
-                        onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.MOVIE, r.m.uid); vm.show(if (f) "Ajouté aux favoris" else "Retiré des favoris") } })
+                        onClick = { vm.openFrom("m:" + r.m.uid, Screen.MovieDetail(p.id, r.m.uid)) },
+                        onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.MOVIE, r.m.uid); vm.show(if (f) "Ajouté aux favoris" else "Retiré des favoris") } },
+                        modifier = Modifier.returnFocus(vm, "m:" + r.m.uid))
                 }
             }
         }
@@ -205,14 +209,14 @@ fun SeriesScreen(vm: MainViewModel) {
     val resume = resumeSeries(vm, p.id, history)
     // The row comes a moment after the posters: back to the top, or the grid would stay on its first poster, below the row.
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
-    LaunchedEffect(resume.isNotEmpty()) { if (resume.isNotEmpty() && grid.firstVisibleItemIndex <= 1) grid.scrollToItem(0) }
+    LaunchedEffect(resume.isNotEmpty()) { if (resume.isNotEmpty() && grid.firstVisibleItemIndex == 1 && grid.firstVisibleItemScrollOffset == 0) grid.scrollToItem(0) }
     var catMenu by remember { mutableStateOf<String?>(null) }
     val cats by produceState<List<CategoryCount>?>(null, p.id, changes, settings.showHidden) { value = vm.graph.library.seriesCategories(p.id, settings.showHidden) }
     val series by produceState<List<SeriesRow>?>(null, p.id, cat, changes) {
         value = null
         value = vm.graph.library.series(p.id, if (cat == ALL) null else cat)
     }
-    var filter by remember(p.id, cat) { mutableStateOf("") }
+    var filter by androidx.compose.runtime.saveable.rememberSaveable(p.id, cat) { mutableStateOf("") }
     VodLayout {
         CategoryColumn("Séries", cats, listOf(ALL to "Toutes les séries"), cat, { cat = it; vm.seriesCategory = it }, { catMenu = it })
         Column(Modifier.fillMaxSize()) {
@@ -228,8 +232,9 @@ fun SeriesScreen(vm: MainViewModel) {
                     item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(vm, resume, true, "Toutes les séries") }
                 items(list, key = { it.s.id }) { r ->
                     PosterTile(r.s.name, r.s.cover, listOfNotNull(r.s.year, r.s.rating?.let { "★ $it" }).joinToString(" · ").ifEmpty { null }, null, r.isFavorite,
-                        onClick = { vm.open(Screen.SeriesDetail(p.id, r.s.uid)) },
-                        onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } })
+                        onClick = { vm.openFrom("s:" + r.s.uid, Screen.SeriesDetail(p.id, r.s.uid)) },
+                        onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } },
+                        modifier = Modifier.returnFocus(vm, "s:" + r.s.uid))
                 }
             }
         }

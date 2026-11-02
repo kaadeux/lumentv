@@ -105,7 +105,8 @@ class MainActivity : ComponentActivity() {
                             val w = Device.testWidthDp()
                             Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
                                 Box(if (w > 0) Modifier.width(w.dp).fillMaxHeight() else Modifier.fillMaxSize()) {
-                                    PhoneShell(vm, firstLaunch) { ScreenContent(vm, it) }; ToastHost(vm)
+                                    val states = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+                                    PhoneShell(vm, firstLaunch) { ScreenContent(vm, it, states) }; ToastHost(vm)
                                 }
                             }
                         } else AppShell(vm, firstLaunch)
@@ -132,6 +133,8 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val contentFocus = remember { FocusRequester() }
+    // Each screen keeps its scroll position, search and filters while another one is shown (details, then Back).
+    val states = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     // A sub-screen (details, playlist form…) takes the focus as soon as it opens, instead of leaving it on the menu.
     var contentHasFocus by remember { mutableStateOf(false) }
     LaunchedEffect(vm.current) {
@@ -192,7 +195,7 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
         SideNav(items, vm.root, active?.name, contentFocus, mini != null, onMini = { miniMenu = true }) { vm.openRoot(it) }
         Box(Modifier.weight(1f).fillMaxHeight().padding(start = 16.dp, top = 20.dp, end = 24.dp, bottom = 16.dp)
             .onFocusChanged { contentHasFocus = it.hasFocus }.focusRequester(contentFocus).focusGroup()) {
-            ScreenContent(vm, vm.current)
+            ScreenContent(vm, vm.current, states)
         }
     }
     ToastHost(vm)
@@ -200,7 +203,8 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
 
 /** The screen itself, the same on the TV and the phone (each lays itself out for the device). */
 @Composable
-fun ScreenContent(vm: MainViewModel, screen: Screen) {
+fun ScreenContent(vm: MainViewModel, screen: Screen, states: androidx.compose.runtime.saveable.SaveableStateHolder) =
+    states.SaveableStateProvider(screen.toString()) {
             when (val s = screen) {
                 Screen.Live -> LiveScreen(vm)
                 Screen.Guide -> GuideScreen(vm)
@@ -219,7 +223,7 @@ fun ScreenContent(vm: MainViewModel, screen: Screen) {
                 is Screen.EpgFix -> EpgFixScreen(vm, s.channelId)
                 Screen.More -> Unit
             }
-}
+    }
 
 /** Short messages at the bottom of the screen ("Ajouté aux favoris"…). */
 @Composable

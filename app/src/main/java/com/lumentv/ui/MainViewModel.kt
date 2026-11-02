@@ -72,7 +72,14 @@ class MainViewModel(val graph: AppGraph) : ViewModel() {
     fun clearToast() { _toast.value = null }
 
     fun open(s: Screen) { stack.add(s) }
-    fun openRoot(s: Screen) { stack.clear(); stack.add(s) }
+    fun openRoot(s: Screen) { returnKey = null; stack.clear(); stack.add(s) }
+
+    /** The poster / line a sub-screen was opened from: it gets the focus back when Back returns to the list. */
+    var returnKey: String? = null
+    fun openFrom(key: String, s: Screen) { returnKey = key; open(s) }
+
+    /** Last search and its results, shown at once on return instead of an empty list. */
+    var lastResults: Pair<String, com.lumentv.data.repo.SearchResults>? = null
     /** Set when Back closes a sub-screen, so the screen underneath gets the focus again (not the menu). */
     var focusContent = false
 

@@ -88,6 +88,7 @@ fun Shell(state: AppState) {
     // LUMEN_SECTION opens a given screen at launch (used for screenshots).
     val start = System.getenv("LUMEN_SECTION")?.let { s -> Section.entries.firstOrNull { it.name.equals(s, true) } }
     var section by remember { mutableStateOf(start ?: if (state.playlists.isEmpty()) Section.Settings else Section.Live) }
+    val sectionStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     Row(Modifier.fillMaxSize().background(Pal.bg)) {
         Column(Modifier.width(220.dp).fillMaxHeight().background(Pal.side).padding(12.dp)) {
             Text("Lumen TV", style = MaterialTheme.typography.headlineSmall, color = Pal.text, modifier = Modifier.padding(start = 12.dp, top = 8.dp))
@@ -118,7 +119,8 @@ fun Shell(state: AppState) {
                 state.active == null -> Empty("Aucune playlist", "Ajoutez votre compte Xtream ou votre playlist M3U dans Paramètres, ou connectez votre profil en ligne.")
                 state.catalog == null && state.loading -> Empty("Chargement de la playlist…", "La première fois, cela peut prendre une minute.")
                 state.catalog == null -> Empty("Playlist indisponible", state.loadError ?: "")
-                else -> when (section) {
+                // Each section keeps its scroll positions while another one is shown.
+                else -> sectionStates.SaveableStateProvider(section.name) { when (section) {
                     Section.Live -> LiveScreen(state)
                     Section.Sports -> SportsScreen(state)
                     Section.Movies -> MoviesScreen(state)
@@ -127,7 +129,7 @@ fun Shell(state: AppState) {
                     Section.Favorites -> FavoritesScreen(state)
                     Section.History -> HistoryScreen(state)
                     Section.Settings, Section.Downloads -> Unit
-                }
+                } }
             }
             state.toast?.let { t ->
                 Surface(Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), shape = RoundedCornerShape(24.dp), color = Pal.panelHigh) {

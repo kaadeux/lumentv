@@ -149,7 +149,7 @@ private fun ratio(h: SyncHistory?) = h?.takeIf { it.durationMs > 0 }?.let { it.p
 fun LiveScreen(state: AppState) {
     val c = state.catalog!!
     var group by remember { mutableStateOf(ALL) }
-    var filter by remember { mutableStateOf("") }
+    var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var selected by remember { mutableStateOf<Ch?>(null) }
     val groups = remember(c) { c.channels.groupBy { it.group }.map { (g, l) -> g to "$g  (${l.size})" } }
     val favUids = remember(state.doc.favorites, state.activeKey) { state.favorites(Kind.CHANNEL).map { it.uid } }
@@ -215,9 +215,11 @@ fun LiveScreen(state: AppState) {
 @Composable
 fun MoviesScreen(state: AppState) {
     val c = state.catalog!!
-    var cat by remember { mutableStateOf(RECENT) }
-    var filter by remember { mutableStateOf("") }
+    var cat by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(RECENT) }
+    var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var open by remember { mutableStateOf(System.getenv("LUMEN_OPEN")?.let { n -> c.movies.firstOrNull { it.name.contains(n, true) } }) }
+    // Kept above the film page, which replaces the grid: closing the page returns to the same place.
+    val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     open?.let { m -> MovieDetail(state, m) { open = null }; return }
     val resume = resumeMovies(state)
     val cats = remember(c) { c.movies.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" } }
@@ -235,7 +237,7 @@ fun MoviesScreen(state: AppState) {
         Categories("Films", listOf(RECENT to "Ajoutés récemment", ALL to "Tous les films (${c.movies.size})", FAVS to "★ Favoris") + cats, cat) { cat = it }
         Column(Modifier.weight(1f)) {
             Filter(filter, "Rechercher un film") { filter = it }
-            LazyVerticalGrid(GridCells.Adaptive(150.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (cat == RECENT && filter.isBlank() && resume.isNotEmpty())
                     item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(state, resume, "Ajoutés récemment") }
                 items(list, key = { it.uid }) { m ->
@@ -252,8 +254,8 @@ fun MoviesScreen(state: AppState) {
 @Composable
 fun SeriesScreen(state: AppState) {
     val c = state.catalog!!
-    var cat by remember { mutableStateOf(ALL) }
-    var filter by remember { mutableStateOf("") }
+    var cat by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(ALL) }
+    var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     // LUMEN_OPEN=<name> opens that series at launch (used for screenshots).
     var open by remember { mutableStateOf(System.getenv("LUMEN_OPEN")?.let { n -> c.series.firstOrNull { it.name.equals(n, true) } }) }
     val resume = resumeSeries(state) { open = it }
@@ -287,9 +289,10 @@ fun SeriesScreen(state: AppState) {
 @Composable
 fun SearchScreen(state: AppState) {
     val c = state.catalog!!
-    var q by remember { mutableStateOf("") }
+    var q by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var openMovie by remember { mutableStateOf<Mv?>(null) }
     var openSeries by remember { mutableStateOf<Se?>(null) }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
     openSeries?.let { s -> SeriesDetail(state, s) { openSeries = null }; return }
     openMovie?.let { m -> MovieDetail(state, m) { openMovie = null }; return }
     val f = normalize(q)
@@ -299,7 +302,7 @@ fun SearchScreen(state: AppState) {
         val chs = remember(c, f) { c.channels.filter { it.norm.contains(f) }.take(40) }
         val mvs = remember(c, f) { c.movies.filter { it.norm.contains(f) }.take(60) }
         val ses = remember(c, f) { c.series.filter { it.norm.contains(f) }.take(60) }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (chs.isNotEmpty()) item { Text("Chaînes (${chs.size})", style = MaterialTheme.typography.titleMedium, color = Pal.text) }
             items(chs, key = { "c" + it.uid }) { ch ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Pal.panel).combinedClickable { state.playChannel(ch) }.padding(10.dp),
@@ -329,13 +332,14 @@ fun FavoritesScreen(state: AppState) {
     val c = state.catalog!!
     var openMovie by remember { mutableStateOf<Mv?>(null) }
     var openSeries by remember { mutableStateOf<Se?>(null) }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
     openSeries?.let { s -> SeriesDetail(state, s) { openSeries = null }; return }
     openMovie?.let { m -> MovieDetail(state, m) { openMovie = null }; return }
     val chs = state.favorites(Kind.CHANNEL).mapNotNull { f -> c.channels.firstOrNull { it.uid == f.uid } }
     val mvs = state.favorites(Kind.MOVIE).mapNotNull { f -> c.movies.firstOrNull { it.uid == f.uid } }
     val ses = state.favorites(Kind.SERIES).mapNotNull { f -> c.series.firstOrNull { it.uid == f.uid } }
     if (chs.isEmpty() && mvs.isEmpty() && ses.isEmpty()) return Empty("Aucun favori", "Ajoutez des chaînes, films ou séries avec ★. Ils sont partagés avec la TV par votre profil.")
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Favoris", style = MaterialTheme.typography.headlineSmall, color = Pal.text) }
         if (chs.isNotEmpty()) item { Text("Chaînes", style = MaterialTheme.typography.titleMedium, color = Pal.text) }
         items(chs, key = { "c" + it.uid }) { ch ->

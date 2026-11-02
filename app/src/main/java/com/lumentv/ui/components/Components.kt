@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.components
 
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,6 +57,19 @@ fun ButtonRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 /** The hint for the device: "Maintenez OK…" on the TV, "Maintenez le doigt…" on a phone. */
 @Composable
 fun hint(tv: String, phone: String) = if (com.lumentv.ui.LocalPhone.current) phone else tv
+
+/** The poster or line a sub-screen was opened from ([com.lumentv.ui.MainViewModel.openFrom]) takes the focus back on return. */
+@Composable
+fun Modifier.returnFocus(vm: com.lumentv.ui.MainViewModel, key: String): Modifier {
+    if (vm.returnKey != key) return this
+    val r = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(60)
+        runCatching { r.requestFocus() }
+        vm.returnKey = null
+    }
+    return this.then(Modifier.focusRequester(r))
+}
 
 /** A panel's width on the TV; the whole width on a phone (dialogs, empty states). */
 @Composable

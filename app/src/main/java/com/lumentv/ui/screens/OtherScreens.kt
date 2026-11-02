@@ -58,6 +58,7 @@ import com.lumentv.ui.components.TvButton
 import com.lumentv.ui.components.TvTextField
 import com.lumentv.ui.player.PlayerLauncher
 import com.lumentv.ui.theme.Palette
+import com.lumentv.ui.components.returnFocus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -84,7 +85,8 @@ private fun PosterRow(movies: List<MovieRow>, series: List<SeriesRow>, vm: MainV
     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         items(movies, key = { "m" + it.m.id }) { r ->
             Column(Modifier.width(110.dp)) {
-                FocusSurface({ vm.open(Screen.MovieDetail(r.m.playlistId, r.m.uid)) }, Modifier.fillMaxWidth().aspectRatio(2f / 3f), focusedScale = 1.06f) {
+                FocusSurface({ vm.openFrom("m:" + r.m.uid, Screen.MovieDetail(r.m.playlistId, r.m.uid)) },
+                    Modifier.returnFocus(vm, "m:" + r.m.uid).fillMaxWidth().aspectRatio(2f / 3f), focusedScale = 1.06f) {
                     Poster(r.m.poster, r.m.name, Modifier.fillMaxSize())
                 }
                 Text(r.m.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Palette.Text)
@@ -92,7 +94,8 @@ private fun PosterRow(movies: List<MovieRow>, series: List<SeriesRow>, vm: MainV
         }
         items(series, key = { "s" + it.s.id }) { r ->
             Column(Modifier.width(110.dp)) {
-                FocusSurface({ vm.open(Screen.SeriesDetail(r.s.playlistId, r.s.uid)) }, Modifier.fillMaxWidth().aspectRatio(2f / 3f), focusedScale = 1.06f) {
+                FocusSurface({ vm.openFrom("s:" + r.s.uid, Screen.SeriesDetail(r.s.playlistId, r.s.uid)) },
+                    Modifier.returnFocus(vm, "s:" + r.s.uid).fillMaxWidth().aspectRatio(2f / 3f), focusedScale = 1.06f) {
                     Poster(r.s.cover, r.s.name, Modifier.fillMaxSize())
                 }
                 Text(r.s.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Palette.Text)
@@ -133,11 +136,14 @@ fun SearchScreen(vm: MainViewModel) {
     val context = LocalContext.current
     var query by remember { mutableStateOf(vm.lastSearch) }
     var tab by remember { mutableStateOf(vm.searchTab) }
-    val results by produceState(SearchResults(), query) {
+    // On return from a film or a series, the results are there at once: the list keeps its place.
+    val results by produceState(vm.lastResults?.takeIf { it.first == query }?.second ?: SearchResults(), query) {
         vm.lastSearch = query
+        if (vm.lastResults?.first == query) return@produceState
         if (normalize(query).length < 2) { value = SearchResults(); return@produceState }
         delay(250)
         value = vm.graph.library.search(query, vm.graph.epg)
+        vm.lastResults = query to value
     }
     fun select(t: SearchTab) { tab = t; vm.searchTab = t }
     val counts = mapOf(
