@@ -1,7 +1,8 @@
-@file:OptIn(ExperimentalTvMaterial3Api::class)
+@file:OptIn(ExperimentalTvMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 
 package com.lumentv.ui
 
+import com.lumentv.ui.components.keepFocus
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -194,6 +195,7 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
         val mini by vm.graph.miniPlayer.collectAsStateWithLifecycle()
         SideNav(items, vm.root, active?.name, contentFocus, mini != null, onMini = { miniMenu = true }) { vm.openRoot(it) }
         Box(Modifier.weight(1f).fillMaxHeight().padding(start = 16.dp, top = 20.dp, end = 24.dp, bottom = 16.dp)
+            // Right from the menu: the column it reaches lands on its chosen entry (see enterOn in the screens).
             .onFocusChanged { contentHasFocus = it.hasFocus }.focusRequester(contentFocus).focusGroup()) {
             ScreenContent(vm, vm.current, states)
         }
@@ -248,7 +250,9 @@ private fun SideNav(items: List<NavItem>, selected: Screen, playlistName: String
     val first = remember { FocusRequester() }
     Column(
         Modifier.width(176.dp).fillMaxHeight().background(Palette.Panel).padding(horizontal = 10.dp, vertical = 16.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            // Left from a screen lands on that screen's entry, not on the one level with the focused element.
+            .focusProperties { enter = { first } }.focusGroup(),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Text("Lumen TV", style = MaterialTheme.typography.headlineSmall, color = Palette.Text, modifier = Modifier.padding(start = 10.dp))

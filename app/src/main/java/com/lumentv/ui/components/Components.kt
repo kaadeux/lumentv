@@ -2,7 +2,12 @@
 
 package com.lumentv.ui.components
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -57,6 +62,39 @@ fun ButtonRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 /** The hint for the device: "Maintenez OK…" on the TV, "Maintenez le doigt…" on a phone. */
 @Composable
 fun hint(tv: String, phone: String) = if (com.lumentv.ui.LocalPhone.current) phone else tv
+
+/**
+ * A list or column the remote enters and leaves: coming back to it lands on the entry it was left from (the category
+ * chosen, the channel, the poster), not on whichever is nearest on screen.
+ */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+fun Modifier.keepFocus(): Modifier = this.then(Modifier.focusRestorer())
+
+/** The entry a column is entered on (the category or group chosen); see [enterOn] and [enterHere]. */
+class EnterTarget {
+    val requester = androidx.compose.ui.focus.FocusRequester()
+    /** How many entries are marked (the old choice leaves after the new one arrives): > 0 = on screen. */
+    var shown by androidx.compose.runtime.mutableIntStateOf(0)
+}
+
+@Composable
+fun rememberEnterTarget() = androidx.compose.runtime.remember { EnterTarget() }
+
+/**
+ * Entering this column with the remote (Left from the posters, Right from the menu) lands on its [EnterTarget] when
+ * it is on screen, not on the entry level with where the focus came from.
+ */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+fun Modifier.enterOn(t: EnterTarget): Modifier = this.then(Modifier
+    .focusProperties { enter = { if (t.shown > 0) t.requester else androidx.compose.ui.focus.FocusRequester.Default } }
+    .focusGroup())
+
+/** Marks the entry [enterOn] lands on. */
+@Composable
+fun Modifier.enterHere(t: EnterTarget): Modifier {
+    androidx.compose.runtime.DisposableEffect(t) { t.shown++; onDispose { t.shown-- } }
+    return this.then(Modifier.focusRequester(t.requester))
+}
 
 /** The poster or line a sub-screen was opened from ([com.lumentv.ui.MainViewModel.openFrom]) takes the focus back on return. */
 @Composable

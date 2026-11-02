@@ -2,6 +2,9 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.components.enterHere
+import com.lumentv.ui.components.enterOn
+import com.lumentv.ui.components.keepFocus
 import com.lumentv.ui.components.ButtonRow
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
@@ -101,14 +104,17 @@ private fun CategoryColumn(title: String, cats: List<CategoryCount>?, extra: Lis
     }
     Column(Modifier.width(190.dp).fillMaxHeight()) {
         Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(bottom = 10.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Back from the posters, Left lands on the category chosen, not on the one level with the poster.
+        val chosen = com.lumentv.ui.components.rememberEnterTarget()
+        LazyColumn(Modifier.enterOn(chosen), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(extra, key = { it.first }) { (id, label) ->
-                FocusSurface({ onSelect(id) }, Modifier.fillMaxWidth(), selected = id == selected, focusedScale = 1.02f) {
+                FocusSurface({ onSelect(id) }, Modifier.fillMaxWidth().then(if (id == selected) Modifier.enterHere(chosen) else Modifier), selected = id == selected, focusedScale = 1.02f) {
                     Text(label, style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp))
                 }
             }
             items(cats.orEmpty(), key = { "c:" + it.category }) { c ->
-                FocusSurface({ onSelect(c.category) }, Modifier.fillMaxWidth(), onLongClick = { onLong(c.category) }, selected = c.category == selected, focusedScale = 1.02f) {
+                FocusSurface({ onSelect(c.category) }, Modifier.fillMaxWidth().then(if (c.category == selected) Modifier.enterHere(chosen) else Modifier),
+                    onLongClick = { onLong(c.category) }, selected = c.category == selected, focusedScale = 1.02f) {
                     Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                         Text(c.category, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         Text(" ${c.count}", style = MaterialTheme.typography.bodySmall)

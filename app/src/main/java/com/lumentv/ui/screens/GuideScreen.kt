@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.components.keepFocus
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -175,7 +176,7 @@ fun GuideScreen(vm: MainViewModel) {
                     val idx = list.indexOfFirst { it.ch.id == vm.guideChannel }
                     if (idx >= 0) { state.scrollToItem(idx); target = FocusTarget(list[idx].ch.id, now); vm.guideChannel = 0 }
                 }
-                LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize()) {
+                LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize().keepFocus()) {
                     items(list, key = { it.ch.id }) { row ->
                         GuideRow(
                             vm, row, windowStart, windowEnd, epgVersion, target,

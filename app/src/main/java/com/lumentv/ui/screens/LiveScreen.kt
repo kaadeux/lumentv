@@ -2,6 +2,9 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.components.enterHere
+import com.lumentv.ui.components.enterOn
+import com.lumentv.ui.components.keepFocus
 import com.lumentv.ui.components.hint
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -129,7 +132,7 @@ fun LiveScreen(vm: MainViewModel) {
                 )
                 else -> {
                     val state = rememberLazyListState()
-                    LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize().keepFocus()) {
                         items(list, key = { it.ch.id }) { row ->
                             ChannelItem(
                                 vm, row, epgVersion,
@@ -167,7 +170,9 @@ fun LiveScreen(vm: MainViewModel) {
         Column(Modifier.width(190.dp).fillMaxHeight()) {
             Text("Groupes", style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(bottom = 10.dp))
             val specials = listOf(GroupInfo(Groups.ALL, p.channelCount, false, false), GroupInfo(Groups.FAVORITES, 0, false, false))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Left from the channels lands on the group chosen.
+            val chosen = com.lumentv.ui.components.rememberEnterTarget()
+            LazyColumn(Modifier.enterOn(chosen), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(specials + groups.orEmpty(), key = { it.name }) { g ->
                     FocusSurface(
                         onClick = {
@@ -175,7 +180,7 @@ fun LiveScreen(vm: MainViewModel) {
                             group = g.name; vm.liveGroup = g.name
                         },
                         onLongClick = { if (g.name != Groups.ALL && g.name != Groups.FAVORITES) groupMenu = g },
-                        modifier = Modifier.fillMaxWidth(), selected = g.name == group, focusedScale = 1.02f,
+                        modifier = Modifier.fillMaxWidth().then(if (g.name == group) Modifier.enterHere(chosen) else Modifier), selected = g.name == group, focusedScale = 1.02f,
                     ) {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(
