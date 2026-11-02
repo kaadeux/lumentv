@@ -102,6 +102,8 @@ data class SeriesEntity(
     val number: Int,
     /** TMDB id given by the provider, to find recap / intro / credits (TheIntroDB). */
     val tmdb: String? = null,
+    /** Last change on the provider's side (new series or new episodes), epoch ms; 0 = unknown. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val updatedAt: Long = 0,
 )
 
 /** Episodes: stored from the M3U, or fetched on demand from Xtream (get_series_info) and cached. */

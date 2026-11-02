@@ -220,6 +220,10 @@ fun MoviesScreen(state: AppState) {
     var open by remember { mutableStateOf(System.getenv("LUMEN_OPEN")?.let { n -> c.movies.firstOrNull { it.name.contains(n, true) } }) }
     // Kept above the film page, which replaces the grid: closing the page returns to the same place.
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    // Put forward above "Ajoutés récemment": new, best rated, more of the last film watched (same rows as the TV).
+    val lastMovie = remember(state.doc.history, state.activeKey) { state.historyOf(Kind.MOVIE).firstOrNull()?.uid }
+    val shelves = remember(c, lastMovie) { featuredMovies(c, lastMovie) }
+    val featured = cat == RECENT && filter.isBlank()
     open?.let { m -> MovieDetail(state, m) { open = null }; return }
     val resume = resumeMovies(state)
     val cats = remember(c) { c.movies.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" } }
@@ -238,8 +242,18 @@ fun MoviesScreen(state: AppState) {
         Column(Modifier.weight(1f)) {
             Filter(filter, "Rechercher un film") { filter = it }
             LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                if (cat == RECENT && filter.isBlank() && resume.isNotEmpty())
-                    item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(state, resume, "Ajoutés récemment") }
+                if (featured) {
+                    if (resume.isNotEmpty()) item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(state, resume) }
+                    shelves.forEachIndexed { i, (title, items) ->
+                        item(key = "shelf$i", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                            ShelfRow(title, items, { it.uid }) { m ->
+                                Poster(m.name, m.poster, listOfNotNull(m.year, m.rating?.let { "★ $it" }).joinToString(" · "), ratio(state.progress(Kind.MOVIE, m.uid)),
+                                    state.isFavorite(Kind.MOVIE, m.uid)) { open = m }
+                            }
+                        }
+                    }
+                    if (resume.isNotEmpty() || shelves.isNotEmpty()) item(key = "all", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ListTitle("Ajoutés récemment") }
+                }
                 items(list, key = { it.uid }) { m ->
                     Poster(m.name, m.poster, listOfNotNull(m.year, m.rating?.let { "★ $it" }).joinToString(" · "), ratio(state.progress(Kind.MOVIE, m.uid)),
                         state.isFavorite(Kind.MOVIE, m.uid)) { open = m }
@@ -259,23 +273,44 @@ fun SeriesScreen(state: AppState) {
     // LUMEN_OPEN=<name> opens that series at launch (used for screenshots).
     var open by remember { mutableStateOf(System.getenv("LUMEN_OPEN")?.let { n -> c.series.firstOrNull { it.name.equals(n, true) } }) }
     val resume = resumeSeries(state) { open = it }
-    // The row comes a moment after the posters: back to the top, or the grid would stay on its first poster, below the row.
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
-    LaunchedEffect(resume.isNotEmpty()) { if (resume.isNotEmpty() && grid.firstVisibleItemIndex <= 1) grid.scrollToItem(0) }
+    // Put forward above "Toutes les séries": new or with new episodes, best rated, more of the last series watched.
+    val lastSeries = remember(state.doc.history, state.activeKey) { state.historyOf(Kind.EPISODE).firstOrNull()?.parentUid }
+    val shelves = remember(c, lastSeries) { featuredSeries(c, lastSeries) }
+    val featured = cat == ALL && filter.isBlank()
+    // The resume row comes a moment after the posters: back to the top when the grid sits on its first poster below it.
+    LaunchedEffect(resume.isNotEmpty()) {
+        val headers = (if (resume.isNotEmpty()) 1 else 0) + shelves.size + 1
+        if (featured && resume.isNotEmpty() && grid.firstVisibleItemIndex in 1..headers && grid.firstVisibleItemScrollOffset == 0) grid.scrollToItem(0)
+    }
     open?.let { s -> SeriesDetail(state, s) { open = null }; return }
     val cats = remember(c) { c.series.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" } }
     val favUids = remember(state.doc.favorites, state.activeKey) { state.favorites(Kind.SERIES).map { it.uid } }
     val list = remember(c, cat, filter, favUids) {
-        val base = when (cat) { ALL -> c.series; FAVS -> favUids.mapNotNull { u -> c.series.firstOrNull { it.uid == u } }; else -> c.series.filter { it.category == cat } }
+        val base = when (cat) {
+            ALL -> c.series
+            RECENT -> c.series.sortedByDescending { it.updated }.take(300)
+            FAVS -> favUids.mapNotNull { u -> c.series.firstOrNull { it.uid == u } }
+            else -> c.series.filter { it.category == cat }
+        }
         val f = normalize(filter); if (f.isEmpty()) base else base.filter { it.norm.contains(f) }
     }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Categories("Séries", listOf(ALL to "Toutes les séries (${c.series.size})", FAVS to "★ Favoris") + cats, cat) { cat = it }
+        Categories("Séries", listOf(ALL to "Toutes les séries (${c.series.size})", RECENT to "Ajoutées récemment", FAVS to "★ Favoris") + cats, cat) { cat = it }
         Column(Modifier.weight(1f)) {
             Filter(filter, "Rechercher une série") { filter = it }
             LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                if (cat == ALL && filter.isBlank() && resume.isNotEmpty())
-                    item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(state, resume, "Toutes les séries") }
+                if (featured) {
+                    if (resume.isNotEmpty()) item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(state, resume) }
+                    shelves.forEachIndexed { i, (title, items) ->
+                        item(key = "shelf$i", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                            ShelfRow(title, items, { it.uid }) { s ->
+                                Poster(s.name, s.cover, listOfNotNull(s.year, s.rating?.let { "★ $it" }).joinToString(" · "), null, state.isFavorite(Kind.SERIES, s.uid)) { open = s }
+                            }
+                        }
+                    }
+                    if (resume.isNotEmpty() || shelves.isNotEmpty()) item(key = "all", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ListTitle("Toutes les séries") }
+                }
                 items(list, key = { it.uid }) { s ->
                     Poster(s.name, s.cover, listOfNotNull(s.year, s.rating?.let { "★ $it" }).joinToString(" · "), null, state.isFavorite(Kind.SERIES, s.uid)) { open = s }
                 }
@@ -436,7 +471,7 @@ private fun resumeSeries(state: AppState, onOpen: (Se) -> Unit): List<ResumeItem
 
 /** The row above the posters; the ✕ of a poster takes it out (and forgets where it was). */
 @Composable
-private fun ResumeRow(state: AppState, items: List<ResumeItem>, below: String) {
+private fun ResumeRow(state: AppState, items: List<ResumeItem>) {
     val scope = rememberCoroutineScope()
     var removing by remember { mutableStateOf<ResumeItem?>(null) }
     Column(Modifier.fillMaxWidth()) {
@@ -451,7 +486,6 @@ private fun ResumeRow(state: AppState, items: List<ResumeItem>, below: String) {
                 }
             }
         }
-        Text(below, style = MaterialTheme.typography.titleLarge, color = Pal.text, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
     }
     removing?.let { r ->
         AlertDialog(onDismissRequest = { removing = null }, containerColor = Pal.panel,
@@ -462,3 +496,51 @@ private fun ResumeRow(state: AppState, items: List<ResumeItem>, below: String) {
             dismissButton = { TextButton({ removing = null }) { Text("Annuler") } })
     }
 }
+
+// ---- Featured rows -------------------------------------------------------------------------------------------
+
+/** Films put forward: new, best rated of the last years, more of the last one watched (rows of at least 3). */
+private fun featuredMovies(c: Catalog, lastWatched: String?): List<Pair<String, List<Mv>>> {
+    fun clean(l: List<Mv>) = com.lumentv.core.Featured.clean(l, { it.name }, { it.category })
+    val last = lastWatched?.let { u -> c.movies.firstOrNull { it.uid == u } }
+    return listOfNotNull(
+        "Nouveautés" to clean(c.movies.sortedByDescending { it.added }),
+        "Les mieux notés" to clean(c.movies.filter { (com.lumentv.core.Featured.rating(it.rating) ?: 0.0) in com.lumentv.core.Featured.GOOD..com.lumentv.core.Featured.BEST &&
+            com.lumentv.core.Featured.recent(it.year, it.name) }.sortedByDescending { com.lumentv.core.Featured.rating(it.rating) }),
+        last?.let { l ->
+            val base = com.lumentv.core.Featured.baseTitle(l.name)
+            "Parce que vous avez regardé ${l.name.substringBefore(" (")}" to clean(c.movies.filter { it.category == l.category && com.lumentv.core.Featured.baseTitle(it.name) != base }
+                .sortedWith(compareByDescending<Mv> { com.lumentv.core.Featured.rating(it.rating) ?: 0.0 }.thenByDescending { it.added }))
+        },
+    ).filter { it.second.size >= 3 }
+}
+
+/** Series put forward: new or with new episodes, best rated of the last years, more of the last one watched. */
+private fun featuredSeries(c: Catalog, lastWatched: String?): List<Pair<String, List<Se>>> {
+    fun clean(l: List<Se>) = com.lumentv.core.Featured.clean(l, { it.name }, { it.category })
+    val last = lastWatched?.let { u -> c.series.firstOrNull { it.uid == u } }
+    return listOfNotNull(
+        "Nouveautés" to clean(c.series.sortedByDescending { it.updated }),
+        "Les mieux notées" to clean(c.series.filter { (com.lumentv.core.Featured.rating(it.rating) ?: 0.0) in com.lumentv.core.Featured.GOOD..com.lumentv.core.Featured.BEST &&
+            com.lumentv.core.Featured.recent(it.year, it.name) }.sortedByDescending { com.lumentv.core.Featured.rating(it.rating) }),
+        last?.let { l ->
+            "Parce que vous avez regardé ${l.name}" to clean(c.series.filter { it.category == l.category && it.uid != l.uid }
+                .sortedWith(compareByDescending<Se> { com.lumentv.core.Featured.rating(it.rating) ?: 0.0 }.thenByDescending { it.updated }))
+        },
+    ).filter { it.second.size >= 3 }
+}
+
+/** A row of posters above the list ("Nouveautés", "Les mieux notés"…). */
+@Composable
+private fun <T> ShelfRow(title: String, items: List<T>, key: (T) -> String, tile: @Composable (T) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Text(title, style = MaterialTheme.typography.titleLarge, color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(vertical = 10.dp)) {
+            items(items, key = key) { r -> Box(Modifier.width(150.dp)) { tile(r) } }
+        }
+    }
+}
+
+@Composable
+private fun ListTitle(text: String) =
+    Text(text, style = MaterialTheme.typography.titleLarge, color = Pal.text, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))

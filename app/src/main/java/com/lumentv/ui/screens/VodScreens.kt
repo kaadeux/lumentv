@@ -165,6 +165,11 @@ fun MoviesScreen(vm: MainViewModel) {
     val progress = remember(history) { history.filter { it.kind == HistoryKind.MOVIE }.associateBy { it.uid } }
     var filter by androidx.compose.runtime.saveable.rememberSaveable(p.id, cat) { mutableStateOf("") }
     val movieGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    // Put forward above "Ajoutés récemment": new, best rated, more of the last film watched.
+    val lastMovie = remember(history, p.id) { history.firstOrNull { it.kind == HistoryKind.MOVIE && it.playlistId == p.id }?.uid }
+    val shelves = memoState(vm, "shelves:m:${p.id}", p.id, changes, lastMovie) { vm.graph.library.featuredMovies(p.id, lastMovie) }
+    val featured = cat == RECENT && filter.isBlank()
+    KeepTop(movieGrid, if (featured) headerCount(resume.isNotEmpty(), shelves.size) else 0)
 
     VodLayout {
         CategoryColumn("Films", cats, listOf(RECENT to "Ajoutés récemment", ALL to "Tous les films"), cat, { cat = it; vm.movieCategory = it }, { catMenu = it })
@@ -177,8 +182,22 @@ fun MoviesScreen(vm: MainViewModel) {
             else -> LazyVerticalGrid(posterCells(), state = movieGrid, horizontalArrangement = Arrangement.spacedBy(gridGap()), verticalArrangement = Arrangement.spacedBy(gridGap()),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 20.dp, start = 6.dp, end = 6.dp),
                 modifier = Modifier.fillMaxSize()) {
-                if (cat == RECENT && filter.isBlank() && resume.isNotEmpty())
-                    item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(vm, resume, false, "Ajoutés récemment") }
+                if (featured) {
+                    if (resume.isNotEmpty()) item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(vm, resume, false) }
+                    shelves.forEachIndexed { i, sh ->
+                        item(key = "shelf$i", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                            ShelfRow(sh.title, sh.items, { it.m.uid }) { r ->
+                                PosterTile(r.m.name, r.m.poster, listOfNotNull(r.m.year, r.m.rating?.let { "★ $it" }).joinToString(" · ").ifEmpty { null },
+                                    progress[r.m.uid]?.takeIf { it.durationMs > 0 && it.playlistId == p.id }?.let { it.positionMs.toFloat() / it.durationMs }, r.isFavorite,
+                                    onClick = { vm.openFrom("f$i:m:" + r.m.uid, Screen.MovieDetail(p.id, r.m.uid)) },
+                                    onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.MOVIE, r.m.uid); vm.show(if (f) "Ajouté aux favoris" else "Retiré des favoris") } },
+                                    modifier = Modifier.returnFocus(vm, "f$i:m:" + r.m.uid))
+                            }
+                        }
+                    }
+                    if (resume.isNotEmpty() || shelves.isNotEmpty())
+                        item(key = "all", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { SectionTitle("Ajoutés récemment") }
+                }
                 items(list, key = { it.m.id }) { r ->
                     val h = progress[r.m.uid]?.takeIf { it.playlistId == p.id }
                     PosterTile(r.m.name, r.m.poster, listOfNotNull(r.m.year, r.m.rating?.let { "★ $it" }).joinToString(" · ").ifEmpty { null },
@@ -207,20 +226,23 @@ fun SeriesScreen(vm: MainViewModel) {
     val p = active ?: return EmptyState("Aucune playlist", "")
     var cat by remember(p.id) { mutableStateOf(vm.seriesCategory ?: ALL) }
     val resume = resumeSeries(vm, p.id, history)
-    // The row comes a moment after the posters: back to the top, or the grid would stay on its first poster, below the row.
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
-    LaunchedEffect(resume.isNotEmpty()) { if (resume.isNotEmpty() && grid.firstVisibleItemIndex == 1 && grid.firstVisibleItemScrollOffset == 0) grid.scrollToItem(0) }
     var catMenu by remember { mutableStateOf<String?>(null) }
     val cats by produceState<List<CategoryCount>?>(null, p.id, changes, settings.showHidden) { value = vm.graph.library.seriesCategories(p.id, settings.showHidden) }
     val series by produceState<List<SeriesRow>?>(null, p.id, cat, changes) {
         value = null
-        value = vm.graph.library.series(p.id, if (cat == ALL) null else cat)
+        value = when (cat) { ALL -> vm.graph.library.series(p.id, null); RECENT -> vm.graph.library.recentSeries(p.id); else -> vm.graph.library.series(p.id, cat) }
     }
     var filter by androidx.compose.runtime.saveable.rememberSaveable(p.id, cat) { mutableStateOf("") }
+    // Put forward above "Toutes les séries": new or with new episodes, best rated, more of the last series watched.
+    val lastSeries = remember(history, p.id) { history.firstOrNull { it.kind == HistoryKind.EPISODE && it.playlistId == p.id }?.parentUid }
+    val shelves = memoState(vm, "shelves:s:${p.id}", p.id, changes, lastSeries) { vm.graph.library.featuredSeries(p.id, lastSeries) }
+    val featured = cat == ALL && filter.isBlank()
+    KeepTop(grid, if (featured) headerCount(resume.isNotEmpty(), shelves.size) else 0)
     VodLayout {
-        CategoryColumn("Séries", cats, listOf(ALL to "Toutes les séries"), cat, { cat = it; vm.seriesCategory = it }, { catMenu = it })
+        CategoryColumn("Séries", cats, listOf(ALL to "Toutes les séries", RECENT to "Ajoutées récemment"), cat, { cat = it; vm.seriesCategory = it }, { catMenu = it })
         Column(Modifier.fillMaxSize()) {
-        FilterField(filter, if (cat == ALL) "Rechercher une série" else "Rechercher dans « $cat »") { filter = it }
+        FilterField(filter, if (cat == ALL || cat == RECENT) "Rechercher une série" else "Rechercher dans « $cat »") { filter = it }
         val list = series?.let { all -> normalize(filter).let { f -> if (f.isEmpty()) all else all.filter { it.s.nameNorm.contains(f) } } }
         when {
             list == null -> Loading()
@@ -228,8 +250,21 @@ fun SeriesScreen(vm: MainViewModel) {
             else -> LazyVerticalGrid(posterCells(), state = grid, horizontalArrangement = Arrangement.spacedBy(gridGap()), verticalArrangement = Arrangement.spacedBy(gridGap()),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 20.dp, start = 6.dp, end = 6.dp),
                 modifier = Modifier.fillMaxSize()) {
-                if (cat == ALL && filter.isBlank() && resume.isNotEmpty())
-                    item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(vm, resume, true, "Toutes les séries") }
+                if (featured) {
+                    if (resume.isNotEmpty()) item(key = "resume", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { ResumeRow(vm, resume, true) }
+                    shelves.forEachIndexed { i, sh ->
+                        item(key = "shelf$i", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                            ShelfRow(sh.title, sh.items, { it.s.uid }) { r ->
+                                PosterTile(r.s.name, r.s.cover, listOfNotNull(r.s.year, r.s.rating?.let { "★ $it" }).joinToString(" · ").ifEmpty { null }, null, r.isFavorite,
+                                    onClick = { vm.openFrom("f$i:s:" + r.s.uid, Screen.SeriesDetail(p.id, r.s.uid)) },
+                                    onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } },
+                                    modifier = Modifier.returnFocus(vm, "f$i:s:" + r.s.uid))
+                            }
+                        }
+                    }
+                    if (resume.isNotEmpty() || shelves.isNotEmpty())
+                        item(key = "all", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { SectionTitle("Toutes les séries") }
+                }
                 items(list, key = { it.s.id }) { r ->
                     PosterTile(r.s.name, r.s.cover, listOfNotNull(r.s.year, r.s.rating?.let { "★ $it" }).joinToString(" · ").ifEmpty { null }, null, r.isFavorite,
                         onClick = { vm.openFrom("s:" + r.s.uid, Screen.SeriesDetail(p.id, r.s.uid)) },
@@ -505,7 +540,8 @@ private fun resumeMovies(vm: MainViewModel, pid: Long, history: List<HistoryEnti
 @Composable
 private fun resumeSeries(vm: MainViewModel, pid: Long, history: List<HistoryEntity>): List<ResumeItem> {
     val context = LocalContext.current
-    val items by produceState(emptyList<ResumeItem>(), history, pid) {
+    @Suppress("UNCHECKED_CAST")
+    val items by produceState(vm.memo["resume:s:$pid"] as? List<ResumeItem> ?: emptyList(), history, pid) {
         value = history.filter { it.kind == HistoryKind.EPISODE && it.playlistId == pid && it.parentUid != null }
             .groupBy { it.parentUid!! }.values.map { eps -> eps.maxBy { it.watchedAt } to eps.map { it.key } }
             .sortedByDescending { it.first.watchedAt }
@@ -528,14 +564,14 @@ private fun resumeSeries(vm: MainViewModel, pid: Long, history: List<HistoryEnti
                         else -> null
                     }
                 }
-            }.take(com.lumentv.core.Resume.LIMIT)
+            }.take(com.lumentv.core.Resume.LIMIT).also { vm.memo["resume:s:$pid"] = it }
     }
     return items
 }
 
 /** The row above the posters; a long press on one takes it out (and forgets where it was). */
 @Composable
-private fun ResumeRow(vm: MainViewModel, items: List<ResumeItem>, series: Boolean, below: String) {
+private fun ResumeRow(vm: MainViewModel, items: List<ResumeItem>, series: Boolean) {
     if (items.isEmpty()) return
     val scope = rememberCoroutineScope()
     val phone = com.lumentv.ui.LocalPhone.current
@@ -554,12 +590,56 @@ private fun ResumeRow(vm: MainViewModel, items: List<ResumeItem>, series: Boolea
                 }
             }
         }
-        Text(below, style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(top = 4.dp))
     }
     removing?.let { r ->
         com.lumentv.ui.components.ConfirmDialog("Retirer « ${r.title} » ?",
             if (series) "La série quitte « Reprendre la lecture ». Les épisodes ne seront plus marqués comme vus."
             else "Le film quitte « Reprendre la lecture » et repartira du début.", "Retirer",
             onConfirm = { scope.launch { r.forget.forEach { vm.graph.library.deleteHistory(it) } } }, onDismiss = { removing = null })
+    }
+}
+
+// ---- Featured rows ----------------------------------------------------------------------------------------------
+
+/** A row of posters above the list ("Nouveautés", "Les mieux notés"…). */
+@Composable
+private fun <T> ShelfRow(title: String, items: List<T>, key: (T) -> String, tile: @Composable (T) -> Unit) {
+    val phone = com.lumentv.ui.LocalPhone.current
+    Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(gridGap()), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 10.dp, horizontal = 4.dp)) {
+            items(items, key = key) { r -> Box(Modifier.width(if (phone) 104.dp else 150.dp)) { tile(r) } }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) =
+    Text(text, style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(top = 4.dp))
+
+/** Computed in the background, and kept by the view model: back on the screen, the rows are there at once. */
+@Composable
+private fun <T> memoState(vm: MainViewModel, key: String, vararg keys: Any?, load: suspend () -> List<T>): List<T> {
+    @Suppress("UNCHECKED_CAST")
+    val v by produceState(vm.memo[key] as? List<T> ?: emptyList(), *keys) {
+        value = runCatching { load() }.onFailure { android.util.Log.w("Featured", "$key: $it") }.getOrDefault(value)
+            .also { vm.memo[key] = it; android.util.Log.i("Featured", "$key: ${it.size} row(s)") }
+    }
+    return v
+}
+
+/** Items above the posters: the resume row, the featured rows and the title of the full list. */
+private fun headerCount(resume: Boolean, shelves: Int) = (if (resume) 1 else 0) + shelves + (if (resume || shelves > 0) 1 else 0)
+
+/**
+ * Rows arriving after the posters: the grid keeps its first poster on top, below them. Back to the top then; a grid
+ * scrolled further (back from a film page) stays where it is.
+ */
+@Composable
+private fun KeepTop(grid: androidx.compose.foundation.lazy.grid.LazyGridState, headers: Int) {
+    var before by remember { androidx.compose.runtime.mutableIntStateOf(headers) }
+    LaunchedEffect(headers) {
+        if (headers > before && grid.firstVisibleItemIndex in 1..headers && grid.firstVisibleItemScrollOffset == 0) grid.scrollToItem(0)
+        before = headers
     }
 }

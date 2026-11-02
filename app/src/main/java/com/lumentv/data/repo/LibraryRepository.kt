@@ -90,6 +90,43 @@ class LibraryRepository(private val db: AppDatabase) {
         db.vod().seriesCategories(pid).filter { includeHidden || it.category !in hidden }
     }
     suspend fun series(pid: Long, category: String?) = withContext(Dispatchers.IO) { db.vod().series(pid, category) }
+    suspend fun recentSeries(pid: Long) = withContext(Dispatchers.IO) { db.vod().recentSeries(pid, 120) }
+
+    /** A row of the featured section ("Nouveautés", "Les mieux notés", "Parce que vous avez regardé…"). */
+    class Shelf<T>(val title: String, val items: List<T>)
+
+    /** Films put forward above the list: new, best rated of the last years, more of the last one watched. */
+    suspend fun featuredMovies(pid: Long, lastWatched: String?): List<Shelf<MovieRow>> = withContext(Dispatchers.IO) {
+        val hidden = hiddenSet(pid, PrefKind.MOVIE_CATEGORY)
+        fun clean(l: List<MovieRow>) = com.lumentv.core.Featured.clean(l, { it.m.name }, { it.m.category }, hidden)
+        val last = lastWatched?.let { db.vod().movieByUid(pid, it) }
+        listOfNotNull(
+            Shelf("Nouveautés", clean(db.vod().recentMovies(pid, 200))),
+            // The year is often only in the title ("Breach (2026)"): the recent ones are kept here, not in SQL.
+            Shelf("Les mieux notés", clean(db.vod().topMovies(pid, com.lumentv.core.Featured.GOOD, 3000).filter { com.lumentv.core.Featured.recent(it.m.year, it.m.name) })),
+            last?.let { l ->
+                val base = com.lumentv.core.Featured.baseTitle(l.m.name)
+                Shelf("Parce que vous avez regardé ${l.m.name.substringBefore(" (")}", clean(db.vod().movies(pid, l.m.category)
+                    .filter { com.lumentv.core.Featured.baseTitle(it.m.name) != base }
+                    .sortedWith(compareByDescending<MovieRow> { com.lumentv.core.Featured.rating(it.m.rating) ?: 0.0 }.thenByDescending { it.m.addedAt })))
+            },
+        ).filter { it.items.size >= 3 }
+    }
+
+    /** Series put forward above the list: new or with new episodes, best rated of the last years, more of the last one watched. */
+    suspend fun featuredSeries(pid: Long, lastWatched: String?): List<Shelf<SeriesRow>> = withContext(Dispatchers.IO) {
+        val hidden = hiddenSet(pid, PrefKind.SERIES_CATEGORY)
+        fun clean(l: List<SeriesRow>) = com.lumentv.core.Featured.clean(l, { it.s.name }, { it.s.category }, hidden)
+        val last = lastWatched?.let { db.vod().seriesByUid(pid, it) }
+        listOfNotNull(
+            Shelf("Nouveautés", clean(db.vod().recentSeries(pid, 200))),
+            Shelf("Les mieux notées", clean(db.vod().topSeries(pid, com.lumentv.core.Featured.GOOD, 3000).filter { com.lumentv.core.Featured.recent(it.s.year, it.s.name) })),
+            last?.let { l ->
+                Shelf("Parce que vous avez regardé ${l.s.name}", clean(db.vod().series(pid, l.s.category).filter { it.s.uid != l.s.uid }
+                    .sortedWith(compareByDescending<SeriesRow> { com.lumentv.core.Featured.rating(it.s.rating) ?: 0.0 }.thenByDescending { it.s.updatedAt })))
+            },
+        ).filter { it.items.size >= 3 }
+    }
     suspend fun seriesByUid(pid: Long, uid: String) = withContext(Dispatchers.IO) { db.vod().seriesByUid(pid, uid) }
     suspend fun storedEpisodes(pid: Long, seriesUid: String) = withContext(Dispatchers.IO) { db.vod().episodes(pid, seriesUid) }
 

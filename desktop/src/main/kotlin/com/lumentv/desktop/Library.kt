@@ -33,7 +33,9 @@ import java.util.zip.GZIPInputStream
 @Serializable data class Mv(val uid: String, val name: String, val category: String, val poster: String? = null, val url: String = "",
                             val streamId: Long = 0, val ext: String? = null, val year: String? = null, val rating: String? = null, val added: Long = 0) { val norm by lazy { normalize(name) } }
 @Serializable data class Se(val uid: String, val name: String, val category: String, val cover: String? = null, val seriesId: Long = 0,
-                            val plot: String? = null, val year: String? = null, val rating: String? = null, val tmdb: String? = null) { val norm by lazy { normalize(name) } }
+                            val plot: String? = null, val year: String? = null, val rating: String? = null, val tmdb: String? = null,
+                            /** Last change on the provider's side (new series or new episodes), epoch ms; 0 = unknown. */
+                            val updated: Long = 0) { val norm by lazy { normalize(name) } }
 @Serializable data class Ep(val uid: String, val title: String, val season: Int, val episode: Int, val url: String = "", val streamId: Long = 0,
                             val ext: String? = null, val image: String? = null, val plot: String? = null, val durationSecs: Int = 0, val rating: String? = null)
 
@@ -42,7 +44,7 @@ data class Details(val plot: String? = null, val genre: String? = null, val cast
                    val rating: String? = null, val release: String? = null, val backdrop: String? = null, val durationSecs: Int = 0)
 
 /** Bumped when the cached catalog lacks something new (v2: TMDB ids of series); an older cache is reloaded. */
-const val CATALOG_VERSION = 2
+const val CATALOG_VERSION = 3 // 3: series' last change date
 
 @Serializable
 data class Catalog(
@@ -80,7 +82,7 @@ class Library(private val http: OkHttpClient) {
             version = CATALOG_VERSION,
             channels = live.mapIndexed { i, x -> Ch("x:${x.streamId}", x.name, liveCats[x.categoryId] ?: NO_GROUP, x.icon, streamId = x.streamId, epgId = x.epgId, num = x.num ?: (i + 1)) },
             movies = vod.map { x -> Mv("x:${x.streamId}", x.name, vodCats[x.categoryId] ?: NO_GROUP, x.icon, streamId = x.streamId, ext = x.ext, year = x.year, rating = x.rating, added = x.added) },
-            series = ser.map { x -> Se("x:${x.seriesId}", x.name, serCats[x.categoryId] ?: NO_GROUP, x.cover, x.seriesId, x.plot, x.year, x.rating, x.tmdb) },
+            series = ser.map { x -> Se("x:${x.seriesId}", x.name, serCats[x.categoryId] ?: NO_GROUP, x.cover, x.seriesId, x.plot, x.year, x.rating, x.tmdb, x.updated) },
             epgUrl = p.epgUrl.ifBlank { XtreamApi.xmltvUrl(XtreamCredentials(XtreamApi.normalizeServer(p.source), p.username, p.password)) },
         )
     }

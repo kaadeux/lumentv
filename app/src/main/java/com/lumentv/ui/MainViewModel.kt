@@ -78,6 +78,9 @@ class MainViewModel(val graph: AppGraph) : ViewModel() {
     var returnKey: String? = null
     fun openFrom(key: String, s: Screen) { returnKey = key; open(s) }
 
+    /** Rows computed for a screen (featured, resume), shown at once on return so the list keeps its place. */
+    val memo = HashMap<String, Any>()
+
     /** Last search and its results, shown at once on return instead of an empty list. */
     var lastResults: Pair<String, com.lumentv.data.repo.SearchResults>? = null
     /** Set when Back closes a sub-screen, so the screen underneath gets the focus again (not the menu). */
