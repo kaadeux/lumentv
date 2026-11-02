@@ -220,6 +220,7 @@ fun MoviesScreen(state: AppState) {
     var open by remember { mutableStateOf(System.getenv("LUMEN_OPEN")?.let { n -> c.movies.firstOrNull { it.name.contains(n, true) } }) }
     // Kept above the film page, which replaces the grid: closing the page returns to the same place.
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    TopOnChange(grid, cat)
     // Put forward above "Ajoutés récemment": new, best rated, more of the last film watched (same rows as the TV).
     val lastMovie = remember(state.doc.history, state.activeKey) { state.historyOf(Kind.MOVIE).firstOrNull()?.uid }
     val shelves = remember(c, lastMovie) { featuredMovies(c, lastMovie) }
@@ -274,6 +275,7 @@ fun SeriesScreen(state: AppState) {
     var open by remember { mutableStateOf(System.getenv("LUMEN_OPEN")?.let { n -> c.series.firstOrNull { it.name.equals(n, true) } }) }
     val resume = resumeSeries(state) { open = it }
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    TopOnChange(grid, cat)
     // Put forward above "Toutes les séries": new or with new episodes, best rated, more of the last series watched.
     val lastSeries = remember(state.doc.history, state.activeKey) { state.historyOf(Kind.EPISODE).firstOrNull()?.parentUid }
     val shelves = remember(c, lastSeries) { featuredSeries(c, lastSeries) }
@@ -544,3 +546,10 @@ private fun <T> ShelfRow(title: String, items: List<T>, key: (T) -> String, tile
 @Composable
 private fun ListTitle(text: String) =
     Text(text, style = MaterialTheme.typography.titleLarge, color = Pal.text, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
+
+/** Another category starts at its top; coming back to the section (same category) keeps the place. */
+@Composable
+private fun TopOnChange(grid: androidx.compose.foundation.lazy.grid.LazyGridState, cat: String) {
+    var shown by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(cat) }
+    LaunchedEffect(cat) { if (cat != shown) { shown = cat; grid.scrollToItem(0) } }
+}

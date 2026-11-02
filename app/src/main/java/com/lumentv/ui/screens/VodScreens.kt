@@ -171,6 +171,7 @@ fun MoviesScreen(vm: MainViewModel) {
     val progress = remember(history) { history.filter { it.kind == HistoryKind.MOVIE }.associateBy { it.uid } }
     var filter by androidx.compose.runtime.saveable.rememberSaveable(p.id, cat) { mutableStateOf("") }
     val movieGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    TopOnChange(movieGrid, cat)
     // Put forward above "Ajoutés récemment": new, best rated, more of the last film watched.
     val lastMovie = remember(history, p.id) { history.firstOrNull { it.kind == HistoryKind.MOVIE && it.playlistId == p.id }?.uid }
     val shelves = memoState(vm, "shelves:m:${p.id}", p.id, changes, lastMovie) { vm.graph.library.featuredMovies(p.id, lastMovie) }
@@ -233,6 +234,7 @@ fun SeriesScreen(vm: MainViewModel) {
     var cat by remember(p.id) { mutableStateOf(vm.seriesCategory ?: ALL) }
     val resume = resumeSeries(vm, p.id, history)
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    TopOnChange(grid, cat)
     var catMenu by remember { mutableStateOf<String?>(null) }
     val cats by produceState<List<CategoryCount>?>(null, p.id, changes, settings.showHidden) { value = vm.graph.library.seriesCategories(p.id, settings.showHidden) }
     val series by produceState<List<SeriesRow>?>(null, p.id, cat, changes) {
@@ -648,4 +650,14 @@ private fun KeepTop(grid: androidx.compose.foundation.lazy.grid.LazyGridState, h
         if (headers > before && grid.firstVisibleItemIndex in 1..headers && grid.firstVisibleItemScrollOffset == 0) grid.scrollToItem(0)
         before = headers
     }
+}
+
+/**
+ * Another category starts at its top. Back from a film page (same category) keeps the place: the category last shown
+ * is remembered with the screen.
+ */
+@Composable
+private fun TopOnChange(grid: androidx.compose.foundation.lazy.grid.LazyGridState, cat: String) {
+    var shown by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(cat) }
+    LaunchedEffect(cat) { if (cat != shown) { shown = cat; grid.scrollToItem(0) } }
 }
