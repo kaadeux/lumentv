@@ -9,7 +9,7 @@ class SmartSearchTest {
         "Spider-Man (2002) FHD MULTI", "Spider-Man : No Way Home (2021) 4K VFF", "The Amazing Spider-Man (2012) HD VF",
         "Batman Begins (2005) FHD", "The Batman (2022) 4K MULTI", "Batman", "LEGO Batman, le film (2017)",
         "L'École du bien et du mal (2022) FHD", "Avengers : Endgame (2019) 4K", "Le Seigneur des anneaux : La Communauté de l'anneau",
-        "Spiderhead (2022)", "Man on Fire (2004)", "Télé-Matin", "Pokémon : Le Film",
+        "Spiderhead (2022)", "Man on Fire (2004)", "Télé-Matin", "Pokémon : Le Film", "Spider-man (IT)", "Spider-man 2 (IT)",
     )
     private val entries = titles.map { SmartSearch.Entry(it, it) }
     private fun find(q: String, n: Int = 5) = SmartSearch.search(SmartSearch.Query(q), entries, n)
@@ -19,6 +19,12 @@ class SmartSearchTest {
         assertTrue(r.take(3).all { it.contains("Spider-Man") })
         assertEquals("Spider-Man (2002) FHD MULTI", r.first())
         assertTrue(find("spider man").first().startsWith("Spider-Man"))
+    }
+
+    @Test fun frenchCopiesBeforeOtherLanguages() {
+        val r = find("spiderman", 10)
+        assertEquals("Spider-Man (2002) FHD MULTI", r.first())
+        assertTrue(r.indexOf("Spider-man (IT)") > r.indexOf("The Amazing Spider-Man (2012) HD VF"))
     }
 
     @Test fun exactTitleFirst() {

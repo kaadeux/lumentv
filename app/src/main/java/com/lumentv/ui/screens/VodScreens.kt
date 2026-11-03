@@ -981,14 +981,15 @@ private fun SeriesDetailTv(
             else -> list.firstOrNull()?.let { it to false }
         }
     }
-    Column(Modifier.fillMaxSize().padding(start = 4.dp, top = 24.dp)) {
+    var low by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().padding(start = 4.dp, top = 12.dp)) {
         val t = tmdbInfo(vm, s.s.name, true, s.s.tmdb, com.lumentv.core.Featured.year(s.s.year))
-        TitleArt(s.s.name, t?.logo, 36.sp, 110.dp)
+        TitleArt(s.s.name, t?.logo, if (low) 24.sp else 34.sp, if (low) 52.dp else 92.dp)
         Text((listOfNotNull(ratingText(t, s.s.rating)) + metaOf(null, s.s.year, if (seasons.isNotEmpty()) "${seasons.size} saison" + if (seasons.size > 1) "s" else "" else null, s.s.category)).joinToString("  ·  "),
             style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
-        s.s.plot?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 3,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 10.dp)) }
-        Row(Modifier.padding(top = 16.dp).focusMemory(buttons), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (!low) s.s.plot?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 2,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 8.dp)) }
+        Row(Modifier.padding(top = 12.dp).focusMemory(buttons), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             next?.let { (e, resume) ->
                 HeroButton("▶  " + (if (resume) "Reprendre" else "Lecture") + " S${e.season} E${e.episode}", primary = true,
                     modifier = Modifier.focusRequester(focus).remembered(buttons, first = true)) {
@@ -1005,10 +1006,11 @@ private fun SeriesDetailTv(
             }
         }
         // A series of which an episode was watched can be rated.
-        if (progress.isNotEmpty() || myStars > 0) com.lumentv.ui.components.StarRating(myStars, if (myStars > 0) "Votre note" else "Notez cette série",
+        if (!low && (progress.isNotEmpty() || myStars > 0)) com.lumentv.ui.components.StarRating(myStars, if (myStars > 0) "Votre note" else "Notez cette série",
             { n -> scope.launch { vm.graph.library.rate("se", playlistId, uid, n, s.s.name, s.s.cover); vm.show(if (n == 0) "Note retirée" else "Note enregistrée : $n/5") } },
-            Modifier.padding(top = 12.dp))
-        if (seasons.size > 1) Row(Modifier.padding(top = 14.dp).clip(RoundedCornerShape(26.dp)).background(Color(0x99141416)).padding(4.dp)) {
+            Modifier.padding(top = 8.dp))
+        Column(Modifier.weight(1f).onFocusChanged { low = it.hasFocus }) {
+        if (seasons.size > 1) Row(Modifier.padding(top = 10.dp).clip(RoundedCornerShape(26.dp)).background(Color(0x99141416)).padding(4.dp)) {
             LazyRow(Modifier.focusMemory(seasonMemory), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 items(seasons) { n ->
                     FocusSurface({ onSeason(n) }, Modifier.remembered(seasonMemory, first = n == season), shape = RoundedCornerShape(22.dp),
@@ -1021,11 +1023,11 @@ private fun SeriesDetailTv(
         when {
             eps == null -> Loading("Chargement des épisodes…")
             eps.isEmpty() -> EmptyState("Aucun épisode", error ?: "Le fournisseur ne liste aucun épisode pour cette série.")
-            else -> LazyRow(Modifier.padding(top = 14.dp).focusMemory(episodeMemory), horizontalArrangement = Arrangement.spacedBy(14.dp),
+            else -> LazyRow(Modifier.padding(top = 10.dp).focusMemory(episodeMemory), horizontalArrangement = Arrangement.spacedBy(14.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp)) {
                 items(eps.filter { it.season == season }, key = { it.id }) { e ->
                     val h = progress[e.uid]
-                    Column(Modifier.width(200.dp)) {
+                    Column(Modifier.width(184.dp)) {
                         FocusSurface({ PlayerLauncher.episode(context, playlistId, uid, e.uid, h != null && h.positionMs > 30_000 && !watched(e)) },
                             Modifier.fillMaxWidth().aspectRatio(16f / 9f).remembered(episodeMemory, first = e === eps.firstOrNull { it.season == season }), onLongClick = { onMenu(e) }, focusedScale = 1.06f, shape = RoundedCornerShape(10.dp)) {
                             Poster(e.image ?: s.s.backdrop ?: s.s.cover, e.title, Modifier.fillMaxSize())
@@ -1041,7 +1043,8 @@ private fun SeriesDetailTv(
             }
         }
         Text(com.lumentv.ui.components.hint("Maintenez OK sur un épisode : vu / non vu, télécharger", ""), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim,
-            modifier = Modifier.padding(top = 6.dp))
+            modifier = Modifier.padding(top = 2.dp))
+        }
     }
     LaunchedEffect(s.s.id, next != null) { delay(80); runCatching { focus.requestFocus() } }
 }

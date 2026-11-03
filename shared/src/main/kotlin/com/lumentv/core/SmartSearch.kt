@@ -12,6 +12,8 @@ object SmartSearch {
         val norm: String = Featured.baseTitle(title).ifBlank { normalize(title) }
         val compact: String = norm.replace(" ", "")
         val words: List<String> = norm.split(' ').filter { it.isNotEmpty() }
+        /** Marked for another language than French ("(IT)", "[ES]", "SUBT AR", "ENG"…): goes after the other copies. */
+        val otherLanguage: Boolean = otherLang.containsMatchIn(title)
         private val wordCompacts = words.map { it }
         internal fun firstLetters(): Set<Char> = (wordCompacts.mapNotNull { it.firstOrNull() } + listOfNotNull(compact.firstOrNull())).toSet()
     }
@@ -24,6 +26,8 @@ object SmartSearch {
         val typos: Int = when { compact.length < 4 -> 0; compact.length < 7 -> 1; else -> 2 }
         val valid get() = compact.length >= 2
     }
+
+    private val otherLang = Regex("[(\\[](IT|ITA|ES|ESP|DE|GER|PT|BR|NL|PL|TR|RU|EN|ENG|US|UK|AR)[)\\]]|\\bSUBT\\s+AR\\b|\\b(ITA|ESP)\\b", RegexOption.IGNORE_CASE)
 
     const val EXACT = 1000
     const val START = 900
@@ -44,8 +48,9 @@ object SmartSearch {
             q.typos > 0 && close(q, e) -> CLOSE
             else -> return 0
         }
-        // Same level: the title nearer the query's length first ("Batman" before "Batman: The Killing Joke").
-        return level - (e.compact.length - q.compact.length).coerceIn(0, 60)
+        // Same level: the title nearer the query's length first ("Batman" before "Batman: The Killing Joke"); a copy in
+        // another language after the French ones.
+        return level - (e.compact.length - q.compact.length).coerceIn(0, 60) - (if (e.otherLanguage) 400 else 0)
     }
 
     /** The best [limit] entries, best first. */

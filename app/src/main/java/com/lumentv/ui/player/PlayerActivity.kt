@@ -316,7 +316,15 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
                     AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> { vm.zap(1); true }
                     AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_CHANNEL_DOWN -> { vm.zap(-1); true }
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                        if (state.error != null) c.retryNow() else if (lagButton) c.goLive() else if (infoVisible) panel = Panel.CHANNELS else showInfo(); true
+                        // OK: the bar first, then pause; paused, OK plays on from there (then "Revenir au direct" catches up).
+                        when {
+                            state.error != null -> c.retryNow()
+                            state.pausedLive -> { c.player.play(); showInfo() }
+                            lagButton -> c.goLive()
+                            infoVisible -> { c.player.pause(); showInfo(60_000) }
+                            else -> showInfo()
+                        }
+                        true
                     }
                     AndroidKeyEvent.KEYCODE_DPAD_LEFT, AndroidKeyEvent.KEYCODE_GUIDE, AndroidKeyEvent.KEYCODE_TV_INPUT -> { panel = Panel.CHANNELS; true }
                     AndroidKeyEvent.KEYCODE_DPAD_RIGHT, AndroidKeyEvent.KEYCODE_MENU, AndroidKeyEvent.KEYCODE_SETTINGS -> { panel = Panel.OPTIONS; true }
@@ -444,8 +452,9 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
         if (panel == Panel.NONE && lagButton) {
             Box(Modifier.fillMaxSize().padding(end = if (phone) 20.dp else 48.dp, bottom = if (infoVisible) (if (phone) 110.dp else 150.dp) else (if (phone) 24.dp else 48.dp)),
                 contentAlignment = Alignment.BottomEnd) {
-                val what = if (state.pausedLive) "En pause" else "${state.lagMs / 1000} s de retard"
-                Text("$what · Revenir au direct" + if (phone) "" else "  (OK)", style = MaterialTheme.typography.labelLarge, color = Color.White,
+                val label = if (state.pausedLive) "En pause" + if (phone) "" else " · OK : reprendre"
+                    else "${state.lagMs / 1000} s de retard · Revenir au direct" + if (phone) "" else "  (OK)"
+                Text(label, style = MaterialTheme.typography.labelLarge, color = Color.White,
                     modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(Palette.Scrim).then(if (phone) Modifier.clickable { c.goLive() } else Modifier)
                         .padding(horizontal = 16.dp, vertical = 8.dp))
             }
@@ -589,7 +598,7 @@ private fun LiveInfoBar(vm: PlayerViewModel, videoInfo: String?, lagMs: Long) {
                     Text("Pas d'information de programme", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
                 }
             }
-            Text("◀ Liste   ▶ Options   ▲▼ Chaînes", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            Text("OK Pause   ◀ Liste   ▶ Options   ▲▼ Chaînes", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         }
     }
 }
