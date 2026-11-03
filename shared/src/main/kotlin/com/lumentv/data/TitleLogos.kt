@@ -1,0 +1,62 @@
+package com.lumentv.data
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
+
+/**
+ * The title of a film or series as its poster writes it (the logo: "SUPERMAN", "STRANGER THINGS"), from TMDB with a
+ * free personal key. French logo first, then English, then one without words. Found by the TMDB id when the provider
+ * gives it, else by the title and the year. Kept for the session, the absence of a logo too.
+ */
+class TitleLogos(http: OkHttpClient, private val key: String) {
+    private val http = http.newBuilder().callTimeout(8, TimeUnit.SECONDS).build()
+    private val json = Json { ignoreUnknownKeys = true }
+    private val cache = object : LinkedHashMap<String, String?>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>?) = size > 600
+    }
+
+    val enabled get() = key.isNotBlank()
+
+    fun cached(series: Boolean, tmdb: String?, title: String, year: Int?): String? = synchronized(cache) { cache[keyOf(series, tmdb, title, year)] }
+
+    /** The logo's URL, or null when TMDB has none (or no key). Blocking: call it off the main thread. */
+    fun logo(series: Boolean, tmdb: String?, title: String, year: Int?): String? {
+        if (!enabled) return null
+        val k = keyOf(series, tmdb, title, year)
+        synchronized(cache) { if (cache.containsKey(k)) return cache[k] }
+        val found = runCatching {
+            val kind = if (series) "tv" else "movie"
+            val id = tmdb ?: search(kind, title, year) ?: return@runCatching null
+            val images = get("https://api.themoviedb.org/3/$kind/$id/images", "include_image_language" to "fr,en,null") ?: return@runCatching null
+            val logos = (images["logos"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            val best = listOf("fr", "en", null).firstNotNullOfOrNull { lang -> logos.firstOrNull { it.s("iso_639_1") == lang } } ?: return@runCatching null
+            best.s("file_path")?.let { "https://image.tmdb.org/t/p/w500$it" }
+        }.getOrNull()
+        synchronized(cache) { cache[k] = found }
+        return found
+    }
+
+    private fun search(kind: String, title: String, year: Int?): String? {
+        val params = listOfNotNull("query" to title, "language" to "fr-FR", year?.let { (if (kind == "tv") "first_air_date_year" else "year") to it.toString() })
+        val r = get("https://api.themoviedb.org/3/search/$kind", *params.toTypedArray()) ?: return null
+        val first = (r["results"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return null
+        return first["id"]?.let { (it as? JsonPrimitive)?.contentOrNull }
+    }
+
+    private fun get(url: String, vararg params: Pair<String, String>): JsonObject? {
+        val u = url.toHttpUrl().newBuilder().addQueryParameter("api_key", key).apply { params.forEach { (k, v) -> addQueryParameter(k, v) } }.build()
+        return http.newCall(Request.Builder().url(u).build()).execute().use { r ->
+            if (!r.isSuccessful) null else json.parseToJsonElement(r.body!!.string()) as? JsonObject
+        }
+    }
+
+    private fun keyOf(series: Boolean, tmdb: String?, title: String, year: Int?) = (if (series) "tv" else "mv") + "|" + (tmdb ?: "$title|$year")
+    private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.contentOrNull
+}

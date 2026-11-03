@@ -31,6 +31,8 @@ android {
         if (channel == "dev") versionNameSuffix = "-dev"
         buildConfigField("String", "CHANNEL", "\"$channel\"")
         buildConfigField("String", "SYNC_URL", "\"${localProp("lumen.syncUrl").trim()}\"")
+        // TMDB key (free, read only): the titles' logos for the banners and pages. Empty = the title in text.
+        buildConfigField("String", "TMDB_KEY", "\"${localProp("lumen.tmdbKey").trim()}\"")
         buildConfigField("String", "UPDATE_URL", "\"${localProp("lumen.updateUrl").trim().replace("/main/", "/$channel/")}\"")
     }
 

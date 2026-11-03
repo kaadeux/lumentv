@@ -48,7 +48,9 @@ data class XSeries(val seriesId: Long, val name: String, val categoryId: String?
 data class XEpisode(val id: Long, val title: String, val season: Int, val episode: Int, val ext: String?, val image: String?, val plot: String?, val durationSecs: Int)
 data class XVodInfo(val plot: String?, val durationSecs: Int, val genre: String?, val cast: String?, val director: String?, val releaseDate: String?,
                     /** A wide picture of the film (backdrop), for the page and the banner; null when the provider has none. */
-                    val backdrop: String? = null, val rating: String? = null)
+                    val backdrop: String? = null, val rating: String? = null,
+                    /** The film's TMDB id when the provider gives it. */
+                    val tmdb: String? = null)
 
 /** Xtream Codes `player_api.php` client. Lists are read as a stream, element by element. */
 class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredentials, private val userAgent: String?) {
@@ -126,6 +128,7 @@ class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredent
             genre = info.str("genre"), cast = info.str("cast") ?: info.str("actors"),
             director = info.str("director"), releaseDate = info.str("releasedate") ?: info.str("release_date"),
             backdrop = info.backdrop(), rating = info.str("rating")?.takeIf { it != "0" && it.isNotBlank() },
+            tmdb = (info.str("tmdb_id") ?: info.str("tmdb"))?.takeIf { it.isNotBlank() && it != "0" },
         )
     }
 

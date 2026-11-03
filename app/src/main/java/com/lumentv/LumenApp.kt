@@ -49,6 +49,7 @@ class AppGraph(app: Application) {
     val library = LibraryRepository(db)
     val resolver = StreamResolver(playlists)
     val artwork = com.lumentv.data.repo.Artwork(playlists)
+    val logos = com.lumentv.data.TitleLogos(http, com.lumentv.BuildConfig.TMDB_KEY)
     val backup = BackupManager(app, db, settings)
     val updater = com.lumentv.update.Updater(app, http)
     val transfers = com.lumentv.transfer.TransferRepository(app, db)

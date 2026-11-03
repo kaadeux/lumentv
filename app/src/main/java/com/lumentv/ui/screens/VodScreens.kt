@@ -739,6 +739,8 @@ private class HeroItem(
     val key: String, val title: String, val meta: List<String>, val plot: String?, val image: String?,
     val movie: com.lumentv.data.db.MovieEntity? = null, val playLabel: String = "Lecture",
     val play: () -> Unit, val more: () -> Unit,
+    /** For the title's logo (TMDB). */
+    val series: Boolean = false, val tmdb: String? = null, val year: Int? = null,
 )
 
 private class HomeTile(val key: String, val title: String, val image: String?, val progress: Float?, val hero: HeroItem,
@@ -757,7 +759,7 @@ private fun movieTile(vm: MainViewModel, rowKey: String, r: MovieRow, progress: 
     val pid = r.m.playlistId
     return HomeTile("$rowKey:m:${r.m.uid}", r.m.name, r.m.poster, progress,
         HeroItem("m:${r.m.uid}", r.m.name.substringBefore(" (").trim(), metaOf(r.m.rating, com.lumentv.core.Featured.yearOf(r.m.year, r.m.name)?.toString()), null, r.m.poster,
-            movie = r.m, playLabel = if (progress != null) "Reprendre" else "Lecture",
+            movie = r.m, playLabel = if (progress != null) "Reprendre" else "Lecture", year = com.lumentv.core.Featured.yearOf(r.m.year, r.m.name),
             play = { PlayerLauncher.movie(context, pid, r.m.uid, progress != null) }, more = { vm.openFrom("$rowKey:m:${r.m.uid}", Screen.MovieDetail(pid, r.m.uid)) }),
         onClick = { vm.openFrom("$rowKey:m:${r.m.uid}", Screen.MovieDetail(pid, r.m.uid)) },
         onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(pid, PrefKind.MOVIE, r.m.uid); vm.show(if (f) "Ajouté aux favoris" else "Retiré des favoris") } })
@@ -770,7 +772,7 @@ private fun seriesTile(vm: MainViewModel, rowKey: String, r: SeriesRow): HomeTil
     val open = { vm.openFrom("$rowKey:s:${r.s.uid}", Screen.SeriesDetail(pid, r.s.uid)) }
     return HomeTile("$rowKey:s:${r.s.uid}", r.s.name, r.s.cover, null,
         HeroItem("s:${r.s.uid}", r.s.name, metaOf(r.s.rating, r.s.year, r.s.category), r.s.plot, r.s.backdrop ?: r.s.cover,
-            playLabel = "Voir la série", play = open, more = open),
+            playLabel = "Voir la série", play = open, more = open, series = true, tmdb = r.s.tmdb, year = com.lumentv.core.Featured.year(r.s.year)),
         onClick = open,
         onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(pid, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } })
 }
@@ -779,7 +781,7 @@ private fun seriesTile(vm: MainViewModel, rowKey: String, r: SeriesRow): HomeTil
 private fun resumeTile(vm: MainViewModel, r: ResumeItem, series: Boolean, onLong: () -> Unit): HomeTile =
     HomeTile("resume:${r.key}", r.title, r.image, r.progress,
         HeroItem("r:${r.key}", r.title, listOfNotNull(r.line), if (series) "Reprendre là où vous en étiez." else null, r.image,
-            playLabel = "Reprendre", play = r.play, more = r.play),
+            playLabel = "Reprendre", play = r.play, more = r.play, series = series),
         onClick = r.play, onLong = onLong)
 
 /**
@@ -799,7 +801,7 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
     }
     ScreenBackdrop(info?.backdrop ?: hero?.image)
     Column(Modifier.fillMaxSize()) {
-        if (hero != null) Hero(hero, info, actions)
+        if (hero != null) Hero(vm, hero, info, actions)
         // Rows arriving late (resume, featured) go above the categories: the list then shows the top, unless it is in use.
         val list = androidx.compose.foundation.lazy.rememberLazyListState()
         var inUse by remember { mutableStateOf(false) }
@@ -823,10 +825,9 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
 }
 
 @Composable
-private fun Hero(h: HeroItem, info: XVodInfo?, actions: @Composable () -> Unit) {
+private fun Hero(vm: MainViewModel, h: HeroItem, info: XVodInfo?, actions: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().height(232.dp).padding(start = 4.dp, top = 8.dp), verticalArrangement = Arrangement.Bottom) {
-        Text(h.title, fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            lineHeight = 38.sp, modifier = Modifier.fillMaxWidth(0.6f))
+        TitleArt(vm, h.title, h.series, h.tmdb ?: info?.tmdb, h.year, 30.sp, 84.dp)
         val meta = h.meta + listOfNotNull(info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(2)?.joinToString(" • ") { it.trim() })
         if (meta.isNotEmpty()) Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.85f),
             maxLines = 1, modifier = Modifier.padding(top = 6.dp))
@@ -888,8 +889,7 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
     ScreenBackdrop(info?.backdrop ?: m.m.poster)
 
     Column(Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(start = 4.dp, top = 40.dp)) {
-        Text(m.m.name.substringBefore(" (").trim(), fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 2, lineHeight = 40.sp,
-            modifier = Modifier.fillMaxWidth(0.62f))
+        TitleArt(vm, m.m.name.substringBefore(" (").trim(), false, info?.tmdb, com.lumentv.core.Featured.yearOf(m.m.year, m.m.name), 36.sp, 110.dp)
         val meta = metaOf(m.m.rating, com.lumentv.core.Featured.yearOf(m.m.year ?: info?.releaseDate, m.m.name)?.toString(),
             info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(3)?.joinToString(" • ") { it.trim() })
         Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
@@ -954,7 +954,7 @@ private fun SeriesDetailTv(
         }
     }
     Column(Modifier.fillMaxSize().padding(start = 4.dp, top = 24.dp)) {
-        Text(s.s.name, fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 2, lineHeight = 40.sp, modifier = Modifier.fillMaxWidth(0.62f))
+        TitleArt(vm, s.s.name, true, s.s.tmdb, com.lumentv.core.Featured.year(s.s.year), 36.sp, 110.dp)
         Text(metaOf(s.s.rating, s.s.year, if (seasons.isNotEmpty()) "${seasons.size} saison" + if (seasons.size > 1) "s" else "" else null, s.s.category).joinToString("  ·  "),
             style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
         s.s.plot?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 3,
@@ -1008,4 +1008,22 @@ private fun SeriesDetailTv(
             modifier = Modifier.padding(top = 6.dp))
     }
     LaunchedEffect(s.s.id, next != null) { delay(80); runCatching { focus.requestFocus() } }
+}
+
+/**
+ * The title as its poster writes it (the logo, from TMDB) when there is one, else in big letters. The text shows
+ * while the logo is looked for, so nothing jumps when there is none.
+ */
+@Composable
+private fun TitleArt(vm: MainViewModel, title: String, series: Boolean, tmdb: String?, year: Int?, size: androidx.compose.ui.unit.TextUnit, logoHeight: androidx.compose.ui.unit.Dp) {
+    val clean = title.substringBefore(" (").substringBefore(" [").trim()
+    val logo by produceState(vm.graph.logos.cached(series, tmdb, clean, year), series, tmdb, clean, year) {
+        value = withContext(Dispatchers.IO) { vm.graph.logos.logo(series, tmdb, clean, year) }
+    }
+    androidx.compose.animation.Crossfade(logo, label = "title") { url ->
+        if (url != null) coil.compose.AsyncImage(url, clean, contentScale = androidx.compose.ui.layout.ContentScale.Fit, alignment = Alignment.BottomStart,
+            modifier = Modifier.height(logoHeight).fillMaxWidth(0.42f))
+        else Text(clean, fontSize = size, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            lineHeight = size * 1.12f, modifier = Modifier.fillMaxWidth(0.6f))
+    }
 }
