@@ -18,29 +18,39 @@ import java.util.concurrent.TimeUnit
 class TitleLogos(http: OkHttpClient, private val key: String) {
     private val http = http.newBuilder().callTimeout(8, TimeUnit.SECONDS).build()
     private val json = Json { ignoreUnknownKeys = true }
-    private val cache = object : LinkedHashMap<String, String?>(256, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>?) = size > 600
+    /** What TMDB says of a title: its logo and its rating (out of 10, from its users' votes). */
+    class Info(val logo: String?, val rating: Double?, val votes: Int)
+
+    private val cache = object : LinkedHashMap<String, Info?>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Info?>?) = size > 600
     }
 
     val enabled get() = key.isNotBlank()
 
-    fun cached(series: Boolean, tmdb: String?, title: String, year: Int?): String? = synchronized(cache) { cache[keyOf(series, tmdb, title, year)] }
+    fun cached(series: Boolean, tmdb: String?, title: String, year: Int?): Info? = synchronized(cache) { cache[keyOf(series, tmdb, title, year)] }
 
-    /** The logo's URL, or null when TMDB has none (or no key). Blocking: call it off the main thread. */
-    fun logo(series: Boolean, tmdb: String?, title: String, year: Int?): String? {
+    /** Logo and rating (one request: the details with their images), null when TMDB does not know the title. Blocking. */
+    fun info(series: Boolean, tmdb: String?, title: String, year: Int?): Info? {
         if (!enabled) return null
         val k = keyOf(series, tmdb, title, year)
         synchronized(cache) { if (cache.containsKey(k)) return cache[k] }
         val found = runCatching {
             val kind = if (series) "tv" else "movie"
             val id = tmdb ?: search(kind, title, year) ?: return@runCatching null
-            val images = get("https://api.themoviedb.org/3/$kind/$id/images", "include_image_language" to "fr,en,null") ?: return@runCatching null
-            val logos = (images["logos"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
-            val best = listOf("fr", "en", null).firstNotNullOfOrNull { lang -> logos.firstOrNull { it.s("iso_639_1") == lang } } ?: return@runCatching null
-            best.s("file_path")?.let { "https://image.tmdb.org/t/p/w500$it" }
+            val d = get("https://api.themoviedb.org/3/$kind/$id", "append_to_response" to "images", "include_image_language" to "fr,en,null")
+                ?: return@runCatching null
+            val logos = ((d["images"] as? JsonObject)?.get("logos") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            val best = listOf("fr", "en", null).firstNotNullOfOrNull { lang -> logos.firstOrNull { it.s("iso_639_1") == lang } }
+            val votes = d.s("vote_count")?.toIntOrNull() ?: 0
+            Info(best?.s("file_path")?.let { "https://image.tmdb.org/t/p/w500$it" }, d.s("vote_average")?.toDoubleOrNull()?.takeIf { votes >= MIN_VOTES && it > 0 }, votes)
         }.getOrNull()
         synchronized(cache) { cache[k] = found }
         return found
+    }
+
+    companion object {
+        /** Fewer votes and the rating says little (an unknown film "10/10"): not shown. */
+        const val MIN_VOTES = 20
     }
 
     private fun search(kind: String, title: String, year: Int?): String? {

@@ -2,7 +2,6 @@
 
 package com.lumentv.ui.player
 
-import com.lumentv.ui.components.keepFocus
 import androidx.compose.foundation.clickable
 import com.lumentv.ui.components.panelWidth
 
@@ -649,7 +648,7 @@ private fun ChannelsPanel(vm: PlayerViewModel, onDismiss: () -> Unit) {
     val state = rememberLazyListState(initialFirstVisibleItemIndex = (vm.index - 3).coerceAtLeast(0))
     val epgVersion by vm.graph.epg.version.collectAsStateWithLifecycle()
     Row(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xF0000000), Color(0xB0000000), Color.Transparent)))) {
-        LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.width(330.dp).fillMaxHeight().padding(start = 24.dp, top = 24.dp, bottom = 24.dp).keepFocus()) {
+        LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.width(330.dp).fillMaxHeight().padding(start = 24.dp, top = 24.dp, bottom = 24.dp)) {
             itemsIndexed(list, key = { _, r -> r.ch.id }) { i, row ->
                 val nn by produceState<com.lumentv.data.repo.NowNext?>(null, row.ch.id, epgVersion) { value = vm.graph.epg.nowNext(row) }
                 FocusSurface(

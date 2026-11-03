@@ -92,11 +92,15 @@ fun TopNav(tabs: List<TopTab>, icons: List<TopIcon>, selected: Screen, first: Fo
         }
         Spacer(Modifier.weight(1f))
         val current = tabs.firstOrNull { it.screen == selected }
+        val last = remember { FocusRequester() }
+        // Entering the tabs: from the icons on their right, the last tab (the nearest); from the screen below, the current one.
         Row(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xCC17171A)).border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(30.dp))
-            .padding(4.dp).focusProperties { enter = { first } }.focusGroup(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            .padding(4.dp).focusProperties { enter = { dir -> if (dir == androidx.compose.ui.focus.FocusDirection.Left && tabs.last().screen != selected && current != null) last else first } }.focusGroup(),
+            horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             tabs.forEach { t ->
                 val on = t.screen == selected
-                FocusSurface({ onSelect(t.screen) }, Modifier.then(if (on || (current == null && t === tabs.first())) Modifier.focusRequester(first) else Modifier),
+                FocusSurface({ onSelect(t.screen) }, Modifier.then(if (on || (current == null && t === tabs.first())) Modifier.focusRequester(first) else Modifier)
+                    .then(if (t === tabs.last() && !(on || (current == null && t === tabs.first()))) Modifier.focusRequester(last) else Modifier),
                     shape = RoundedCornerShape(26.dp), container = if (on) Color(0x33FFFFFF) else Color.Transparent, focusedScale = 1.04f) {
                     Text(t.label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
                     if (on) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp).size(4.dp).clip(CircleShape).background(Palette.Accent))

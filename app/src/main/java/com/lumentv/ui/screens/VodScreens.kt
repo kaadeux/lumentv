@@ -10,7 +10,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.focus.onFocusChanged
 import com.lumentv.ui.components.enterHere
 import com.lumentv.ui.components.enterOn
-import com.lumentv.ui.components.keepFocus
 import com.lumentv.ui.components.ButtonRow
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
@@ -181,7 +180,8 @@ fun MoviesScreen(vm: MainViewModel) {
     TopOnChange(movieGrid, cat)
     // Put forward above "Ajoutés récemment": new, best rated, more of the last film watched.
     val lastMovie = remember(history, p.id) { history.firstOrNull { it.kind == HistoryKind.MOVIE && it.playlistId == p.id }?.uid }
-    val shelves = memoState(vm, "shelves:m:${p.id}", p.id, changes, lastMovie) { vm.graph.library.featuredMovies(p.id, lastMovie) }
+    // TMDB's lists and recommendations from what was watched (playlist-only rows without the key); again when a film is watched.
+    val shelves = memoState(vm, "shelves:m:${p.id}", p.id, changes, lastMovie) { vm.graph.discover.movies(p.id, history) }
     val featured = cat == RECENT && filter.isBlank()
     KeepTop(movieGrid, if (featured) headerCount(resume.isNotEmpty(), shelves.size) else 0)
     val phone = com.lumentv.ui.LocalPhone.current
@@ -281,7 +281,7 @@ fun SeriesScreen(vm: MainViewModel) {
     var filter by androidx.compose.runtime.saveable.rememberSaveable(p.id, cat) { mutableStateOf("") }
     // Put forward above "Toutes les séries": new or with new episodes, best rated, more of the last series watched.
     val lastSeries = remember(history, p.id) { history.firstOrNull { it.kind == HistoryKind.EPISODE && it.playlistId == p.id }?.parentUid }
-    val shelves = memoState(vm, "shelves:s:${p.id}", p.id, changes, lastSeries) { vm.graph.library.featuredSeries(p.id, lastSeries) }
+    val shelves = memoState(vm, "shelves:s:${p.id}", p.id, changes, lastSeries) { vm.graph.discover.series(p.id, history) }
     val featured = cat == ALL && filter.isBlank()
     KeepTop(grid, if (featured) headerCount(resume.isNotEmpty(), shelves.size) else 0)
     val phone = com.lumentv.ui.LocalPhone.current
@@ -741,6 +741,8 @@ private class HeroItem(
     val play: () -> Unit, val more: () -> Unit,
     /** For the title's logo (TMDB). */
     val series: Boolean = false, val tmdb: String? = null, val year: Int? = null,
+    /** The provider's rating, shown when TMDB does not know the title. */
+    val rating: String? = null,
 )
 
 private class HomeTile(val key: String, val title: String, val image: String?, val progress: Float?, val hero: HeroItem,
@@ -758,7 +760,7 @@ private fun movieTile(vm: MainViewModel, rowKey: String, r: MovieRow, progress: 
     val scope = rememberCoroutineScope()
     val pid = r.m.playlistId
     return HomeTile("$rowKey:m:${r.m.uid}", r.m.name, r.m.poster, progress,
-        HeroItem("m:${r.m.uid}", r.m.name.substringBefore(" (").trim(), metaOf(r.m.rating, com.lumentv.core.Featured.yearOf(r.m.year, r.m.name)?.toString()), null, r.m.poster,
+        HeroItem("m:${r.m.uid}", r.m.name.substringBefore(" (").trim(), metaOf(null, com.lumentv.core.Featured.yearOf(r.m.year, r.m.name)?.toString()), null, r.m.poster, rating = r.m.rating,
             movie = r.m, playLabel = if (progress != null) "Reprendre" else "Lecture", year = com.lumentv.core.Featured.yearOf(r.m.year, r.m.name),
             play = { PlayerLauncher.movie(context, pid, r.m.uid, progress != null) }, more = { vm.openFrom("$rowKey:m:${r.m.uid}", Screen.MovieDetail(pid, r.m.uid)) }),
         onClick = { vm.openFrom("$rowKey:m:${r.m.uid}", Screen.MovieDetail(pid, r.m.uid)) },
@@ -771,7 +773,7 @@ private fun seriesTile(vm: MainViewModel, rowKey: String, r: SeriesRow): HomeTil
     val pid = r.s.playlistId
     val open = { vm.openFrom("$rowKey:s:${r.s.uid}", Screen.SeriesDetail(pid, r.s.uid)) }
     return HomeTile("$rowKey:s:${r.s.uid}", r.s.name, r.s.cover, null,
-        HeroItem("s:${r.s.uid}", r.s.name, metaOf(r.s.rating, r.s.year, r.s.category), r.s.plot, r.s.backdrop ?: r.s.cover,
+        HeroItem("s:${r.s.uid}", r.s.name, metaOf(null, r.s.year, r.s.category), r.s.plot, r.s.backdrop ?: r.s.cover, rating = r.s.rating,
             playLabel = "Voir la série", play = open, more = open, series = true, tmdb = r.s.tmdb, year = com.lumentv.core.Featured.year(r.s.year)),
         onClick = open,
         onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(pid, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } })
@@ -800,22 +802,31 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
         value = hero?.movie?.let { vm.graph.artwork.movie(it) }
     }
     ScreenBackdrop(info?.backdrop ?: hero?.image)
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    // Going down the rows, the banner shrinks to its title: more rows on screen.
+    var focusedRow by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    var rowsFocused by remember { mutableStateOf(false) }
+    val collapsed = rowsFocused && focusedRow > 0
     Column(Modifier.fillMaxSize()) {
-        if (hero != null) Hero(vm, hero, info, actions)
+        if (hero != null) Hero(vm, hero, info, actions, collapsed)
         // Rows arriving late (resume, featured) go above the categories: the list then shows the top, unless it is in use.
-        val list = androidx.compose.foundation.lazy.rememberLazyListState()
         var inUse by remember { mutableStateOf(false) }
         val shown = rows.filter { it.tiles.isNotEmpty() }
-        LaunchedEffect(shown.firstOrNull()?.key) { if (!inUse) list.scrollToItem(0) }
-        LazyColumn(Modifier.fillMaxSize().onFocusChanged { inUse = it.hasFocus }, state = list, verticalArrangement = Arrangement.spacedBy(2.dp),
+        // Only when a row really comes first (not on return from a film: the list then keeps its place and the poster its focus).
+        var firstKey by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+        LaunchedEffect(shown.firstOrNull()?.key) {
+            val k = shown.firstOrNull()?.key
+            if (k != firstKey) { if (firstKey != null && !inUse && vm.returnKey == null) list.scrollToItem(0); firstKey = k }
+        }
+        LazyColumn(Modifier.fillMaxSize().onFocusChanged { inUse = it.hasFocus; rowsFocused = it.hasFocus }, state = list, verticalArrangement = Arrangement.spacedBy(2.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 30.dp)) {
-            shown.forEach { row ->
+            shown.forEachIndexed { rowIndex, row ->
                 item(key = row.key) {
                     Column {
                         Text(row.title, style = MaterialTheme.typography.titleMedium, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(start = 4.dp, top = 6.dp))
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 10.dp)) {
-                            items(row.tiles, key = { it.key }) { t -> HomePoster(vm, t) { pending = t.hero } }
+                            items(row.tiles, key = { it.key }) { t -> HomePoster(vm, t) { pending = t.hero; focusedRow = rowIndex } }
                         }
                     }
                 }
@@ -825,17 +836,19 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
 }
 
 @Composable
-private fun Hero(vm: MainViewModel, h: HeroItem, info: XVodInfo?, actions: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().height(232.dp).padding(start = 4.dp, top = 8.dp), verticalArrangement = Arrangement.Bottom) {
-        TitleArt(vm, h.title, h.series, h.tmdb ?: info?.tmdb, h.year, 30.sp, 84.dp)
-        val meta = h.meta + listOfNotNull(info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(2)?.joinToString(" • ") { it.trim() })
+private fun Hero(vm: MainViewModel, h: HeroItem, info: XVodInfo?, actions: @Composable () -> Unit, collapsed: Boolean) {
+    val height by androidx.compose.animation.core.animateDpAsState(if (collapsed) 96.dp else 232.dp, label = "hero")
+    Column(Modifier.fillMaxWidth().height(height).padding(start = 4.dp, top = 8.dp), verticalArrangement = Arrangement.Bottom) {
+        val t = tmdbInfo(vm, h.title, h.series, h.tmdb ?: info?.tmdb, h.year)
+        TitleArt(h.title, t?.logo, if (collapsed) 22.sp else 30.sp, if (collapsed) 46.dp else 84.dp)
+        val meta = listOfNotNull(ratingText(t, h.rating ?: info?.rating)) + h.meta + listOfNotNull(info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(2)?.joinToString(" • ") { it.trim() })
         if (meta.isNotEmpty()) Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.85f),
             maxLines = 1, modifier = Modifier.padding(top = 6.dp))
-        (info?.plot ?: h.plot)?.takeIf { it.isNotBlank() }?.let {
+        if (!collapsed) (info?.plot ?: h.plot)?.takeIf { it.isNotBlank() }?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.9f), maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(0.52f).padding(top = 6.dp))
         }
-        Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (!collapsed) Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             HeroButton("▶  " + h.playLabel, primary = true, onClick = h.play)
             HeroButton("Plus d'infos", onClick = h.more)
             actions()
@@ -889,8 +902,9 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
     ScreenBackdrop(info?.backdrop ?: m.m.poster)
 
     Column(Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(start = 4.dp, top = 40.dp)) {
-        TitleArt(vm, m.m.name.substringBefore(" (").trim(), false, info?.tmdb, com.lumentv.core.Featured.yearOf(m.m.year, m.m.name), 36.sp, 110.dp)
-        val meta = metaOf(m.m.rating, com.lumentv.core.Featured.yearOf(m.m.year ?: info?.releaseDate, m.m.name)?.toString(),
+        val t = tmdbInfo(vm, m.m.name, false, info?.tmdb, com.lumentv.core.Featured.yearOf(m.m.year, m.m.name))
+        TitleArt(m.m.name, t?.logo, 36.sp, 110.dp)
+        val meta = listOfNotNull(ratingText(t, m.m.rating)) + metaOf(null, com.lumentv.core.Featured.yearOf(m.m.year ?: info?.releaseDate, m.m.name)?.toString(),
             info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(3)?.joinToString(" • ") { it.trim() })
         Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
         Text(info?.plot ?: "Aucun résumé disponible.", style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 4,
@@ -954,8 +968,9 @@ private fun SeriesDetailTv(
         }
     }
     Column(Modifier.fillMaxSize().padding(start = 4.dp, top = 24.dp)) {
-        TitleArt(vm, s.s.name, true, s.s.tmdb, com.lumentv.core.Featured.year(s.s.year), 36.sp, 110.dp)
-        Text(metaOf(s.s.rating, s.s.year, if (seasons.isNotEmpty()) "${seasons.size} saison" + if (seasons.size > 1) "s" else "" else null, s.s.category).joinToString("  ·  "),
+        val t = tmdbInfo(vm, s.s.name, true, s.s.tmdb, com.lumentv.core.Featured.year(s.s.year))
+        TitleArt(s.s.name, t?.logo, 36.sp, 110.dp)
+        Text((listOfNotNull(ratingText(t, s.s.rating)) + metaOf(null, s.s.year, if (seasons.isNotEmpty()) "${seasons.size} saison" + if (seasons.size > 1) "s" else "" else null, s.s.category)).joinToString("  ·  "),
             style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
         s.s.plot?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 3,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 10.dp)) }
@@ -1010,16 +1025,27 @@ private fun SeriesDetailTv(
     LaunchedEffect(s.s.id, next != null) { delay(80); runCatching { focus.requestFocus() } }
 }
 
+/** What TMDB says of a title (logo, rating), asked in the background and kept for the session. */
+@Composable
+private fun tmdbInfo(vm: MainViewModel, title: String, series: Boolean, tmdb: String?, year: Int?): com.lumentv.data.TitleLogos.Info? {
+    val clean = title.substringBefore(" (").substringBefore(" [").trim()
+    val info by produceState(vm.graph.logos.cached(series, tmdb, clean, year), series, tmdb, clean, year) {
+        value = withContext(Dispatchers.IO) { vm.graph.logos.info(series, tmdb, clean, year) }
+    }
+    return info
+}
+
+/** "★ 7,3" from TMDB when it knows the title, else the provider's rating. */
+private fun ratingText(tmdb: com.lumentv.data.TitleLogos.Info?, provider: String?): String? =
+    (tmdb?.rating ?: com.lumentv.core.Featured.rating(provider))?.let { "★ " + "%.1f".format(java.util.Locale.FRANCE, it) }
+
 /**
  * The title as its poster writes it (the logo, from TMDB) when there is one, else in big letters. The text shows
  * while the logo is looked for, so nothing jumps when there is none.
  */
 @Composable
-private fun TitleArt(vm: MainViewModel, title: String, series: Boolean, tmdb: String?, year: Int?, size: androidx.compose.ui.unit.TextUnit, logoHeight: androidx.compose.ui.unit.Dp) {
+private fun TitleArt(title: String, logo: String?, size: androidx.compose.ui.unit.TextUnit, logoHeight: androidx.compose.ui.unit.Dp) {
     val clean = title.substringBefore(" (").substringBefore(" [").trim()
-    val logo by produceState(vm.graph.logos.cached(series, tmdb, clean, year), series, tmdb, clean, year) {
-        value = withContext(Dispatchers.IO) { vm.graph.logos.logo(series, tmdb, clean, year) }
-    }
     androidx.compose.animation.Crossfade(logo, label = "title") { url ->
         if (url != null) coil.compose.AsyncImage(url, clean, contentScale = androidx.compose.ui.layout.ContentScale.Fit, alignment = Alignment.BottomStart,
             modifier = Modifier.height(logoHeight).fillMaxWidth(0.42f))

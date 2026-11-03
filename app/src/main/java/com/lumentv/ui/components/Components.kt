@@ -2,12 +2,12 @@
 
 package com.lumentv.ui.components
 
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -63,13 +63,6 @@ fun ButtonRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 @Composable
 fun hint(tv: String, phone: String) = if (com.lumentv.ui.LocalPhone.current) phone else tv
 
-/**
- * A list or column the remote enters and leaves: coming back to it lands on the entry it was left from (the category
- * chosen, the channel, the poster), not on whichever is nearest on screen.
- */
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-fun Modifier.keepFocus(): Modifier = this.then(Modifier.focusRestorer())
-
 /** The entry a column is entered on (the category or group chosen); see [enterOn] and [enterHere]. */
 class EnterTarget {
     val requester = androidx.compose.ui.focus.FocusRequester()
@@ -101,12 +94,18 @@ fun Modifier.enterHere(t: EnterTarget): Modifier {
 fun Modifier.returnFocus(vm: com.lumentv.ui.MainViewModel, key: String): Modifier {
     if (vm.returnKey != key) return this
     val r = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+    var got by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(60)
-        runCatching { r.requestFocus() }
+        // The screen is put back in place first (lists, rows): try a few times until the poster takes the focus.
+        repeat(10) {
+            kotlinx.coroutines.delay(60)
+            runCatching { r.requestFocus() }
+            kotlinx.coroutines.delay(20)
+            if (got) { vm.returnKey = null; return@LaunchedEffect }
+        }
         vm.returnKey = null
     }
-    return this.then(Modifier.focusRequester(r))
+    return this.then(Modifier.focusRequester(r).onFocusChanged { if (it.isFocused) got = true })
 }
 
 /** A panel's width on the TV; the whole width on a phone (dialogs, empty states). */

@@ -9,7 +9,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
 import com.lumentv.ui.components.enterHere
 import com.lumentv.ui.components.enterOn
-import com.lumentv.ui.components.keepFocus
 import com.lumentv.ui.components.hint
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -137,7 +136,7 @@ fun LiveScreen(vm: MainViewModel) {
                 )
                 else -> {
                     val state = rememberLazyListState()
-                    LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize().keepFocus()) {
+                    LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize()) {
                         items(list, key = { it.ch.id }) { row ->
                             ChannelItem(
                                 vm, row, epgVersion,
@@ -361,7 +360,6 @@ private fun androidx.compose.foundation.layout.ColumnScope.LivePreview(vm: MainV
     // The channel itself plays in the card once the focus rests on it; its programme is written over the picture.
     Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(18.dp))
         .background(Brush.linearGradient(listOf(Color(0xFF2A1E19), Color(0xFF15161A), Color(0xFF101114))))) {
-        Box(Modifier.align(Alignment.Center), contentAlignment = Alignment.Center) { Logo(row.ch.logo, row.ch.name, size = 96.dp) }
         LiveVideo(vm, row)
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x99000000), 0.25f to Color.Transparent, 0.45f to Color.Transparent, 1f to Color(0xEE000000))))
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -399,8 +397,9 @@ private fun androidx.compose.foundation.layout.ColumnScope.LivePreview(vm: MainV
 
 /**
  * The focused channel playing in the preview card, without sound, once the focus has rested on it for a moment (a
- * quick scroll does not open every channel). One stream at a time: it stops when the focus moves, when the full-screen
- * player opens (the menus go to the background) and while the mini-player plays.
+ * quick scroll does not open every channel). One player for the whole screen: moving to another channel stops the
+ * stream at once and closes its connection (the provider then frees the screen sooner), so the next one comes quicker.
+ * It stops when the full-screen player opens (the menus go to the background) and while the mini-player plays.
  */
 @Composable
 private fun LiveVideo(vm: MainViewModel, row: ChannelRow) {
@@ -408,27 +407,22 @@ private fun LiveVideo(vm: MainViewModel, row: ChannelRow) {
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     val mini by vm.graph.miniPlayer.collectAsStateWithLifecycle()
     var controller by remember { mutableStateOf<com.lumentv.player.PlayerController?>(null) }
+    var shownId by remember { mutableStateOf(0L) }
     var started by remember { mutableStateOf(false) }
-    androidx.compose.runtime.DisposableEffect(row.ch.id, mini, lifecycle) {
-        var job: kotlinx.coroutines.Job? = null
+    androidx.compose.runtime.DisposableEffect(mini, lifecycle) {
         fun release() {
-            job?.cancel(); job = null
             controller?.let { com.lumentv.data.xtream.ScreenGuard.stopped(); it.release() }
-            controller = null; started = false
+            controller = null; started = false; shownId = 0
+            closeIdle(vm)
             PreviewStream.stop = {}
         }
         fun create() {
-            // Once: the observer is also told ON_START when it is added.
-            if (mini != null || controller != null || job != null) return
-            job = vm.viewModelScope.launch {
-                kotlinx.coroutines.delay(900)
-                val c = com.lumentv.player.PlayerController(context, vm.graph.streamHttp, vm.graph.settings.current())
-                c.player.volume = 0f
-                controller = c
-                com.lumentv.data.xtream.ScreenGuard.started()
-                PreviewStream.stop = ::release
-                runCatching { c.play(vm.graph.resolver.channel(row.ch)) }
-            }
+            if (mini != null || controller != null) return
+            val c = com.lumentv.player.PlayerController(context, vm.graph.streamHttp, kotlinx.coroutines.runBlocking { vm.graph.settings.current() })
+            c.player.volume = 0f
+            controller = c
+            com.lumentv.data.xtream.ScreenGuard.started()
+            PreviewStream.stop = ::release
         }
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
             if (e == androidx.lifecycle.Lifecycle.Event.ON_START) create()
@@ -437,19 +431,38 @@ private fun LiveVideo(vm: MainViewModel, row: ChannelRow) {
         lifecycle.addObserver(obs)
         onDispose { lifecycle.removeObserver(obs); release() }
     }
-    val c = controller ?: return
+    val c = controller
+    // The channel's logo until its picture is there.
+    val cover: @Composable () -> Unit = {
+        Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF2A1E19), Color(0xFF15161A), Color(0xFF101114)))), contentAlignment = Alignment.Center) {
+            Logo(row.ch.logo, row.ch.name, size = 96.dp)
+        }
+    }
+    if (c == null) return cover()
+    LaunchedEffect(c, row.ch.id) {
+        // The channel left: its stream stops now and its connection is closed, not left open behind the new one.
+        if (shownId != row.ch.id) { started = false; c.player.stop(); closeIdle(vm) }
+        kotlinx.coroutines.delay(600)
+        shownId = row.ch.id
+        runCatching { c.play(vm.graph.resolver.channel(row.ch)) }
+    }
     val st by c.state.collectAsStateWithLifecycle()
-    LaunchedEffect(st.playing) { if (st.playing) started = true }
-    // Shown once the first picture is there, so the logo stays until then (no black frame).
-    if (started) androidx.compose.ui.viewinterop.AndroidView(
+    LaunchedEffect(st.playing, shownId) { if (st.playing && shownId == row.ch.id) started = true }
+    // The picture stays attached to the player the whole time (switching channels keeps it); the logo covers it
+    // until the new channel's first frames.
+    androidx.compose.ui.viewinterop.AndroidView(
         factory = { androidx.media3.ui.PlayerView(it).apply {
             useController = false; resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM; isFocusable = false
-            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT); setKeepContentOnPlayerReset(false)
         } },
         update = { if (it.player !== c.player) it.player = c.player },
         modifier = Modifier.fillMaxSize(),
     )
+    if (!started) cover()
 }
+
+/** Closes the connections left open (a socket's close writes to the network: off the main thread). */
+private fun closeIdle(vm: MainViewModel) { vm.graph.appScope.launch(kotlinx.coroutines.Dispatchers.IO) { vm.graph.streamHttp.connectionPool.evictAll() } }
 
 /** Stops the preview's stream at once (before the full-screen player opens). */
 object PreviewStream {
