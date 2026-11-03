@@ -104,6 +104,8 @@ data class SeriesEntity(
     val tmdb: String? = null,
     /** Last change on the provider's side (new series or new episodes), epoch ms; 0 = unknown. */
     @androidx.room.ColumnInfo(defaultValue = "0") val updatedAt: Long = 0,
+    /** A wide picture of the series for the banner and its page; null until the next refresh, or when the provider has none. */
+    val backdrop: String? = null,
 )
 
 /** Episodes: stored from the M3U, or fetched on demand from Xtream (get_series_info) and cached. */

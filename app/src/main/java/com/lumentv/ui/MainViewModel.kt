@@ -86,7 +86,11 @@ class MainViewModel(val graph: AppGraph) : ViewModel() {
     /** Set when Back closes a sub-screen, so the screen underneath gets the focus again (not the menu). */
     var focusContent = false
 
+    /** A screen's own Back first (a category of Films back to its home…): true when it used it. */
+    var backHook: (() -> Boolean)? = null
+
     fun back(): Boolean {
+        if (backHook?.invoke() == true) return true
         if (stack.size > 1) { stack.removeAt(stack.lastIndex); focusContent = true; return true }
         if (root != Screen.Live) { openRoot(Screen.Live); return true }
         return false

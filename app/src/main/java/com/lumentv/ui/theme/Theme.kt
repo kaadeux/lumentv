@@ -11,16 +11,17 @@ import androidx.tv.material3.Typography
 import androidx.tv.material3.darkColorScheme
 
 object Palette {
-    val Background = Color(0xFF0B0D12)
-    val Panel = Color(0xFF141822)
-    val PanelHigh = Color(0xFF1C2230)
-    val Focus = Color(0xFFF2F4F8)
-    val OnFocus = Color(0xFF0B0D12)
-    val Accent = Color(0xFF4F8CFF)
-    val AccentSoft = Color(0x334F8CFF)
-    val Text = Color(0xFFE8EAF0)
-    val TextDim = Color(0xFF9AA3B5)
-    val Danger = Color(0xFFFF6B6B)
+    // V2: neutral dark greys (a streaming service's), a warm accent.
+    val Background = Color(0xFF0E0E10)
+    val Panel = Color(0xFF19191C)
+    val PanelHigh = Color(0xFF26262A)
+    val Focus = Color(0xFFF2F2F2)
+    val OnFocus = Color(0xFF0E0E10)
+    val Accent = Color(0xFFFF7A2F)
+    val AccentSoft = Color(0x33FF7A2F)
+    val Text = Color(0xFFF2F2F2)
+    val TextDim = Color(0xFFA0A0A8)
+    val Danger = Color(0xFFFF5A5F)
     val Good = Color(0xFF4CD98A)
     val Gold = Color(0xFFFFC857)
     val Scrim = Color(0xCC000000)

@@ -90,7 +90,28 @@ class LibraryRepository(private val db: AppDatabase) {
         db.vod().seriesCategories(pid).filter { includeHidden || it.category !in hidden }
     }
     suspend fun series(pid: Long, category: String?) = withContext(Dispatchers.IO) { db.vod().series(pid, category) }
+    /** Channels of a playlist whose name contains [q] (normalised), hidden ones included: the copies of a channel. */
+    suspend fun channelsNamed(pid: Long, q: String) = withContext(Dispatchers.IO) { db.channels().search(q, 60).filter { it.ch.playlistId == pid } }
     suspend fun recentSeries(pid: Long) = withContext(Dispatchers.IO) { db.vod().recentSeries(pid, 120) }
+
+    /**
+     * The other copies of a film in the playlist ("4K MULTI", "FHD VF", "VOSTFR"…): same title once the quality and
+     * language marks are taken off. The film itself is included.
+     */
+    suspend fun versions(m: com.lumentv.data.db.MovieEntity): List<MovieRow> = withContext(Dispatchers.IO) {
+        val base = com.lumentv.core.Featured.baseTitle(m.name)
+        if (base.length < 2) return@withContext emptyList()
+        db.vod().searchMovies(base, 80).filter { it.m.playlistId == m.playlistId && com.lumentv.core.Featured.baseTitle(it.m.name) == base }
+            .sortedBy { it.m.number }
+    }
+
+    /** A category's films or series for a row of the Films / Séries home: one per title, newest first. */
+    suspend fun categoryMovies(pid: Long, category: String) = withContext(Dispatchers.IO) {
+        com.lumentv.core.Featured.clean(db.vod().movies(pid, category).sortedByDescending { it.m.addedAt }, { it.m.name }, { it.m.category })
+    }
+    suspend fun categorySeries(pid: Long, category: String) = withContext(Dispatchers.IO) {
+        com.lumentv.core.Featured.clean(db.vod().series(pid, category).sortedByDescending { it.s.updatedAt }, { it.s.name }, { it.s.category })
+    }
 
     /** A row of the featured section ("Nouveautés", "Les mieux notés", "Parce que vous avez regardé…"). */
     class Shelf<T>(val title: String, val items: List<T>)

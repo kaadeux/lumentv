@@ -2,6 +2,12 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.ScreenBackdrop
+import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.onFocusChanged
 import com.lumentv.ui.components.enterHere
 import com.lumentv.ui.components.enterOn
 import com.lumentv.ui.components.keepFocus
@@ -79,12 +85,14 @@ import kotlinx.coroutines.withContext
 
 private const val RECENT = "\u0001recent"
 private const val ALL = "\u0001all"
+/** TV: every series in a grid (ALL is the home there). */
+private const val RECENT2 = "\u0001every"
 
 @Composable
 private fun CategoryColumn(title: String, cats: List<CategoryCount>?, extra: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit,
                            onLong: (String) -> Unit) {
-    if (com.lumentv.ui.LocalPhone.current) {
-        // Phone: one button showing the category; the list opens in a window.
+    if (true) {
+        // One button showing the category; the list opens in a window (V2: on the TV too, the grid takes the width).
         var open by remember { mutableStateOf(false) }
         val label = extra.firstOrNull { it.first == selected }?.second ?: selected
         FocusSurface({ open = true }, Modifier.fillMaxWidth().padding(bottom = 8.dp), container = Palette.PanelHigh) {
@@ -128,13 +136,12 @@ private fun CategoryColumn(title: String, cats: List<CategoryCount>?, extra: Lis
 /** TV: picker on the left, grid on the right. Phone: picker above, grid below (the grid fills what is left). */
 @Composable
 private fun VodLayout(content: @Composable () -> Unit) {
-    if (com.lumentv.ui.LocalPhone.current) Column(Modifier.fillMaxSize()) { content() }
-    else Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { content() }
+    Column(Modifier.fillMaxSize()) { content() }
 }
 
 /** 5 posters a row on the TV; on a phone as many as fit, about 3 upright and 6 sideways. */
 @Composable
-private fun posterCells(): GridCells = if (com.lumentv.ui.LocalPhone.current) GridCells.Adaptive(104.dp) else GridCells.Fixed(5)
+private fun posterCells(): GridCells = if (com.lumentv.ui.LocalPhone.current) GridCells.Adaptive(104.dp) else GridCells.Adaptive(118.dp)
 @Composable
 private fun gridGap() = if (com.lumentv.ui.LocalPhone.current) 10.dp else 14.dp
 
@@ -177,9 +184,39 @@ fun MoviesScreen(vm: MainViewModel) {
     val shelves = memoState(vm, "shelves:m:${p.id}", p.id, changes, lastMovie) { vm.graph.library.featuredMovies(p.id, lastMovie) }
     val featured = cat == RECENT && filter.isBlank()
     KeepTop(movieGrid, if (featured) headerCount(resume.isNotEmpty(), shelves.size) else 0)
+    val phone = com.lumentv.ui.LocalPhone.current
+    // TV: a category's grid goes back to the home with Back.
+    androidx.compose.runtime.DisposableEffect(phone, cat) {
+        vm.backHook = if (!phone && cat != RECENT) ({ cat = RECENT; vm.movieCategory = RECENT; true }) else null
+        onDispose { vm.backHook = null }
+    }
+    if (!phone && featured) {
+        var picker by remember { mutableStateOf(false) }
+        var forget by remember { mutableStateOf<ResumeItem?>(null) }
+        val catRows = cats.orEmpty().filter { !com.lumentv.core.Featured.foreign("", it.category) }.take(10)
+        val rows = buildList {
+            if (resume.isNotEmpty()) add(HomeRow("resume", "Reprendre la lecture", resume.map { r -> resumeTile(vm, r, false) { forget = r } }))
+            shelves.forEachIndexed { i, sh -> add(HomeRow("shelf$i", sh.title, sh.items.map { movieTile(vm, "f$i", it, progress[it.m.uid]?.takeIf { h -> h.durationMs > 0 && com.lumentv.core.Resume.movieToResume(h.positionMs, h.durationMs) }?.let { h -> h.positionMs.toFloat() / h.durationMs }) })) }
+            catRows.forEach { c ->
+                val items = memoState(vm, "cat:m:${p.id}:${c.category}", p.id, changes, c.category) { vm.graph.library.categoryMovies(p.id, c.category) }
+                add(HomeRow("cat:" + c.category, c.category, items.map { movieTile(vm, "c:" + c.category, it, null) }))
+            }
+        }
+        VodHome(vm, "hero:m:${p.id}", rows) {
+            HeroButton("Catégories  ▾") { picker = true }
+            HeroButton("Tous les films") { cat = ALL; vm.movieCategory = ALL }
+        }
+        if (picker) OptionsDialog("Films", listOf(MenuOption("Tous les films") { cat = ALL; vm.movieCategory = ALL }) +
+            cats.orEmpty().map { c -> MenuOption("${c.category}  ·  ${c.count}") { cat = c.category; vm.movieCategory = c.category } }, onDismiss = { picker = false })
+        forget?.let { r ->
+            com.lumentv.ui.components.ConfirmDialog("Retirer « ${r.title} » ?", "Le film quitte « Reprendre la lecture » et repartira du début.", "Retirer",
+                onConfirm = { scope.launch { r.forget.forEach { vm.graph.library.deleteHistory(it) } } }, onDismiss = { forget = null })
+        }
+        return
+    }
 
     VodLayout {
-        CategoryColumn("Films", cats, listOf(RECENT to "Ajoutés récemment", ALL to "Tous les films"), cat, { cat = it; vm.movieCategory = it }, { catMenu = it })
+        CategoryColumn("Films", cats, listOf(RECENT to (if (phone) "Ajoutés récemment" else "Accueil des films"), ALL to "Tous les films"), cat, { cat = it; vm.movieCategory = it }, { catMenu = it })
         Column(Modifier.fillMaxSize()) {
         FilterField(filter, if (cat == ALL || cat == RECENT) "Rechercher un film" else "Rechercher dans « $cat »") { filter = it }
         val list = movies?.let { all -> normalize(filter).let { f -> if (f.isEmpty()) all else all.filter { it.m.nameNorm.contains(f) } } }
@@ -239,7 +276,7 @@ fun SeriesScreen(vm: MainViewModel) {
     val cats by produceState<List<CategoryCount>?>(null, p.id, changes, settings.showHidden) { value = vm.graph.library.seriesCategories(p.id, settings.showHidden) }
     val series by produceState<List<SeriesRow>?>(null, p.id, cat, changes) {
         value = null
-        value = when (cat) { ALL -> vm.graph.library.series(p.id, null); RECENT -> vm.graph.library.recentSeries(p.id); else -> vm.graph.library.series(p.id, cat) }
+        value = when (cat) { ALL, RECENT2 -> vm.graph.library.series(p.id, null); RECENT -> vm.graph.library.recentSeries(p.id); else -> vm.graph.library.series(p.id, cat) }
     }
     var filter by androidx.compose.runtime.saveable.rememberSaveable(p.id, cat) { mutableStateOf("") }
     // Put forward above "Toutes les séries": new or with new episodes, best rated, more of the last series watched.
@@ -247,8 +284,38 @@ fun SeriesScreen(vm: MainViewModel) {
     val shelves = memoState(vm, "shelves:s:${p.id}", p.id, changes, lastSeries) { vm.graph.library.featuredSeries(p.id, lastSeries) }
     val featured = cat == ALL && filter.isBlank()
     KeepTop(grid, if (featured) headerCount(resume.isNotEmpty(), shelves.size) else 0)
+    val phone = com.lumentv.ui.LocalPhone.current
+    androidx.compose.runtime.DisposableEffect(phone, cat) {
+        vm.backHook = if (!phone && cat != ALL) ({ cat = ALL; vm.seriesCategory = ALL; true }) else null
+        onDispose { vm.backHook = null }
+    }
+    if (!phone && featured) {
+        var picker by remember { mutableStateOf(false) }
+        var forget by remember { mutableStateOf<ResumeItem?>(null) }
+        val catRows = cats.orEmpty().filter { !com.lumentv.core.Featured.foreign("", it.category) }.take(10)
+        val rows = buildList {
+            if (resume.isNotEmpty()) add(HomeRow("resume", "Reprendre la lecture", resume.map { r -> resumeTile(vm, r, true) { forget = r } }))
+            shelves.forEachIndexed { i, sh -> add(HomeRow("shelf$i", sh.title, sh.items.map { seriesTile(vm, "f$i", it) })) }
+            catRows.forEach { c ->
+                val items = memoState(vm, "cat:s:${p.id}:${c.category}", p.id, changes, c.category) { vm.graph.library.categorySeries(p.id, c.category) }
+                add(HomeRow("cat:" + c.category, c.category, items.map { seriesTile(vm, "c:" + c.category, it) }))
+            }
+        }
+        VodHome(vm, "hero:s:${p.id}", rows) {
+            HeroButton("Catégories  ▾") { picker = true }
+            HeroButton("Ajoutées récemment") { cat = RECENT; vm.seriesCategory = RECENT }
+        }
+        if (picker) OptionsDialog("Séries", listOf(MenuOption("Toutes les séries") { cat = RECENT2; vm.seriesCategory = RECENT2 }, MenuOption("Ajoutées récemment") { cat = RECENT; vm.seriesCategory = RECENT }) +
+            cats.orEmpty().map { c -> MenuOption("${c.category}  ·  ${c.count}") { cat = c.category; vm.seriesCategory = c.category } }, onDismiss = { picker = false })
+        forget?.let { r ->
+            com.lumentv.ui.components.ConfirmDialog("Retirer « ${r.title} » ?", "La série quitte « Reprendre la lecture ». Les épisodes ne seront plus marqués comme vus.", "Retirer",
+                onConfirm = { scope.launch { r.forget.forEach { vm.graph.library.deleteHistory(it) } } }, onDismiss = { forget = null })
+        }
+        return
+    }
     VodLayout {
-        CategoryColumn("Séries", cats, listOf(ALL to "Toutes les séries", RECENT to "Ajoutées récemment"), cat, { cat = it; vm.seriesCategory = it }, { catMenu = it })
+        CategoryColumn("Séries", cats, listOf(ALL to (if (phone) "Toutes les séries" else "Accueil des séries"), RECENT2 to "Toutes les séries", RECENT to "Ajoutées récemment").let { if (phone) it.filter { e -> e.first != RECENT2 } else it },
+            cat, { cat = it; vm.seriesCategory = it }, { catMenu = it })
         Column(Modifier.fillMaxSize()) {
         FilterField(filter, if (cat == ALL || cat == RECENT) "Rechercher une série" else "Rechercher dans « $cat »") { filter = it }
         val list = series?.let { all -> normalize(filter).let { f -> if (f.isEmpty()) all else all.filter { it.s.nameNorm.contains(f) } } }
@@ -291,6 +358,7 @@ fun SeriesScreen(vm: MainViewModel) {
 
 @Composable
 fun MovieDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
+    if (!com.lumentv.ui.LocalPhone.current) return MovieDetailTv(vm, playlistId, uid)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
@@ -402,6 +470,8 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
     val focus = remember { FocusRequester() }
 
     val phone = com.lumentv.ui.LocalPhone.current
+    if (!phone) return SeriesDetailTv(vm, playlistId, uid, s, eps, error, seasons, season, { season = it }, progress, ::watched,
+        { l, on -> markWatched(l, on) }, { epMenu = it })
     // The top of the page (poster, summary, buttons, seasons) and one episode line, shared by both layouts.
     val header: @Composable () -> Unit = {
         Row(horizontalArrangement = Arrangement.spacedBy(if (phone) 14.dp else 24.dp), modifier = if (phone) Modifier else Modifier.height(210.dp)) {
@@ -631,7 +701,7 @@ private fun <T> memoState(vm: MainViewModel, key: String, vararg keys: Any?, loa
     @Suppress("UNCHECKED_CAST")
     val v by produceState(vm.memo[key] as? List<T> ?: emptyList(), *keys) {
         value = runCatching { load() }.onFailure { android.util.Log.w("Featured", "$key: $it") }.getOrDefault(value)
-            .also { vm.memo[key] = it; android.util.Log.i("Featured", "$key: ${it.size} row(s)") }
+            .also { vm.memo[key] = it }
     }
     return v
 }
@@ -660,4 +730,282 @@ private fun KeepTop(grid: androidx.compose.foundation.lazy.grid.LazyGridState, h
 private fun TopOnChange(grid: androidx.compose.foundation.lazy.grid.LazyGridState, cat: String) {
     var shown by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(cat) }
     LaunchedEffect(cat) { if (cat != shown) { shown = cat; grid.scrollToItem(0) } }
+}
+
+// ---- V2 home of Films and Séries (TV) ---------------------------------------------------------------------------
+
+/** What the banner shows: the focused film or series. [movie]: its details (length, genre, backdrop) are asked for. */
+private class HeroItem(
+    val key: String, val title: String, val meta: List<String>, val plot: String?, val image: String?,
+    val movie: com.lumentv.data.db.MovieEntity? = null, val playLabel: String = "Lecture",
+    val play: () -> Unit, val more: () -> Unit,
+)
+
+private class HomeTile(val key: String, val title: String, val image: String?, val progress: Float?, val hero: HeroItem,
+                       val onClick: () -> Unit, val onLong: (() -> Unit)? = null)
+
+private class HomeRow(val key: String, val title: String, val tiles: List<HomeTile>)
+
+/** "★ 7,3", "2025", "2 h 09", "Action, Aventure" */
+private fun metaOf(rating: String?, year: String?, vararg more: String?): List<String> =
+    listOfNotNull(com.lumentv.core.Featured.rating(rating)?.let { "★ " + "%.1f".format(java.util.Locale.FRANCE, it) }, year?.take(4)) + more.filterNotNull().filter { it.isNotBlank() }
+
+@Composable
+private fun movieTile(vm: MainViewModel, rowKey: String, r: MovieRow, progress: Float?): HomeTile {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val pid = r.m.playlistId
+    return HomeTile("$rowKey:m:${r.m.uid}", r.m.name, r.m.poster, progress,
+        HeroItem("m:${r.m.uid}", r.m.name.substringBefore(" (").trim(), metaOf(r.m.rating, com.lumentv.core.Featured.yearOf(r.m.year, r.m.name)?.toString()), null, r.m.poster,
+            movie = r.m, playLabel = if (progress != null) "Reprendre" else "Lecture",
+            play = { PlayerLauncher.movie(context, pid, r.m.uid, progress != null) }, more = { vm.openFrom("$rowKey:m:${r.m.uid}", Screen.MovieDetail(pid, r.m.uid)) }),
+        onClick = { vm.openFrom("$rowKey:m:${r.m.uid}", Screen.MovieDetail(pid, r.m.uid)) },
+        onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(pid, PrefKind.MOVIE, r.m.uid); vm.show(if (f) "Ajouté aux favoris" else "Retiré des favoris") } })
+}
+
+@Composable
+private fun seriesTile(vm: MainViewModel, rowKey: String, r: SeriesRow): HomeTile {
+    val scope = rememberCoroutineScope()
+    val pid = r.s.playlistId
+    val open = { vm.openFrom("$rowKey:s:${r.s.uid}", Screen.SeriesDetail(pid, r.s.uid)) }
+    return HomeTile("$rowKey:s:${r.s.uid}", r.s.name, r.s.cover, null,
+        HeroItem("s:${r.s.uid}", r.s.name, metaOf(r.s.rating, r.s.year, r.s.category), r.s.plot, r.s.backdrop ?: r.s.cover,
+            playLabel = "Voir la série", play = open, more = open),
+        onClick = open,
+        onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(pid, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } })
+}
+
+@Composable
+private fun resumeTile(vm: MainViewModel, r: ResumeItem, series: Boolean, onLong: () -> Unit): HomeTile =
+    HomeTile("resume:${r.key}", r.title, r.image, r.progress,
+        HeroItem("r:${r.key}", r.title, listOfNotNull(r.line), if (series) "Reprendre là où vous en étiez." else null, r.image,
+            playLabel = "Reprendre", play = r.play, more = r.play),
+        onClick = r.play, onLong = onLong)
+
+/**
+ * The home of Films or Séries on the TV, as on a streaming service: a banner with the focused title over its picture
+ * (Lecture, Plus d'infos), then rows of posters. [actions]: the buttons after the banner's own (Catégories…).
+ */
+@Composable
+private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, actions: @Composable () -> Unit) {
+    val first = rows.firstOrNull { it.tiles.isNotEmpty() }?.tiles?.firstOrNull()?.hero
+    // The banner follows the focused poster, a moment after it stops moving (no flicker while scrolling).
+    var focusedHero by remember { mutableStateOf(vm.memo[memoKey] as? HeroItem) }
+    var pending by remember { mutableStateOf<HeroItem?>(null) }
+    LaunchedEffect(pending) { pending?.let { delay(280); focusedHero = it; vm.memo[memoKey] = it } }
+    val hero = focusedHero ?: first
+    val info by produceState<XVodInfo?>(hero?.movie?.let { vm.graph.artwork.cached(it) }, hero?.key) {
+        value = hero?.movie?.let { vm.graph.artwork.movie(it) }
+    }
+    ScreenBackdrop(info?.backdrop ?: hero?.image)
+    Column(Modifier.fillMaxSize()) {
+        if (hero != null) Hero(hero, info, actions)
+        // Rows arriving late (resume, featured) go above the categories: the list then shows the top, unless it is in use.
+        val list = androidx.compose.foundation.lazy.rememberLazyListState()
+        var inUse by remember { mutableStateOf(false) }
+        val shown = rows.filter { it.tiles.isNotEmpty() }
+        LaunchedEffect(shown.firstOrNull()?.key) { if (!inUse) list.scrollToItem(0) }
+        LazyColumn(Modifier.fillMaxSize().onFocusChanged { inUse = it.hasFocus }, state = list, verticalArrangement = Arrangement.spacedBy(2.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 30.dp)) {
+            shown.forEach { row ->
+                item(key = row.key) {
+                    Column {
+                        Text(row.title, style = MaterialTheme.typography.titleMedium, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 10.dp)) {
+                            items(row.tiles, key = { it.key }) { t -> HomePoster(vm, t) { pending = t.hero } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Hero(h: HeroItem, info: XVodInfo?, actions: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().height(232.dp).padding(start = 4.dp, top = 8.dp), verticalArrangement = Arrangement.Bottom) {
+        Text(h.title, fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            lineHeight = 38.sp, modifier = Modifier.fillMaxWidth(0.6f))
+        val meta = h.meta + listOfNotNull(info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(2)?.joinToString(" • ") { it.trim() })
+        if (meta.isNotEmpty()) Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.85f),
+            maxLines = 1, modifier = Modifier.padding(top = 6.dp))
+        (info?.plot ?: h.plot)?.takeIf { it.isNotBlank() }?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.9f), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(0.52f).padding(top = 6.dp))
+        }
+        Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            HeroButton("▶  " + h.playLabel, primary = true, onClick = h.play)
+            HeroButton("Plus d'infos", onClick = h.more)
+            actions()
+        }
+    }
+}
+
+/** A banner button: white when it is the main one, glassy otherwise. */
+@Composable
+fun HeroButton(text: String, primary: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    FocusSurface(onClick, modifier, shape = RoundedCornerShape(24.dp), container = if (primary) Color(0xE6F2F2F2) else Color(0x66262629), focusedScale = 1.06f) {
+        Text(text, style = MaterialTheme.typography.labelLarge, color = if (primary) Palette.OnFocus else androidx.tv.material3.LocalContentColor.current,
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 10.dp))
+    }
+}
+
+@Composable
+private fun HomePoster(vm: MainViewModel, t: HomeTile, onFocus: () -> Unit) {
+    FocusSurface(t.onClick, Modifier.width(104.dp).aspectRatio(2f / 3f).returnFocus(vm, t.key).onFocusChanged { if (it.isFocused) onFocus() },
+        onLongClick = t.onLong, focusedScale = 1.08f, shape = RoundedCornerShape(10.dp)) {
+        Poster(t.image, t.title, Modifier.fillMaxSize())
+        t.progress?.takeIf { it > 0f }?.let { ProgressLine(it, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp)) }
+    }
+}
+
+// ---- V2 pages of a film and a series (TV) -----------------------------------------------------------------------
+
+/** "Breach (2026) VOSTFR" → "VOSTFR", "The Dog Stars (2026) 4K MULTI" → "4K MULTI": what tells a copy from another. */
+private fun versionLabel(name: String): String =
+    name.substringAfterLast(")", "").replace(Regex("^[\\s\\-|:]+"), "").trim().ifBlank { name.substringAfter(" | ", "").trim() }.ifBlank { "Version" }
+
+/** A film's page on the TV: its picture behind, title, details, the buttons, then the summary and the cast. */
+@Composable
+private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // The copy shown: "Version" switches to another one of the same film (4K, VF, VOSTFR…).
+    var uid by androidx.compose.runtime.saveable.rememberSaveable(startUid) { mutableStateOf(startUid) }
+    val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
+    val history by vm.graph.library.observeHistory(300).collectAsStateWithLifecycle(emptyList())
+    val movie by produceState<MovieRow?>(null, playlistId, uid, changes) { value = vm.graph.library.movieByUid(playlistId, uid) }
+    val m = movie ?: return Loading()
+    val info by produceState(vm.graph.artwork.cached(m.m), m.m.id) { value = vm.graph.artwork.movie(m.m) }
+    val versions by produceState(emptyList<MovieRow>(), m.m.id) { value = vm.graph.library.versions(m.m) }
+    var versionMenu by remember { mutableStateOf(false) }
+    val h: HistoryEntity? = history.firstOrNull { it.key == LibraryRepository.key(HistoryKind.MOVIE, playlistId, uid) }
+    val resumable = h != null && h.positionMs > 30_000 && (h.durationMs == 0L || h.positionMs < h.durationMs * 0.95)
+    val transfers by vm.graph.transfers.observe().collectAsStateWithLifecycle(emptyList())
+    val dl = transfers.firstOrNull { it.kind == com.lumentv.data.db.TransferKind.DOWNLOAD && it.playlistId == playlistId && it.refUid == uid }
+    val focus = remember { FocusRequester() }
+    ScreenBackdrop(info?.backdrop ?: m.m.poster)
+
+    Column(Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(start = 4.dp, top = 40.dp)) {
+        Text(m.m.name.substringBefore(" (").trim(), fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 2, lineHeight = 40.sp,
+            modifier = Modifier.fillMaxWidth(0.62f))
+        val meta = metaOf(m.m.rating, com.lumentv.core.Featured.yearOf(m.m.year ?: info?.releaseDate, m.m.name)?.toString(),
+            info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(3)?.joinToString(" • ") { it.trim() })
+        Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
+        Text(info?.plot ?: "Aucun résumé disponible.", style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 4,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 10.dp))
+        if (resumable) Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            ProgressLine(h!!.positionMs.toFloat() / h.durationMs.coerceAtLeast(1), Modifier.width(220.dp))
+            Text("  " + (com.lumentv.core.Resume.remaining(h.positionMs, h.durationMs) ?: ""), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+        }
+        Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (resumable) {
+                HeroButton("▶  Reprendre à ${clock(h!!.positionMs)}", primary = true, modifier = Modifier.focusRequester(focus)) { PlayerLauncher.movie(context, playlistId, uid, true) }
+                HeroButton("Depuis le début") { PlayerLauncher.movie(context, playlistId, uid, false) }
+            } else HeroButton("▶  Lecture", primary = true, modifier = Modifier.focusRequester(focus)) { PlayerLauncher.movie(context, playlistId, uid, false) }
+            if (versions.size > 1) HeroButton("Version : ${versionLabel(m.m.name)}  ▾") { versionMenu = true }
+            HeroButton(if (m.isFavorite) "★  Dans ma liste" else "+  Ma liste") { scope.launch { vm.graph.library.toggleFavorite(playlistId, PrefKind.MOVIE, uid) } }
+            HeroButton(when (dl?.status) {
+                com.lumentv.data.db.TransferStatus.DONE -> "⬇  Téléchargé"
+                com.lumentv.data.db.TransferStatus.RUNNING, com.lumentv.data.db.TransferStatus.SCHEDULED -> "⬇  En cours…"
+                else -> "⬇  Télécharger"
+            }) {
+                when (dl?.status) {
+                    com.lumentv.data.db.TransferStatus.DONE -> PlayerLauncher.file(context, dl.id)
+                    com.lumentv.data.db.TransferStatus.RUNNING, com.lumentv.data.db.TransferStatus.SCHEDULED -> vm.openRoot(Screen.Recordings)
+                    else -> scope.launch {
+                        if (dl != null) vm.graph.transfers.retry(dl.id) else vm.graph.transfers.downloadMovie(m.m)
+                        vm.show("Téléchargement lancé · suivez-le dans Téléchargés")
+                    }
+                }
+            }
+        }
+        info?.director?.takeIf { it.isNotBlank() }?.let { Text("Réalisation : $it", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, modifier = Modifier.padding(top = 22.dp)) }
+        info?.cast?.takeIf { it.isNotBlank() }?.let { Text("Avec : $it", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(0.6f).padding(top = 4.dp)) }
+        Text(m.m.category, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(top = 6.dp, bottom = 20.dp))
+    }
+    if (versionMenu) OptionsDialog("Version", versions.map { v ->
+        MenuOption(versionLabel(v.m.name) + (com.lumentv.core.Featured.rating(v.m.rating)?.let { "  ·  ★ $it" } ?: ""), checked = v.m.uid == uid) { uid = v.m.uid }
+    }, onDismiss = { versionMenu = false }, subtitle = "La même œuvre en plusieurs qualités ou langues")
+    LaunchedEffect(m.m.id) { delay(80); runCatching { focus.requestFocus() } }
+}
+
+/** A series' page on the TV: picture behind, details, buttons, the seasons, then its episodes as wide cards. */
+@Composable
+private fun SeriesDetailTv(
+    vm: MainViewModel, playlistId: Long, uid: String, s: SeriesRow, eps: List<EpisodeEntity>?, error: String?, seasons: List<Int>, season: Int,
+    onSeason: (Int) -> Unit, progress: Map<String, HistoryEntity>, watched: (EpisodeEntity) -> Boolean, markWatched: (List<EpisodeEntity>, Boolean) -> Unit,
+    onMenu: (EpisodeEntity) -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val focus = remember { FocusRequester() }
+    ScreenBackdrop(s.s.backdrop ?: s.s.cover)
+    val last = progress.values.maxByOrNull { it.watchedAt }
+    // The episode "Lecture" starts: the one left halfway, else the one after the last seen, else the first.
+    val next: Pair<EpisodeEntity, Boolean>? = eps?.let { list ->
+        val l = last?.let { h -> list.firstOrNull { it.uid == h.uid } }
+        when {
+            l != null && !watched(l) -> l to true
+            l != null -> list.getOrNull(list.indexOf(l) + 1)?.let { it to false } ?: (list.first() to false)
+            else -> list.firstOrNull()?.let { it to false }
+        }
+    }
+    Column(Modifier.fillMaxSize().padding(start = 4.dp, top = 24.dp)) {
+        Text(s.s.name, fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 2, lineHeight = 40.sp, modifier = Modifier.fillMaxWidth(0.62f))
+        Text(metaOf(s.s.rating, s.s.year, if (seasons.isNotEmpty()) "${seasons.size} saison" + if (seasons.size > 1) "s" else "" else null, s.s.category).joinToString("  ·  "),
+            style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
+        s.s.plot?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 3,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 10.dp)) }
+        Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            next?.let { (e, resume) ->
+                HeroButton("▶  " + (if (resume) "Reprendre" else "Lecture") + " S${e.season} E${e.episode}", primary = true, modifier = Modifier.focusRequester(focus)) {
+                    PlayerLauncher.episode(context, playlistId, uid, e.uid, resume)
+                }
+            }
+            HeroButton(if (s.isFavorite) "★  Dans ma liste" else "+  Ma liste", modifier = if (next == null) Modifier.focusRequester(focus) else Modifier) {
+                scope.launch { vm.graph.library.toggleFavorite(playlistId, PrefKind.SERIES, uid) }
+            }
+            eps?.filter { it.season == season }?.takeIf { it.isNotEmpty() }?.let { list ->
+                val all = list.all { watched(it) }
+                HeroButton(if (all) "Saison $season : non vue" else "Saison $season vue") { markWatched(list, !all) }
+            }
+        }
+        if (seasons.size > 1) Row(Modifier.padding(top = 18.dp).clip(RoundedCornerShape(26.dp)).background(Color(0x99141416)).padding(4.dp)) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                items(seasons) { n ->
+                    FocusSurface({ onSeason(n) }, shape = RoundedCornerShape(22.dp), container = if (n == season) Color(0x33FFFFFF) else Color.Transparent, focusedScale = 1.04f) {
+                        Text("Saison $n", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
+                    }
+                }
+            }
+        }
+        when {
+            eps == null -> Loading("Chargement des épisodes…")
+            eps.isEmpty() -> EmptyState("Aucun épisode", error ?: "Le fournisseur ne liste aucun épisode pour cette série.")
+            else -> LazyRow(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp)) {
+                items(eps.filter { it.season == season }, key = { it.id }) { e ->
+                    val h = progress[e.uid]
+                    Column(Modifier.width(200.dp)) {
+                        FocusSurface({ PlayerLauncher.episode(context, playlistId, uid, e.uid, h != null && h.positionMs > 30_000 && !watched(e)) },
+                            Modifier.fillMaxWidth().aspectRatio(16f / 9f), onLongClick = { onMenu(e) }, focusedScale = 1.06f, shape = RoundedCornerShape(10.dp)) {
+                            Poster(e.image ?: s.s.backdrop ?: s.s.cover, e.title, Modifier.fillMaxSize())
+                            if (watched(e)) Text("✓ Vu", style = MaterialTheme.typography.labelMedium, color = Color.White,
+                                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xCC000000)).padding(horizontal = 6.dp, vertical = 2.dp))
+                            if (h != null && h.durationMs > 0 && !watched(e)) ProgressLine(h.positionMs.toFloat() / h.durationMs, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp))
+                        }
+                        Text("${e.episode}. " + e.title.substringAfterLast(" - ").ifBlank { e.title }, style = MaterialTheme.typography.labelLarge, color = Palette.Text,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                        if (e.durationSecs > 0) Text(duration(e.durationSecs), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                    }
+                }
+            }
+        }
+        Text(com.lumentv.ui.components.hint("Maintenez OK sur un épisode : vu / non vu, télécharger", ""), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim,
+            modifier = Modifier.padding(top = 6.dp))
+    }
+    LaunchedEffect(s.s.id, next != null) { delay(80); runCatching { focus.requestFocus() } }
 }

@@ -116,7 +116,7 @@ object XtreamImport {
             SeriesEntity(
                 playlistId = playlistId, uid = "x:${x.seriesId}", seriesId = x.seriesId, name = x.name,
                 nameNorm = normalize(x.name), category = categories[x.categoryId]?.takeIf { it.isNotBlank() } ?: NO_GROUP,
-                cover = x.cover?.takeIf { it.isNotBlank() }, plot = x.plot, rating = x.rating, year = x.year, number = i + 1, tmdb = x.tmdb, updatedAt = x.updated,
+                cover = x.cover?.takeIf { it.isNotBlank() }, plot = x.plot, rating = x.rating, year = x.year, number = i + 1, tmdb = x.tmdb, updatedAt = x.updated, backdrop = x.backdrop,
             )
         }
 }

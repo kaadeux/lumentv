@@ -45,6 +45,12 @@ class PlayerViewModel(val graph: AppGraph) : ViewModel() {
     var nowNext by mutableStateOf(NowNext(null, null))
     private var previousChannelId: Long = 0
     val channel: ChannelRow? get() = channels.getOrNull(index)
+    /** Automatic quality: the copy of the channel played instead of [channel] (FHD → HD → SD), null = the one chosen. */
+    var variant by mutableStateOf<ChannelRow?>(null)
+        private set
+    /** The channel's copies in every quality found, best first. */
+    private var variants: List<ChannelRow> = emptyList()
+    val playing: ChannelRow? get() = variant ?: channel
 
     // Catch-up / on demand
     var title by mutableStateOf("")
@@ -213,7 +219,8 @@ class PlayerViewModel(val graph: AppGraph) : ViewModel() {
             when (mode) {
                 Mode.LIVE -> {
                     val row = channel ?: return@launch
-                    c.play(graph.resolver.channel(row.ch))
+                    c.play(graph.resolver.channel((variant ?: row).ch))
+                    if (variants.firstOrNull()?.let { com.lumentv.core.ChannelQuality.base(it.ch.name) } != com.lumentv.core.ChannelQuality.base(row.ch.name)) loadVariants(row)
                     nowNext = graph.epg.nowNext(row)
                     graph.settings.set(Keys.lastChannel, row.ch.id)
                     graph.library.record(HistoryEntity(
@@ -254,6 +261,7 @@ class PlayerViewModel(val graph: AppGraph) : ViewModel() {
         channel?.let { previousChannelId = it.ch.id }
         index = newIndex
         mode = Mode.LIVE
+        variant = null; variants = emptyList()
         catchupProgram = null
         resumeAt = 0
         zapJob?.cancel()
@@ -263,6 +271,53 @@ class PlayerViewModel(val graph: AppGraph) : ViewModel() {
             kotlinx.coroutines.delay(350)
             controller?.let { start(it) }
         }
+    }
+
+    private suspend fun loadVariants(row: ChannelRow) {
+        val base = com.lumentv.core.ChannelQuality.base(row.ch.name)
+        variants = if (base.length < 2) emptyList() else graph.library.channelsNamed(row.ch.playlistId, base)
+            .filter { com.lumentv.core.ChannelQuality.base(it.ch.name) == base }
+            .distinctBy { com.lumentv.core.ChannelQuality.rank(it.ch.name) }
+            .sortedByDescending { com.lumentv.core.ChannelQuality.rank(it.ch.name) }
+    }
+
+    /** The picture keeps stopping: the same channel one quality lower, if there is one. @return true if it switched. */
+    fun lowerQuality(): Boolean {
+        if (mode != Mode.LIVE) return false
+        val cur = com.lumentv.core.ChannelQuality.rank((playing ?: return false).ch.name)
+        val lower = variants.firstOrNull { com.lumentv.core.ChannelQuality.rank(it.ch.name) < cur } ?: return false
+        variant = lower
+        toast = "Connexion lente : passage en ${com.lumentv.core.ChannelQuality.label(lower.ch.name)}"
+        controller?.let { start(it) }
+        return true
+    }
+
+    /** Steady for a while: back one quality up, towards the one chosen. @return true if it switched. */
+    fun raiseQuality(): Boolean {
+        val v = variant ?: return false
+        val chosen = channel ?: return false
+        val cur = com.lumentv.core.ChannelQuality.rank(v.ch.name)
+        val top = com.lumentv.core.ChannelQuality.rank(chosen.ch.name)
+        val up = variants.lastOrNull { com.lumentv.core.ChannelQuality.rank(it.ch.name) in (cur + 1)..top } ?: return false
+        variant = up.takeIf { it.ch.id != chosen.ch.id }
+        toast = "Connexion rétablie : retour en ${com.lumentv.core.ChannelQuality.label(up.ch.name)}"
+        controller?.let { start(it) }
+        return true
+    }
+
+    /** Back to the quality the viewer chose. */
+    fun chosenQuality() {
+        if (variant == null) return
+        variant = null
+        controller?.let { start(it) }
+    }
+
+    /** Live: the programme on now, from its start (catch-up), when the channel keeps it. */
+    fun startOver() {
+        val row = channel ?: return
+        val now = nowNext.now ?: return run { toast = "Programme en cours inconnu" }
+        playCatchup(row, now)
+        subtitle = row.ch.name + " · depuis le début"
     }
 
     fun previousChannel() {

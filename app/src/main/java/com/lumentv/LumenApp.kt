@@ -48,6 +48,7 @@ class AppGraph(app: Application) {
     val epg = EpgRepository(db, playlists) { settings.current().epgDays }
     val library = LibraryRepository(db)
     val resolver = StreamResolver(playlists)
+    val artwork = com.lumentv.data.repo.Artwork(playlists)
     val backup = BackupManager(app, db, settings)
     val updater = com.lumentv.update.Updater(app, http)
     val transfers = com.lumentv.transfer.TransferRepository(app, db)

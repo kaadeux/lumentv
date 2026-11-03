@@ -124,7 +124,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private data class NavItem(val screen: Screen, val label: String, val icon: ImageVector)
 
 @Composable
 fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
@@ -164,18 +163,6 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
     }
 
     val p = active
-    val items = buildList {
-        if (p == null || p.channelCount > 0) add(NavItem(Screen.Live, "Direct", Icons.Filled.Home))
-        if (p != null && p.channelCount > 0 && p.lastEpgRefresh > 0) add(NavItem(Screen.Guide, "Guide TV", Icons.Filled.DateRange))
-        if (p != null && p.channelCount > 0 && p.lastEpgRefresh > 0) add(NavItem(Screen.Sports, "Sports", LumenIcons.Sports))
-        if (p != null) add(NavItem(Screen.Favorites, "Favoris", Icons.Filled.Star))
-        if (p != null && p.movieCount > 0) add(NavItem(Screen.Movies, "Films", Icons.Filled.PlayArrow))
-        if (p != null && p.seriesCount > 0) add(NavItem(Screen.Series, "Séries", Icons.Filled.List))
-        if (p != null) add(NavItem(Screen.Search, "Recherche", Icons.Filled.Search))
-        if (p != null) add(NavItem(Screen.History, "Historique", Icons.Filled.Refresh))
-        if (p != null) add(NavItem(Screen.Recordings, "Téléchargés", LumenIcons.Download))
-        add(NavItem(Screen.Settings, "Paramètres", Icons.Filled.Settings))
-    }
 
     val activity = context as? android.app.Activity
     var miniMenu by remember { mutableStateOf(false) }
@@ -186,20 +173,41 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
             MenuOption("Fermer le mini-lecteur") { vm.graph.miniPlayer.value = null },
         ), onDismiss = { miniMenu = false })
     }
-    Row(Modifier.fillMaxSize().background(Palette.Background).onKeyEvent { e ->
+    val mini by vm.graph.miniPlayer.collectAsStateWithLifecycle()
+    // V2: the screens under a bar of tabs at the top, a picture behind the films and series.
+    val tabs = buildList {
+        if (p == null || p.channelCount > 0) add(TopTab(Screen.Live, "TV"))
+        if (p != null && p.channelCount > 0 && p.lastEpgRefresh > 0) add(TopTab(Screen.Guide, "Guide"))
+        if (p != null && p.channelCount > 0 && p.lastEpgRefresh > 0) add(TopTab(Screen.Sports, "Sports"))
+        if (p != null && p.movieCount > 0) add(TopTab(Screen.Movies, "Films"))
+        if (p != null && p.seriesCount > 0) add(TopTab(Screen.Series, "Séries"))
+    }
+    val icons = buildList {
+        if (mini != null) add(TopIcon(null, "Mini-lecteur", Icons.Filled.PlayArrow) { miniMenu = true })
+        if (p != null) add(TopIcon(Screen.Search, "Recherche", Icons.Filled.Search))
+        if (p != null) add(TopIcon(Screen.Favorites, "Favoris", Icons.Filled.Star))
+        if (p != null) add(TopIcon(Screen.History, "Historique", Icons.Filled.Refresh))
+        if (p != null) add(TopIcon(Screen.Recordings, "Téléchargés", LumenIcons.Download))
+        add(TopIcon(Screen.Settings, "Paramètres", Icons.Filled.Settings))
+    }
+    val topFocus = remember { FocusRequester() }
+    Box(Modifier.fillMaxSize().background(Palette.Background).onKeyEvent { e ->
         // Back after the focused element had its chance (a text field closes its keyboard first).
         if (e.key != Key.Back && e.key != Key.Escape) return@onKeyEvent false
         if (e.type == KeyEventType.KeyUp && !vm.back()) activity?.finish()
         true
     }) {
-        val mini by vm.graph.miniPlayer.collectAsStateWithLifecycle()
-        SideNav(items, vm.root, active?.name, contentFocus, mini != null, onMini = { miniMenu = true }) { vm.openRoot(it) }
-        Box(Modifier.weight(1f).fillMaxHeight().padding(start = 16.dp, top = 20.dp, end = 24.dp, bottom = 16.dp)
-            // Right from the menu: the column it reaches lands on its chosen entry (see enterOn in the screens).
-            .onFocusChanged { contentHasFocus = it.hasFocus }.focusRequester(contentFocus).focusGroup()) {
-            ScreenContent(vm, vm.current, states)
+        BackdropLayer()
+        Column(Modifier.fillMaxSize()) {
+            TopNav(tabs, icons, vm.root, topFocus) { vm.openRoot(it) }
+            Box(Modifier.weight(1f).fillMaxWidth().padding(start = 40.dp, top = 4.dp, end = 40.dp, bottom = 16.dp)
+                .onFocusChanged { contentHasFocus = it.hasFocus }.focusRequester(contentFocus).focusGroup()) {
+                ScreenContent(vm, vm.current, states)
+            }
         }
     }
+    // First launch: the current tab has the focus, as the side menu had.
+    LaunchedEffect(Unit) { delay(150); if (!contentHasFocus) runCatching { topFocus.requestFocus() } }
     ToastHost(vm)
 }
 
@@ -244,41 +252,3 @@ fun ToastHost(vm: MainViewModel) {
 
 internal var startupDone = false
 
-@Composable
-private fun SideNav(items: List<NavItem>, selected: Screen, playlistName: String?, content: FocusRequester,
-                    miniActive: Boolean, onMini: () -> Unit, onSelect: (Screen) -> Unit) {
-    val first = remember { FocusRequester() }
-    Column(
-        Modifier.width(176.dp).fillMaxHeight().background(Palette.Panel).padding(horizontal = 10.dp, vertical = 16.dp)
-            .verticalScroll(rememberScrollState())
-            // Left from a screen lands on that screen's entry, not on the one level with the focused element.
-            .focusProperties { enter = { first } }.focusGroup(),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        Text("Lumen TV", style = MaterialTheme.typography.headlineSmall, color = Palette.Text, modifier = Modifier.padding(start = 10.dp))
-        Text(playlistName ?: "Aucune playlist", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1,
-            modifier = Modifier.padding(start = 10.dp, bottom = 10.dp))
-        items.forEachIndexed { i, item ->
-            val isSel = item.screen == selected
-            FocusSurface(
-                onClick = { onSelect(item.screen) },
-                modifier = Modifier.fillMaxWidth().focusProperties { right = content }.then(if (isSel || (i == 0 && items.none { it.screen == selected })) Modifier.focusRequester(first) else Modifier),
-                selected = isSel, focusedScale = 1.02f,
-            ) {
-                Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(item.icon, contentDescription = null, modifier = Modifier.size(22.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Text(item.label, style = MaterialTheme.typography.titleMedium)
-                }
-            }
-        }
-        if (miniActive) {
-            Spacer(Modifier.height(8.dp))
-            FocusSurface(onClick = onMini, modifier = Modifier.fillMaxWidth().focusProperties { right = content }, container = Palette.AccentSoft, focusedScale = 1.02f) {
-                Text("▣  Mini-lecteur", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
-            }
-        }
-        Spacer(Modifier.height(1.dp))
-    }
-    LaunchedEffect(selected) { runCatching { first.requestFocus() } }
-}

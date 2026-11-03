@@ -42,9 +42,13 @@ data class XMovie(val streamId: Long, val name: String, val categoryId: String?,
 data class XSeries(val seriesId: Long, val name: String, val categoryId: String?, val cover: String?, val plot: String?, val rating: String?, val year: String?,
                    val tmdb: String? = null,
                    /** Last change on the provider's side (a new series, or new episodes), epoch ms; 0 when not given. */
-                   val updated: Long = 0)
+                   val updated: Long = 0,
+                   /** A wide picture of the series (backdrop), null when the provider has none. */
+                   val backdrop: String? = null)
 data class XEpisode(val id: Long, val title: String, val season: Int, val episode: Int, val ext: String?, val image: String?, val plot: String?, val durationSecs: Int)
-data class XVodInfo(val plot: String?, val durationSecs: Int, val genre: String?, val cast: String?, val director: String?, val releaseDate: String?)
+data class XVodInfo(val plot: String?, val durationSecs: Int, val genre: String?, val cast: String?, val director: String?, val releaseDate: String?,
+                    /** A wide picture of the film (backdrop), for the page and the banner; null when the provider has none. */
+                    val backdrop: String? = null, val rating: String? = null)
 
 /** Xtream Codes `player_api.php` client. Lists are read as a stream, element by element. */
 class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredentials, private val userAgent: String?) {
@@ -105,7 +109,7 @@ class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredent
         val id = o.long("series_id") ?: return@each
         onItem(XSeries(id, o.str("name").orEmpty(), o.str("category_id"), o.str("cover"), o.str("plot"),
             o.str("rating")?.takeIf { it != "0" && it.isNotBlank() }, o.str("releaseDate")?.take(4) ?: o.str("year"),
-            (o.str("tmdb_id") ?: o.str("tmdb"))?.takeIf { it.isNotBlank() && it != "0" }, (o.long("last_modified") ?: 0) * 1000))
+            (o.str("tmdb_id") ?: o.str("tmdb"))?.takeIf { it.isNotBlank() && it != "0" }, (o.long("last_modified") ?: 0) * 1000, o.backdrop()))
     }
 
     fun seriesInfo(seriesId: Long): List<XEpisode> {
@@ -121,6 +125,7 @@ class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredent
             durationSecs = info.long("duration_secs")?.toInt() ?: parseDuration(info.str("duration")),
             genre = info.str("genre"), cast = info.str("cast") ?: info.str("actors"),
             director = info.str("director"), releaseDate = info.str("releasedate") ?: info.str("release_date"),
+            backdrop = info.backdrop(), rating = info.str("rating")?.takeIf { it != "0" && it.isNotBlank() },
         )
     }
 
@@ -231,6 +236,13 @@ class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredent
 
         private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
     }
+}
+
+/** "backdrop_path": a list of URLs or one URL, depending on the provider; the first usable one. */
+internal fun JsonObject.backdrop(): String? = when (val b = this["backdrop_path"]) {
+    is JsonArray -> b.firstNotNullOfOrNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf { u -> u.startsWith("http") } }
+    is JsonPrimitive -> b.contentOrNull?.takeIf { it.startsWith("http") }
+    else -> null
 }
 
 internal fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it != "null" }

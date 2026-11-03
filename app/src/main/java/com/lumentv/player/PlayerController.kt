@@ -51,6 +51,10 @@ data class PlaybackState(
     val lagMs: Long = 0,
     /** When [lagMs] last grew (elapsedRealtime), 0 = never. */
     val lagAt: Long = 0,
+    /** Stalls since this stream started: how many, and the end and length of the last one. */
+    val stalls: Int = 0,
+    val lastStallAt: Long = 0,
+    val lastStallMs: Long = 0,
     /** Live and paused by the viewer. */
     val pausedLive: Boolean = false,
 )
@@ -154,6 +158,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
             if (state == Player.STATE_READY && stallSince > 0) {
                 val ms = android.os.SystemClock.elapsedRealtime() - stallSince
                 Log.i(TAG, "stall at ${player.currentPosition / 1000} s: $ms ms"); stallSince = 0
+                _state.value = _state.value.copy(stalls = _state.value.stalls + 1, lastStallAt = android.os.SystemClock.elapsedRealtime(), lastStallMs = ms)
                 if (current?.live == true) addLag(ms)
             }
             // The provider closed a live stream: reopen it instead of leaving the last picture frozen.
@@ -289,6 +294,9 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         retryRunnable = r
         main.postDelayed(r, delaySec * 1000L)
     }
+
+    /** The download speed ExoPlayer measures on the streams (bits/s), 0 before the first measure. */
+    fun bandwidth(): Long = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(context).bitrateEstimate
 
     /** Live: reopens the channel, back to what the provider sends now ("Revenir au direct"). */
     fun goLive() {

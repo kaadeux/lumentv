@@ -175,7 +175,7 @@ class PlayerActivity : ComponentActivity() {
     }
 }
 
-private enum class Panel { NONE, CHANNELS, OPTIONS, AUDIO, SUBS, RESIZE, SLEEP, EPISODES }
+private enum class Panel { NONE, CHANNELS, OPTIONS, AUDIO, SUBS, RESIZE, SLEEP, EPISODES, NETWORK }
 
 @Composable
 private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolean, onExit: () -> Unit, onMini: () -> Unit) {
@@ -265,6 +265,20 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
         }
     }
     LaunchedEffect(vm.index, vm.mode) { showInfo() }
+    // Automatic quality (live): two stalls within two minutes, or one long stall, play the channel one quality lower;
+    // six minutes without a stall go back up.
+    var stallTimes by remember(vm.index) { mutableStateOf(emptyList<Long>()) }
+    LaunchedEffect(state.stalls) {
+        if (!live || vm.mode != Mode.LIVE || !vm.settings.autoQuality || state.stalls == 0) return@LaunchedEffect
+        val t = state.lastStallAt
+        stallTimes = (stallTimes + t).filter { t - it < com.lumentv.core.ChannelQuality.STALL_WINDOW_MS }
+        if (stallTimes.size >= 2 || state.lastStallMs >= com.lumentv.core.ChannelQuality.LONG_STALL_MS) { if (vm.lowerQuality()) stallTimes = emptyList() }
+    }
+    LaunchedEffect(vm.variant, state.lastStallAt) {
+        if (vm.variant == null) return@LaunchedEffect
+        delay(com.lumentv.core.ChannelQuality.STEADY_MS)
+        vm.raiseQuality()
+    }
     // Live behind by a pause or stalls: "Revenir au direct" during the pause and for a while after the delay grew.
     val lagButton = live && vm.mode == Mode.LIVE && state.error == null && (state.pausedLive ||
         state.lagMs >= com.lumentv.core.LiveLag.MIN_MS && tick >= 0 && android.os.SystemClock.elapsedRealtime() - state.lagAt < com.lumentv.core.LiveLag.SHOWN_MS)
@@ -425,7 +439,7 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
                     touched = { showInfo(5000) },
                 ),
             )
-            else if (live) LiveInfoBar(vm, state.videoInfo) else VodBar(vm, position, duration, state.playing)
+            else if (live) LiveInfoBar(vm, state.videoInfo, if (state.pausedLive) -1 else state.lagMs) else VodBar(vm, position, duration, state.playing)
         }
 
         if (panel == Panel.NONE && lagButton) {
@@ -495,12 +509,22 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
                     vm.nextEpisode?.let { n -> add(MenuOption("Épisode suivant : ${n.title.take(40)}") { vm.playEpisode(n) }) }
                     add(MenuOption("Autres épisodes") { panel = Panel.EPISODES })
                 }
+                if (vm.mode == Mode.LIVE && (vm.channel?.ch?.catchupDays ?: 0) > 0) vm.nowNext.now?.let { pr ->
+                    add(MenuOption("Reprendre « ${pr.title.take(40)} » au début") { vm.startOver() })
+                }
                 if (vm.mode == Mode.CATCHUP) add(MenuOption("Revenir au direct") { vm.backToLive() })
+                val reduced = vm.variant
+                if (reduced != null) {
+                    val label = com.lumentv.core.ChannelQuality.label(reduced.ch.name)
+                    add(MenuOption("Qualité réduite ($label) : revenir à la qualité choisie") { vm.chosenQuality() })
+                }
+                add(MenuOption("État du réseau") { panel = Panel.NETWORK })
                 add(MenuOption("Recharger le flux") { c.retryNow() })
             },
             onDismiss = { if (panel == Panel.OPTIONS) panel = Panel.NONE },
             subtitle = state.videoInfo,
         )
+        Panel.NETWORK -> com.lumentv.ui.NetworkPanel(vm.graph, c, onDismiss = { if (panel == Panel.NETWORK) panel = Panel.NONE })
         Panel.AUDIO -> OptionsDialog("Piste audio", audio.map { o -> MenuOption(o.label, o.selected) { c.select(C.TRACK_TYPE_AUDIO, o) } }
             .ifEmpty { listOf(MenuOption("Aucune piste audio détectée") {}) }, onDismiss = { if (panel == Panel.AUDIO) panel = Panel.NONE })
         Panel.SUBS -> OptionsDialog("Sous-titres", subs.map { o -> MenuOption(o.label, o.selected) { c.select(C.TRACK_TYPE_TEXT, o) } },
@@ -538,7 +562,7 @@ private fun CenterCard(title: String, subtitle: String?, extra: @Composable () -
 private val bottomScrim = Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000)))
 
 @Composable
-private fun LiveInfoBar(vm: PlayerViewModel, videoInfo: String?) {
+private fun LiveInfoBar(vm: PlayerViewModel, videoInfo: String?, lagMs: Long) {
     val row = vm.channel ?: return
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         Row(Modifier.fillMaxWidth().background(bottomScrim).padding(start = 40.dp, end = 40.dp, top = 60.dp, bottom = 28.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -561,12 +585,39 @@ private fun LiveInfoBar(vm: PlayerViewModel, videoInfo: String?) {
                     vm.nowNext.next?.let { n ->
                         Text("Ensuite ${timeRange(n.start, n.stop).substringBefore(" –")} · ${n.title}", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 1)
                     }
+                    DelayLine(lagMs, vm.variant?.let { com.lumentv.core.ChannelQuality.label(it.ch.name) })
                 } else {
                     Text("Pas d'information de programme", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
                 }
             }
             Text("◀ Liste   ▶ Options   ▲▼ Chaînes", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         }
+    }
+}
+
+/**
+ * Where the picture stands against live: "● En direct", or "En différé de 0:23" with a bar showing the delay over the
+ * last two minutes (from pauses and stalls, ‑1 = paused). The provider's own delay is not counted: it cannot be won back.
+ */
+@Composable
+private fun DelayLine(lagMs: Long, reduced: String?) {
+    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        val behind = lagMs < 0 || lagMs >= com.lumentv.core.LiveLag.MIN_MS
+        Text(if (behind) "●" else "●", color = if (behind) Palette.Gold else Palette.Danger, style = MaterialTheme.typography.labelLarge)
+        Text(when {
+            lagMs < 0 -> "  En pause"
+            behind -> "  En différé de " + clock(lagMs)
+            else -> "  En direct"
+        }, style = MaterialTheme.typography.labelLarge, color = Color.White)
+        if (behind) {
+            // Live on the right, the picture where it stands on the bar (two minutes wide at most).
+            val f = if (lagMs < 0) 1f else (1f - lagMs / 120_000f).coerceIn(0.05f, 1f)
+            Box(Modifier.padding(start = 12.dp).width(160.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x44FFFFFF))) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(Palette.Gold))
+            }
+            Text("   OK : revenir au direct", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+        }
+        reduced?.let { Text("   ·   Qualité réduite : $it (connexion lente)", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
     }
 }
 

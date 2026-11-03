@@ -67,6 +67,8 @@ fun SettingsScreen(vm: MainViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     val active by vm.active.collectAsStateWithLifecycle()
+    var network by remember { mutableStateOf(false) }
+    if (network) com.lumentv.ui.NetworkPanel(vm.graph, null, onDismiss = { network = false })
     val busy by vm.busy.collectAsStateWithLifecycle()
     var menu by remember { mutableStateOf<String?>(null) }
     var playlistMenu by remember { mutableStateOf<PlaylistEntity?>(null) }
@@ -159,6 +161,9 @@ fun SettingsScreen(vm: MainViewModel) {
         item { Group("Lecture") }
         item { SettingRow("Mémoire tampon", if (settings.bufferMode == "stable") "Stable (connexion faible)" else "Normale (démarrage rapide)", {
             scope.launch { vm.graph.settings.set(Keys.buffer, if (settings.bufferMode == "stable") "normal" else "stable") } }) }
+        item { SettingRow("Qualité automatique des chaînes", if (settings.autoQuality) "Activée : baisse (FHD → HD → SD) si l'image se bloque, remonte ensuite" else "Désactivée", {
+            scope.launch { vm.graph.settings.set(Keys.autoQuality, !settings.autoQuality) } }) }
+        item { SettingRow("Tester ma connexion", "Wi-Fi, internet et serveur du fournisseur", { network = true }) }
         if (!phoneDevice) item { SettingRow("Fréquence de l'écran", if (settings.matchFrameRate) "Adaptée à la vidéo (image fluide)" else "Fixe", {
             scope.launch { vm.graph.settings.set(Keys.matchFrameRate, !settings.matchFrameRate) } }) }
         item { SettingRow("Format d'image", resizeLabel(settings.resizeMode), { menu = "resize" }) }

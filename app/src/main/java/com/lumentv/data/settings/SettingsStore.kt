@@ -31,6 +31,8 @@ data class Settings(
     val subtitlesOn: Boolean = false,
     /** Switch the screen to the video's frame rate (50 Hz, 23.976 Hz…) while playing: no judder, a short black screen at the switch. This device only. */
     val matchFrameRate: Boolean = true,
+    /** Live: step down to the channel's lower quality (FHD → HD → SD) when the picture keeps stopping. */
+    val autoQuality: Boolean = true,
     val epgDays: Int = 3,
     /** "provider", "az" or "za". */
     val sort: String = "provider",
@@ -56,6 +58,7 @@ object Keys {
     val subLang = stringPreferencesKey("sub_lang")
     val subsOn = booleanPreferencesKey("subs_on")
     val matchFrameRate = booleanPreferencesKey("match_frame_rate")
+    val autoQuality = booleanPreferencesKey("auto_quality")
     val epgDays = intPreferencesKey("epg_days")
     val sort = stringPreferencesKey("sort")
     val showHidden = booleanPreferencesKey("show_hidden")
@@ -81,6 +84,7 @@ class SettingsStore(private val context: Context) {
             subtitleLang = p[Keys.subLang] ?: "",
             subtitlesOn = p[Keys.subsOn] ?: false,
             matchFrameRate = p[Keys.matchFrameRate] ?: true,
+            autoQuality = p[Keys.autoQuality] ?: true,
             epgDays = p[Keys.epgDays] ?: 3,
             sort = p[Keys.sort] ?: "provider",
             showHidden = p[Keys.showHidden] ?: false,

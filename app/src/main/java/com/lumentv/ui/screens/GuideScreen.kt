@@ -210,6 +210,7 @@ fun GuideScreen(vm: MainViewModel) {
         val t = System.currentTimeMillis()
         val options = buildList {
             if (pr.start <= t && pr.stop > t) add(MenuOption("Regarder en direct") { PlayerLauncher.live(context, row.ch.id, group) })
+            if (pr.start <= t && pr.stop > t && row.ch.catchupDays > 0) add(MenuOption("Regarder depuis le début") { PlayerLauncher.catchup(context, row.ch.id, pr) })
             if (pr.stop <= t && row.ch.catchupDays > 0) add(MenuOption("Regarder en rattrapage") { PlayerLauncher.catchup(context, row.ch.id, pr) })
             add(MenuOption("Fermer") {})
         }

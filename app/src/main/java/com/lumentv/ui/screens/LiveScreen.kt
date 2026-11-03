@@ -2,6 +2,11 @@
 
 package com.lumentv.ui.screens
 
+import androidx.lifecycle.viewModelScope
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.border
 import com.lumentv.ui.components.enterHere
 import com.lumentv.ui.components.enterOn
 import com.lumentv.ui.components.keepFocus
@@ -138,7 +143,8 @@ fun LiveScreen(vm: MainViewModel) {
                                 vm, row, epgVersion,
                                 onClick = {
                                     if (row.ch.groupName in vm.lockedCache && row.ch.groupName !in vm.unlocked.value) { pinFor = row.ch.groupName; pinError = null }
-                                    else PlayerLauncher.live(context, row.ch.id, group)
+                                    // The preview's stream stops first: a one-screen subscription refuses a second one.
+                                    else { PreviewStream.stop(); PlayerLauncher.live(context, row.ch.id, group) }
                                 },
                                 onLongClick = { menuFor = row },
                                 onFocus = { focused = row },
@@ -165,47 +171,36 @@ fun LiveScreen(vm: MainViewModel) {
             }
         }
         channelColumn()
-    } else Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Groups
-        Column(Modifier.width(190.dp).fillMaxHeight()) {
-            Text("Groupes", style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(bottom = 10.dp))
-            val specials = listOf(GroupInfo(Groups.ALL, p.channelCount, false, false), GroupInfo(Groups.FAVORITES, 0, false, false))
-            // Left from the channels lands on the group chosen.
-            val chosen = com.lumentv.ui.components.rememberEnterTarget()
-            LazyColumn(Modifier.enterOn(chosen), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    } else Column(Modifier.fillMaxSize()) {
+        // V2: the groups as tabs across the top ("Mes chaînes" first), then the channels and the focused one's programme.
+        val specials = listOf(GroupInfo(Groups.FAVORITES, 0, false, false), GroupInfo(Groups.ALL, p.channelCount, false, false))
+        val chosen = com.lumentv.ui.components.rememberEnterTarget()
+        Row(Modifier.padding(bottom = 12.dp).clip(RoundedCornerShape(26.dp)).background(Color(0xB3141416)).border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(26.dp)).padding(4.dp)) {
+            LazyRow(Modifier.enterOn(chosen), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 items(specials + groups.orEmpty(), key = { it.name }) { g ->
+                    val on = g.name == group
                     FocusSurface(
                         onClick = {
                             if (g.locked && g.name !in vm.unlocked.value) { pinFor = g.name; pinError = null }
                             group = g.name; vm.liveGroup = g.name
                         },
                         onLongClick = { if (g.name != Groups.ALL && g.name != Groups.FAVORITES) groupMenu = g },
-                        modifier = Modifier.fillMaxWidth().then(if (g.name == group) Modifier.enterHere(chosen) else Modifier), selected = g.name == group, focusedScale = 1.02f,
+                        modifier = if (on) Modifier.enterHere(chosen) else Modifier, shape = RoundedCornerShape(22.dp),
+                        container = if (on) Color(0x33FFFFFF) else Color.Transparent, focusedScale = 1.04f,
                     ) {
-                        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                when (g.name) { Groups.ALL -> "Toutes les chaînes"; Groups.FAVORITES -> "★ Favoris"; else -> g.name },
-                                style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
-                            )
-                            if (g.locked) Text("🔒", style = MaterialTheme.typography.bodySmall)
-                            if (g.hidden) Text(" masqué", style = MaterialTheme.typography.bodySmall)
-                            if (g.count > 0) Text("  ${g.count}", style = MaterialTheme.typography.bodySmall)
-                        }
+                        Text(when (g.name) { Groups.ALL -> "Toutes"; Groups.FAVORITES -> "★  Mes chaînes"; else -> g.name } + if (g.locked) "  🔒" else "",
+                            style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     }
                 }
             }
         }
-
-        // Channels
-        Column(Modifier.weight(1f).fillMaxHeight()) { channelColumn() }
-
-        // Preview of the focused channel
-        Column(Modifier.width(250.dp).fillMaxHeight().clip(RoundedCornerShape(14.dp)).background(Palette.Panel).padding(18.dp)) {
-            val f = focused
-            if (f == null) {
-                Text("Sélectionnez une chaîne", color = Palette.TextDim, style = MaterialTheme.typography.bodyLarge)
-            } else {
-                ChannelPreview(vm, f, epgVersion)
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Column(Modifier.weight(0.46f).fillMaxHeight().clip(RoundedCornerShape(18.dp)).background(Color(0x99141416)).padding(10.dp)) { channelColumn() }
+            Column(Modifier.weight(0.54f).fillMaxHeight()) {
+                val f = focused
+                if (f == null) Box(Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)).background(Palette.Panel), contentAlignment = Alignment.Center) {
+                    Text("Choisissez une chaîne", color = Palette.TextDim, style = MaterialTheme.typography.bodyLarge)
+                } else LivePreview(vm, f, epgVersion)
             }
         }
     }
@@ -354,3 +349,109 @@ fun timeRange(start: Long, stop: Long): String {
     return f.format(java.util.Date(start)) + " – " + f.format(java.util.Date(stop))
 }
 
+
+/** The focused channel, large: what is on (with its progress) over a tinted card, then what comes next. */
+@Composable
+private fun androidx.compose.foundation.layout.ColumnScope.LivePreview(vm: MainViewModel, row: ChannelRow, epgVersion: Int) {
+    val programs by produceState(emptyList<com.lumentv.data.db.ProgramEntity>(), row.ch.id, epgVersion) {
+        val now = System.currentTimeMillis()
+        value = vm.graph.epg.programs(row, now - 1, now + 8 * 3_600_000L).take(4)
+    }
+    val now = programs.firstOrNull()
+    // The channel itself plays in the card once the focus rests on it; its programme is written over the picture.
+    Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(18.dp))
+        .background(Brush.linearGradient(listOf(Color(0xFF2A1E19), Color(0xFF15161A), Color(0xFF101114))))) {
+        Box(Modifier.align(Alignment.Center), contentAlignment = Alignment.Center) { Logo(row.ch.logo, row.ch.name, size = 96.dp) }
+        LiveVideo(vm, row)
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x99000000), 0.25f to Color.Transparent, 0.45f to Color.Transparent, 1f to Color(0xEE000000))))
+        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Logo(row.ch.logo, row.ch.name, size = 44.dp)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(row.ch.name, style = MaterialTheme.typography.titleLarge, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("N° ${row.ch.number}" + (if (row.ch.catchupDays > 0) "  ·  Rattrapage ${row.ch.catchupDays} j" else ""), style = MaterialTheme.typography.bodySmall, color = Color(0xCCFFFFFF))
+            }
+        }
+        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(18.dp)) {
+            Text("●  EN DIRECT", style = MaterialTheme.typography.labelMedium, color = Color.White,
+                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0x66000000)).padding(horizontal = 10.dp, vertical = 4.dp))
+            Text(now?.title ?: "Pas d'information de programme", style = MaterialTheme.typography.titleLarge, color = Color.White, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+            if (now != null) Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                val f = java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE)
+                Text(f.format(java.util.Date(now.start)), style = MaterialTheme.typography.bodySmall, color = Color(0xCCFFFFFF))
+                ProgressLine(progressOf(now.start, now.stop), Modifier.weight(1f).padding(horizontal = 10.dp))
+                Text(f.format(java.util.Date(now.stop)), style = MaterialTheme.typography.bodySmall, color = Color(0xCCFFFFFF))
+            }
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Palette.Panel).padding(horizontal = 22.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            programs.getOrNull(1)?.let { n ->
+                Text("Ensuite · " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(n.start)), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                Text(n.title, style = MaterialTheme.typography.titleMedium, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            } ?: Text("Programme suivant inconnu", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+        }
+        Text("OK : regarder  ·  Maintenir OK : options", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+    }
+}
+
+/**
+ * The focused channel playing in the preview card, without sound, once the focus has rested on it for a moment (a
+ * quick scroll does not open every channel). One stream at a time: it stops when the focus moves, when the full-screen
+ * player opens (the menus go to the background) and while the mini-player plays.
+ */
+@Composable
+private fun LiveVideo(vm: MainViewModel, row: ChannelRow) {
+    val context = LocalContext.current
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val mini by vm.graph.miniPlayer.collectAsStateWithLifecycle()
+    var controller by remember { mutableStateOf<com.lumentv.player.PlayerController?>(null) }
+    var started by remember { mutableStateOf(false) }
+    androidx.compose.runtime.DisposableEffect(row.ch.id, mini, lifecycle) {
+        var job: kotlinx.coroutines.Job? = null
+        fun release() {
+            job?.cancel(); job = null
+            controller?.let { com.lumentv.data.xtream.ScreenGuard.stopped(); it.release() }
+            controller = null; started = false
+            PreviewStream.stop = {}
+        }
+        fun create() {
+            // Once: the observer is also told ON_START when it is added.
+            if (mini != null || controller != null || job != null) return
+            job = vm.viewModelScope.launch {
+                kotlinx.coroutines.delay(900)
+                val c = com.lumentv.player.PlayerController(context, vm.graph.streamHttp, vm.graph.settings.current())
+                c.player.volume = 0f
+                controller = c
+                com.lumentv.data.xtream.ScreenGuard.started()
+                PreviewStream.stop = ::release
+                runCatching { c.play(vm.graph.resolver.channel(row.ch)) }
+            }
+        }
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_START) create()
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) release()
+        }
+        lifecycle.addObserver(obs)
+        onDispose { lifecycle.removeObserver(obs); release() }
+    }
+    val c = controller ?: return
+    val st by c.state.collectAsStateWithLifecycle()
+    LaunchedEffect(st.playing) { if (st.playing) started = true }
+    // Shown once the first picture is there, so the logo stays until then (no black frame).
+    if (started) androidx.compose.ui.viewinterop.AndroidView(
+        factory = { androidx.media3.ui.PlayerView(it).apply {
+            useController = false; resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM; isFocusable = false
+            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+        } },
+        update = { if (it.player !== c.player) it.player = c.player },
+        modifier = Modifier.fillMaxSize(),
+    )
+}
+
+/** Stops the preview's stream at once (before the full-screen player opens). */
+object PreviewStream {
+    var stop: () -> Unit = {}
+}
