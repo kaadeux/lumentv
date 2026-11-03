@@ -72,7 +72,6 @@ import com.lumentv.ui.screens.SeriesDetailScreen
 import com.lumentv.ui.screens.SeriesScreen
 import com.lumentv.ui.screens.SettingsScreen
 import com.lumentv.ui.screens.SportsScreen
-import com.lumentv.ui.screens.SportsSettingsScreen
 import com.lumentv.ui.screens.DownloadsScreen
 import com.lumentv.ui.components.LumenIcons
 import com.lumentv.ui.components.MenuOption
@@ -224,7 +223,6 @@ fun ScreenContent(vm: MainViewModel, screen: Screen, states: androidx.compose.ru
                 Screen.History -> HistoryScreen(vm)
                 Screen.Settings -> SettingsScreen(vm)
                 Screen.Sports -> SportsScreen(vm)
-                Screen.SportsSettings -> SportsSettingsScreen(vm)
                 Screen.Recordings -> DownloadsScreen(vm)
                 is Screen.MovieDetail -> MovieDetailScreen(vm, s.playlistId, s.uid)
                 is Screen.SeriesDetail -> SeriesDetailScreen(vm, s.playlistId, s.uid)

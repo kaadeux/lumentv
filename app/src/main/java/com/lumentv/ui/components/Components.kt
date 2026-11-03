@@ -63,6 +63,51 @@ fun ButtonRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 @Composable
 fun hint(tv: String, phone: String) = if (com.lumentv.ui.LocalPhone.current) phone else tv
 
+/**
+ * A row of buttons (or a column) the remote comes back to on the element it left, not on the one level with where it
+ * comes from: [focusMemory] on the row, [remembered] on each element. An element that leaves the screen is forgotten.
+ */
+class FocusMemory {
+    var last: androidx.compose.ui.focus.FocusRequester? = null
+}
+
+@Composable
+fun rememberFocusMemory() = androidx.compose.runtime.remember { FocusMemory() }
+
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+fun Modifier.focusMemory(m: FocusMemory): Modifier = this.then(Modifier
+    .focusProperties { enter = { m.last ?: androidx.compose.ui.focus.FocusRequester.Default } }
+    .focusGroup())
+
+@Composable
+fun Modifier.remembered(m: FocusMemory, first: Boolean = false): Modifier {
+    val r = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.DisposableEffect(r) {
+        if (first && m.last == null) m.last = r
+        onDispose { if (m.last === r) m.last = null }
+    }
+    return this.then(Modifier.focusRequester(r).onFocusChanged { if (it.isFocused) m.last = r })
+}
+
+/** 1 to 5 stars the remote moves across; OK gives the note, OK again on the same star removes it. */
+@Composable
+fun StarRating(stars: Int, label: String, onRate: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val m = rememberFocusMemory()
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = Palette.TextDim, modifier = Modifier.padding(end = 12.dp))
+        Row(Modifier.focusMemory(m), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            (1..5).forEach { i ->
+                FocusSurface({ onRate(if (i == stars) 0 else i) }, Modifier.remembered(m, first = i == stars.coerceAtLeast(1)),
+                    shape = androidx.compose.foundation.shape.CircleShape, container = Color.Transparent, focusedScale = 1.15f) {
+                    Text(if (i <= stars) "★" else "☆", fontSize = 26.sp, color = if (i <= stars) Palette.Gold else Palette.TextDim,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                }
+            }
+        }
+        if (stars > 0) Text("  $stars/5", style = MaterialTheme.typography.labelLarge, color = Palette.Text)
+    }
+}
+
 /** The entry a column is entered on (the category or group chosen); see [enterOn] and [enterHere]. */
 class EnterTarget {
     val requester = androidx.compose.ui.focus.FocusRequester()

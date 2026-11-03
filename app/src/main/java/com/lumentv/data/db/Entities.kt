@@ -247,3 +247,28 @@ data class ReminderEntity(
     val stop: Long,
     val createdAt: Long = System.currentTimeMillis(),
 )
+
+/** A personal rating, 1 to 5 stars, of a film or a series (kind = mv / se). key = "<kind>:<playlistId>:<uid>". Kept on this device. */
+@Entity(tableName = "ratings", indices = [Index("ratedAt")])
+data class RatingEntity(
+    @PrimaryKey val key: String,
+    val kind: String,
+    val playlistId: Long,
+    val uid: String,
+    val stars: Int,
+    val ratedAt: Long,
+    val title: String,
+    val image: String? = null,
+)
+
+/** The TMDB title a film or series of the playlist is (null = looked for, not found). key as [RatingEntity]. */
+@Entity(tableName = "tmdb_links")
+data class TmdbLinkEntity(
+    @PrimaryKey val key: String,
+    val tmdbId: String?,
+    val checkedAt: Long,
+)
+
+/** Light rows of the whole library, for the search and the TMDB matching (no URLs, no plots). */
+data class VodLite(val id: Long, val uid: String, val name: String, val category: String, val year: String?, val rating: String?)
+data class ChannelLite(val id: Long, val name: String, val number: Int)

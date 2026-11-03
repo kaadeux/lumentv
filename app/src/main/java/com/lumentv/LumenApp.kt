@@ -49,9 +49,12 @@ class AppGraph(app: Application) {
     val library = LibraryRepository(db)
     val resolver = StreamResolver(playlists)
     val artwork = com.lumentv.data.repo.Artwork(playlists)
-    val logos = com.lumentv.data.TitleLogos(http, com.lumentv.BuildConfig.TMDB_KEY)
-    val tmdb = com.lumentv.data.Tmdb(http, com.lumentv.BuildConfig.TMDB_KEY)
-    val discover = com.lumentv.data.repo.Discover(db, tmdb, library)
+    val tmdb = com.lumentv.data.Tmdb(http, com.lumentv.BuildConfig.TMDB_KEY, app.cacheDir)
+    /** Logos and ratings through the same client, so they share TMDB's disk cache. */
+    val logos = com.lumentv.data.TitleLogos(tmdb.http, com.lumentv.BuildConfig.TMDB_KEY)
+    /** The whole library, light, in memory: search and TMDB matching. */
+    val index = com.lumentv.data.repo.LibraryIndex(db)
+    val discover = com.lumentv.data.repo.Discover(db, tmdb, index)
     val backup = BackupManager(app, db, settings)
     val updater = com.lumentv.update.Updater(app, http)
     val transfers = com.lumentv.transfer.TransferRepository(app, db)
@@ -83,7 +86,11 @@ class LumenApp : Application(), ImageLoaderFactory {
             RefreshWorker.sync(this@LumenApp, auto)
             graph.transfers.resumePending()
             val s = graph.settings.current()
-            (s.activePlaylistId.takeIf { it > 0 } ?: graph.playlists.all().firstOrNull()?.id)?.let { graph.sports.prewarm(it) }
+            (s.activePlaylistId.takeIf { it > 0 } ?: graph.playlists.all().firstOrNull()?.id)?.let {
+                // Ready before the viewer opens Films or the search: the library's index (titles in memory).
+                runCatching { graph.index.of(it) }
+                graph.sports.prewarm(it)
+            }
             // Lists saved before v4 lack the series' TMDB ids (recap / intro buttons): reload them once.
             graph.playlists.all().filter { it.type == com.lumentv.data.db.PlaylistType.XTREAM && it.seriesCount > 0 }.forEach { p ->
                 if (graph.db.vod().seriesWithTmdb(p.id) == 0) graph.playlists.refresh(p.id)
@@ -96,6 +103,8 @@ class LumenApp : Application(), ImageLoaderFactory {
         .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.12).build() }
         .diskCache { DiskCache.Builder().directory(cacheDir.resolve("images")).maxSizeBytes(120L * 1024 * 1024).build() }
         .crossfade(false)
+        // Posters and logos in 16-bit colours when they have no transparency: half the memory, no visible change on a TV.
+        .allowRgb565(true)
         .respectCacheHeaders(false)
         .build()
 }

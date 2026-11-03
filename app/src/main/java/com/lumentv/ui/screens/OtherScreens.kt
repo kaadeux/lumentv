@@ -142,7 +142,7 @@ fun SearchScreen(vm: MainViewModel) {
         if (vm.lastResults?.first == query) return@produceState
         if (normalize(query).length < 2) { value = SearchResults(); return@produceState }
         delay(250)
-        value = vm.graph.library.search(query, vm.graph.epg)
+        value = vm.graph.library.search(query, vm.graph.epg, vm.active.value?.id, vm.graph.index, vm.graph.tmdb)
         vm.lastResults = query to value
     }
     fun select(t: SearchTab) { tab = t; vm.searchTab = t }

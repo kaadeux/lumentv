@@ -44,7 +44,6 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.lumentv.data.repo.Groups
-import com.lumentv.data.sports.SportEvent
 import com.lumentv.data.sports.SportPrefs
 import com.lumentv.data.sports.SportsCatalog
 import com.lumentv.ui.MainViewModel
@@ -70,192 +69,15 @@ import kotlinx.coroutines.launch
 fun SportsScreen(vm: MainViewModel) {
     val active by vm.active.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val epgVersion by vm.graph.epg.version.collectAsStateWithLifecycle()
     val p = active ?: return EmptyState("Aucune playlist", "")
     val prefs = SportPrefs.of(settings)
     // Same system as the PC: the official calendar.
-    return OfficialSports(vm, p.id, prefs)
-    var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { delay(60_000); tick++ } }
-    val events by produceState<List<SportEvent>?>(null, p.id, prefs, epgVersion, tick) { value = vm.graph.sports.events(p.id, prefs) }
-    var open by remember { mutableStateOf<SportEvent?>(null) }
-
-    Column(Modifier.fillMaxSize()) {
-        ScreenTitle("Sports") { TvButton("Mes sports et équipes", { vm.open(Screen.SportsSettings) }) }
-        Text(describe(prefs), style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 2, modifier = Modifier.padding(bottom = 10.dp))
-        val list = events
-        when {
-            p.lastEpgRefresh == 0L -> EmptyState("Pas de guide TV", "Le panneau sportif lit les programmes du guide. Actualisez le guide dans Paramètres.")
-            list == null -> Loading("Recherche des matchs dans le guide…")
-            list.isEmpty() -> EmptyState("Aucun match trouvé", "Rien dans le guide pour vos sports, compétitions et équipes sur ${prefs.days} jour(s). " +
-                "Élargissez vos choix dans « Mes sports et équipes ».")
-            else -> {
-                val now = System.currentTimeMillis()
-                val live = list.filter { it.isLive(now) }
-                val upcoming = list.filter { !it.isLive(now) }.groupBy { dayLabel(it.start) }
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize()) {
-                    if (live.isNotEmpty()) {
-                        item { DayHeader("🔴 En cours (${live.size})") }
-                        items(live, key = { "l" + it.key }) { e -> EventRow(e) { open = e } }
-                    }
-                    upcoming.forEach { (day, evs) ->
-                        item(key = "h$day") { DayHeader("$day (${evs.size})") }
-                        items(evs, key = { "u" + it.key }) { e -> EventRow(e) { open = e } }
-                    }
-                }
-            }
-        }
-    }
-    open?.let { e -> EventDialog(vm, e, onDismiss = { open = null }) }
-}
-
-private fun describe(p: SportPrefs): String {
-    val sports = if (p.sports.isEmpty()) "tous les sports" else p.sports.mapNotNull { SportsCatalog.byId(it)?.label }.joinToString(", ")
-    val focus = (p.competitions + p.teams).takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { " · uniquement : $it" } ?: ""
-    return "Matchs en cours et à venir sur ${p.days} jour(s) : $sports$focus. Source : guide TV de votre playlist."
+    OfficialSports(vm, p.id, prefs)
 }
 
 @Composable
 private fun DayHeader(text: String) =
     Text(text, style = MaterialTheme.typography.titleLarge, color = Palette.Text, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
-
-@Composable
-private fun EventRow(e: SportEvent, onClick: () -> Unit) {
-    val now = System.currentTimeMillis()
-    FocusSurface(onClick, Modifier.fillMaxWidth(), focusedScale = 1.01f) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(e.sport.emoji, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.width(44.dp))
-            Column(Modifier.width(110.dp)) {
-                Text(timeRange(e.start, e.stop).substringBefore(" –"), style = MaterialTheme.typography.titleMedium)
-                if (e.isLive(now)) ProgressLine(progressOf(e.start, e.stop), Modifier.fillMaxWidth(0.8f).padding(top = 4.dp), Palette.Danger)
-            }
-            Column(Modifier.weight(1f)) {
-                Text(e.label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(listOfNotNull(e.sport.label, e.competition).joinToString(" · "), style = MaterialTheme.typography.bodySmall, maxLines = 1)
-            }
-            if (e.isLive(now)) { Badge("EN DIRECT", Palette.Danger); Spacer(Modifier.width(10.dp)) }
-            Text("${e.channels.size} chaîne" + if (e.channels.size > 1) "s" else "", style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-}
-
-/** The channels showing a match; OK plays it live. Upcoming matches can be reminded or recorded. */
-@Composable
-private fun EventDialog(vm: MainViewModel, e: SportEvent, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val now = System.currentTimeMillis()
-    Dialog(onDismissRequest = onDismiss) {
-        Column(Modifier.ignoreHeldOk().panelWidth(600.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp)) {
-            Text("${e.sport.emoji}  ${listOfNotNull(e.sport.label, e.competition).joinToString(" · ")}", style = MaterialTheme.typography.labelLarge, color = Palette.Accent)
-            Text(e.label, style = MaterialTheme.typography.headlineSmall, color = Palette.Text, maxLines = 2)
-            Text("${dayLabel(e.start)} ${timeRange(e.start, e.stop)}" + if (e.isLive(now)) " · en direct" else "",
-                style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
-            e.description?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 3, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 6.dp)) }
-            Text(if (e.isLive(now)) "Choisissez une chaîne pour regarder :" else "Diffusé sur :", style = MaterialTheme.typography.titleMedium,
-                color = Palette.Text, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.heightIn(max = 300.dp)) {
-                items(e.channels, key = { it.ch.id }) { row ->
-                    FocusSurface({ PlayerLauncher.live(context, row.ch.id, Groups.ALL); onDismiss() }, Modifier.fillMaxWidth(),
-                        container = Palette.PanelHigh, focusedScale = 1.01f) {
-                        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(row.ch.number.toString(), style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(44.dp))
-                            Logo(row.ch.logo, row.ch.name, size = 34.dp)
-                            Text("  " + row.ch.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f))
-                            if (row.ch.groupName.isNotBlank()) Text(row.ch.groupName, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SportsSettingsScreen(vm: MainViewModel) {
-    val settings by vm.settings.collectAsStateWithLifecycle()
-    val active by vm.active.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
-    val sports = remember { mutableStateListOf<String>().apply { addAll(settings.sportIds) } }
-    val comps = remember { mutableStateListOf<String>().apply { addAll(settings.sportCompetitions) } }
-    val teams = remember { mutableStateListOf<String>().apply { addAll(settings.sportTeams) } }
-    var days by remember { mutableStateOf(settings.sportDays) }
-    val leagues = remember { mutableStateListOf<String>().apply { addAll(settings.sportLeagues) } }
-    var newComp by remember { mutableStateOf("") }
-    var newTeam by remember { mutableStateOf("") }
-    var daysMenu by remember { mutableStateOf(false) }
-    val suggestions by produceState(emptyList<String>() to emptyList<String>(), active?.id, sports.toList()) {
-        active?.let { value = vm.graph.sports.suggestions(it.id, sports.toSet()) }
-    }
-    fun save() = scope.launch {
-        vm.graph.sports.save(SportPrefs(sports.toSet(), comps.toList(), teams.toList(), days, leagues.toSet()))
-        vm.show("Préférences sportives enregistrées"); vm.back()
-    }
-
-    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { ScreenTitle("Mes sports et équipes") { TvButton("Enregistrer", { save() }, primary = true) } }
-        item { Section("Calendrier officiel : matchs en cours et à venir, sans les rediffusions") }
-        item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                com.lumentv.data.sports.FixtureClient.leagues.forEach { l ->
-                    Chip((SportsCatalog.byId(l.sport)?.emoji?.let { "$it " } ?: "") + l.label, l.id in leagues) { if (l.id in leagues) leagues.remove(l.id) else leagues.add(l.id) }
-                }
-            }
-        }
-        item {
-            Text("Le panneau Sports montre les vrais matchs de ces compétitions (calendriers publics ESPN et TheSportsDB), avec les chaînes " +
-                "de votre liste qui les diffusent, ou le diffuseur habituel. Ce choix est partagé avec le PC. Les sections ci-dessous servent " +
-                "seulement à filtrer par équipe et à choisir la période.",
-                style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-        }
-        item { Section("Sports (aucun coché = tous)") }
-        item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SportsCatalog.all.forEach { s ->
-                    Chip("${s.emoji} ${s.label}", s.id in sports) { if (s.id in sports) sports.remove(s.id) else sports.add(s.id) }
-                }
-            }
-        }
-        item { Section("Compétitions suivies (aucune = toutes)") }
-        item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                (comps + suggestions.first.filter { it !in comps }).forEach { c -> Chip(c, c in comps) { if (c in comps) comps.remove(c) else comps.add(c) } }
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
-                TvTextField("Ajouter une compétition", newComp, { newComp = it }, Modifier.weight(1f), placeholder = "ex. Ligue 1, NBA, Top 14", keyboardType = KeyboardType.Text)
-                TvButton("Ajouter", { newComp.trim().takeIf { it.isNotEmpty() && it !in comps }?.let { comps.add(it) }; newComp = "" })
-            }
-        }
-        item { Section("Équipes / joueurs suivis (aucun = tous)") }
-        item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                (teams + suggestions.second.filter { it !in teams }).forEach { t -> Chip(t, t in teams) { if (t in teams) teams.remove(t) else teams.add(t) } }
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
-                TvTextField("Ajouter une équipe ou un joueur", newTeam, { newTeam = it }, Modifier.weight(1f), placeholder = "ex. PSG, Toulouse, Sinner", keyboardType = KeyboardType.Text)
-                TvButton("Ajouter", { newTeam.trim().takeIf { it.isNotEmpty() && it !in teams }?.let { teams.add(it) }; newTeam = "" })
-            }
-        }
-        item { Section("Période") }
-        item { TvButton("Afficher les matchs sur $days jour(s)", { daysMenu = true }) }
-        item {
-            Text("Les suggestions viennent du guide TV de la playlist active. Un match est retenu s'il correspond à un sport coché et, " +
-                "si vous en avez choisi, à une compétition ou une équipe.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim,
-                modifier = Modifier.padding(top = 8.dp, bottom = 30.dp))
-        }
-    }
-    if (daysMenu) OptionsDialog("Période", listOf(1, 2, 3, 5, 7).map { d -> MenuOption("$d jour(s)", d == days) { days = d } }, onDismiss = { daysMenu = false })
-}
-
-@Composable
-private fun Section(text: String) =
-    Text(text, style = MaterialTheme.typography.titleMedium, color = Palette.Accent, modifier = Modifier.padding(top = 12.dp))
 
 @Composable
 private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {

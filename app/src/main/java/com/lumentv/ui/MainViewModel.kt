@@ -25,7 +25,6 @@ sealed interface Screen {
     data object History : Screen
     data object Settings : Screen
     data object Sports : Screen
-    data object SportsSettings : Screen
     data object Recordings : Screen
     /** Phone only: the destinations that are not bottom tabs. */
     data object More : Screen

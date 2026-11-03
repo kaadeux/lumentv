@@ -57,6 +57,12 @@ interface PlaylistDao {
 
 @Dao
 interface ChannelDao {
+    @Query("SELECT id, name, number FROM channels WHERE playlistId = :pid")
+    suspend fun channelIndex(pid: Long): List<ChannelLite>
+
+    @Query("$CH_SELECT WHERE c.id IN (:ids) AND IFNULL(p.hidden, 0) = 0")
+    suspend fun byIds(ids: List<Long>): List<ChannelRow>
+
     @Query("$CH_SELECT WHERE c.playlistId = :pid AND (:group IS NULL OR c.groupName = :group) ORDER BY c.number")
     suspend fun inGroup(pid: Long, group: String?): List<ChannelRow>
 
@@ -103,6 +109,20 @@ interface ChannelDao {
 
 @Dao
 interface VodDao {
+    @Query("SELECT id, uid, name, category, year, rating FROM movies WHERE playlistId = :pid")
+    suspend fun movieIndex(pid: Long): List<VodLite>
+
+    @Query("SELECT id, uid, name, category, year, rating FROM series WHERE playlistId = :pid")
+    suspend fun seriesIndex(pid: Long): List<VodLite>
+
+    @Query("""SELECT m.*, p.favorite AS favorite FROM movies m LEFT JOIN prefs p ON p.playlistId = m.playlistId AND p.kind = 'mv' AND p.uid = m.uid
+        WHERE m.id IN (:ids)""")
+    suspend fun moviesByIds(ids: List<Long>): List<MovieRow>
+
+    @Query("""SELECT s.*, p.favorite AS favorite FROM series s LEFT JOIN prefs p ON p.playlistId = s.playlistId AND p.kind = 'se' AND p.uid = s.uid
+        WHERE s.id IN (:ids)""")
+    suspend fun seriesByIds(ids: List<Long>): List<SeriesRow>
+
     @Query("SELECT COUNT(*) FROM series WHERE playlistId = :pid AND tmdb IS NOT NULL")
     suspend fun seriesWithTmdb(pid: Long): Int
 
@@ -326,4 +346,25 @@ interface ReminderDao {
 
     @Query("DELETE FROM reminders WHERE stop < :before")
     suspend fun prune(before: Long)
+}
+
+@Dao
+interface RatingDao {
+    @Query("SELECT * FROM ratings ORDER BY ratedAt DESC")
+    fun observeAll(): Flow<List<RatingEntity>>
+
+    @Query("SELECT * FROM ratings")
+    suspend fun all(): List<RatingEntity>
+
+    @Upsert
+    suspend fun upsert(r: RatingEntity)
+
+    @Query("DELETE FROM ratings WHERE key = :key")
+    suspend fun delete(key: String)
+
+    @Query("SELECT * FROM tmdb_links WHERE key = :key")
+    suspend fun link(key: String): TmdbLinkEntity?
+
+    @Upsert
+    suspend fun saveLink(l: TmdbLinkEntity)
 }

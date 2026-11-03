@@ -10,20 +10,21 @@ import androidx.room.RoomDatabase
     entities = [
         PlaylistEntity::class, ChannelEntity::class, MovieEntity::class, SeriesEntity::class, EpisodeEntity::class,
         PrefEntity::class, ProgramEntity::class, EpgChannelEntity::class, HistoryEntity::class,
-        TransferEntity::class, ReminderEntity::class,
+        TransferEntity::class, ReminderEntity::class, RatingEntity::class, TmdbLinkEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
     // v2 only adds tables: Room migrates by itself and keeps playlists, favourites and history.
     // v3 adds an index on programme start times (sports panel). Both migrations keep every row.
     // v4 adds the series' TMDB id (a nullable column), v5 the date a series last changed (0 until the next refresh),
-    // v6 its backdrop picture.
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6)],
+    // v6 its backdrop picture, v7 the personal ratings and the TMDB links (two new tables).
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7)],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun playlists(): PlaylistDao
     abstract fun channels(): ChannelDao
     abstract fun vod(): VodDao
+    abstract fun ratings(): RatingDao
     abstract fun prefs(): PrefDao
     abstract fun epg(): EpgDao
     abstract fun history(): HistoryDao

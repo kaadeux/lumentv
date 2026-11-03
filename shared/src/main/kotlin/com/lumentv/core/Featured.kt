@@ -38,11 +38,4 @@ object Featured {
     /** One per title, without the foreign copies and hidden categories, at most [ROW]. */
     fun <T> clean(list: List<T>, name: (T) -> String, category: (T) -> String, hidden: Set<String> = emptySet()): List<T> =
         list.filter { !foreign(name(it), category(it)) && category(it) !in hidden }.distinctBy { baseTitle(name(it)) }.take(ROW)
-
-    /** The best rated of the last years, best first. */
-    fun <T> topRated(list: List<T>, rating: (T) -> String?, year: (T) -> String?): List<T> {
-        val from = Calendar.getInstance().get(Calendar.YEAR) - RECENT_YEARS
-        return list.filter { (rating(rating(it)) ?: 0.0) in GOOD..BEST && (year(year(it)) ?: 0) >= from }
-            .sortedByDescending { rating(rating(it)) }
-    }
 }

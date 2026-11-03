@@ -40,6 +40,10 @@ data class BackupPref(val playlistOldId: Long, val kind: String, val uid: String
 data class BackupHistory(val playlistOldId: Long, val kind: String, val uid: String, val title: String, val subtitle: String?,
                          val image: String?, val parentUid: String?, val watchedAt: Long, val positionMs: Long, val durationMs: Long)
 
+/** Personal ratings, 1 to 5 stars (format 3). */
+@Serializable
+data class BackupRating(val playlistOldId: Long, val kind: String, val uid: String, val stars: Int, val ratedAt: Long, val title: String, val image: String?)
+
 @Serializable
 data class BackupFile(
     val format: Int = 1,
@@ -51,6 +55,7 @@ data class BackupFile(
     val history: List<BackupHistory> = emptyList(),
     /** Learned intro ends and credits lengths per series (SharedPreferences "series_markers"). */
     val seriesMarkers: Map<String, Long> = emptyMap(),
+    val ratings: List<BackupRating> = emptyList(),
 )
 
 /** Exports / imports playlists, favourites, hidden items, EPG corrections, settings and watch history as one JSON file. */
@@ -61,7 +66,7 @@ class BackupManager(context: Context, private val db: AppDatabase, private val s
     suspend fun export(target: File, includeSecrets: Boolean): Int = withContext(Dispatchers.IO) {
         val playlists = db.playlists().all()
         val file = BackupFile(
-            format = 2,
+            format = 3,
             createdAt = System.currentTimeMillis(),
             includesSecrets = includeSecrets,
             settings = settings.export(),
@@ -83,6 +88,7 @@ class BackupManager(context: Context, private val db: AppDatabase, private val s
                 BackupHistory(it.playlistId, it.kind, it.uid, it.title, it.subtitle, it.image, it.parentUid, it.watchedAt, it.positionMs, it.durationMs)
             },
             seriesMarkers = markers.all.mapNotNull { (k, v) -> (v as? Long)?.let { k to it } }.toMap(),
+            ratings = db.ratings().all().map { BackupRating(it.playlistId, it.kind, it.uid, it.stars, it.ratedAt, it.title, it.image) },
         )
         target.parentFile?.mkdirs()
         target.writeText(json.encodeToString(file))
@@ -116,6 +122,10 @@ class BackupManager(context: Context, private val db: AppDatabase, private val s
                 h.parentUid, h.watchedAt, h.positionMs, h.durationMs))
         }
         markers.edit().apply { file.seriesMarkers.forEach { (k, v) -> putLong(k, v) } }.apply()
+        file.ratings.forEach { r ->
+            val pid = idMap[r.playlistOldId] ?: return@forEach
+            db.ratings().upsert(com.lumentv.data.db.RatingEntity(LibraryRepository.key(r.kind, pid, r.uid), r.kind, pid, r.uid, r.stars, r.ratedAt, r.title, r.image))
+        }
         idMap.values.toList()
     }
 }

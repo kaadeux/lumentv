@@ -101,7 +101,7 @@ fun PhoneShell(vm: MainViewModel, firstLaunch: Boolean, screen: @Composable (Scr
         Screen.Live -> "Direct"; Screen.Movies -> "Films"; Screen.Series -> "Séries"; Screen.Sports -> "Sport"
         Screen.More -> "Plus"; Screen.Guide -> "Guide TV"; Screen.Favorites -> "Favoris"; Screen.Search -> "Recherche"
         Screen.History -> "Historique"; Screen.Recordings -> "Téléchargés"; Screen.Settings -> "Paramètres"
-        Screen.SportsSettings -> "Réglages du sport"; is Screen.MovieDetail -> "Film"; is Screen.SeriesDetail -> "Série"
+        is Screen.MovieDetail -> "Film"; is Screen.SeriesDetail -> "Série"
         is Screen.PlaylistEdit -> "Playlist"; is Screen.EpgFix -> "Guide de la chaîne"
     }
 

@@ -95,7 +95,7 @@ fun TopNav(tabs: List<TopTab>, icons: List<TopIcon>, selected: Screen, first: Fo
         val last = remember { FocusRequester() }
         // Entering the tabs: from the icons on their right, the last tab (the nearest); from the screen below, the current one.
         Row(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xCC17171A)).border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(30.dp))
-            .padding(4.dp).focusProperties { enter = { dir -> if (dir == androidx.compose.ui.focus.FocusDirection.Left && tabs.last().screen != selected && current != null) last else first } }.focusGroup(),
+            .padding(4.dp).focusProperties { enter = { dir -> if (dir == androidx.compose.ui.focus.FocusDirection.Left && tabs.last().screen != selected) last else first } }.focusGroup(),
             horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             tabs.forEach { t ->
                 val on = t.screen == selected

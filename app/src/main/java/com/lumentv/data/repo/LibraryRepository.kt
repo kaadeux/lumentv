@@ -1,5 +1,6 @@
 package com.lumentv.data.repo
 
+import kotlinx.coroutines.async
 import com.lumentv.core.normalize
 import com.lumentv.data.db.AppDatabase
 import com.lumentv.data.db.ChannelRow
@@ -213,11 +214,41 @@ class LibraryRepository(private val db: AppDatabase) {
     suspend fun deleteHistory(key: String) = withContext(Dispatchers.IO) { db.history().delete(key) }
     suspend fun clearHistory() = withContext(Dispatchers.IO) { db.history().clear() }
 
-    // ---- Search (local only) ------------------------------------------------------------------------------
+    // ---- Personal ratings ------------------------------------------------------------------------------------
 
-    suspend fun search(query: String, epg: EpgRepository): SearchResults = withContext(Dispatchers.IO) {
+    fun observeRatings() = db.ratings().observeAll()
+
+    /** 1 to 5 stars, or 0 to remove the rating. [kind]: mv (film) or se (series). */
+    suspend fun rate(kind: String, pid: Long, uid: String, stars: Int, title: String, image: String?) = withContext(Dispatchers.IO) {
+        val key = key(kind, pid, uid)
+        if (stars <= 0) db.ratings().delete(key)
+        else db.ratings().upsert(com.lumentv.data.db.RatingEntity(key, kind, pid, uid, stars.coerceIn(1, 5), System.currentTimeMillis(), title, image))
+    }
+
+    // ---- Search ----------------------------------------------------------------------------------------------
+
+    /**
+     * Channels, films and series by a tolerant search in the playlist's titles (see [com.lumentv.core.SmartSearch]),
+     * plus the films and series TMDB finds under another title (French or original) that the playlist has; then
+     * episodes and programmes as before (by words). [pid] is the active playlist.
+     */
+    suspend fun search(query: String, epg: EpgRepository, pid: Long?, index: LibraryIndex, tmdb: com.lumentv.data.Tmdb): SearchResults = withContext(Dispatchers.IO) {
         val q = normalize(query)
         if (q.length < 2) return@withContext SearchResults()
+        val sq = com.lumentv.core.SmartSearch.Query(query)
+        val idx = pid?.let { index.of(it) }
+        // Other titles: TMDB's French and original titles of what the query means ("seigneur des anneaux" → "The Lord of the Rings").
+        val other: Pair<List<com.lumentv.data.db.VodLite>, List<com.lumentv.data.db.VodLite>> =
+            if (idx != null && tmdb.enabled && sq.compact.length >= 3) kotlinx.coroutines.coroutineScope {
+                val mv = async { tmdb.search(false, query).take(8).mapNotNull { idx.find(false, it) } }
+                val se = async { tmdb.search(true, query).take(8).mapNotNull { idx.find(true, it) } }
+                mv.await() to se.await()
+            } else emptyList<com.lumentv.data.db.VodLite>() to emptyList()
+        fun merge(local: List<com.lumentv.data.db.VodLite>, alt: List<com.lumentv.data.db.VodLite>) =
+            (local + alt).distinctBy { it.id }.distinctBy { com.lumentv.core.Featured.baseTitle(it.name) }.take(SEARCH_LIMIT)
+        val movieIds = idx?.let { merge(com.lumentv.core.SmartSearch.search(sq, it.movies, SEARCH_LIMIT * 2), other.first) }?.map { it.id }
+        val seriesIds = idx?.let { merge(com.lumentv.core.SmartSearch.search(sq, it.series, SEARCH_LIMIT * 2), other.second) }?.map { it.id }
+        val channelIds = idx?.let { com.lumentv.core.SmartSearch.search(sq, it.channels, SEARCH_LIMIT) }?.map { it.id }
         val programs = db.epg().search(q, System.currentTimeMillis(), SEARCH_LIMIT)
         val byPlaylist = HashMap<Long, Map<String, ChannelRow>>()
         val progPairs = programs.map { p ->
@@ -231,10 +262,12 @@ class LibraryRepository(private val db: AppDatabase) {
             }
             p to map[p.epgKey]
         }
+        // The search's order kept (the rows come back from the database in any order).
+        fun <T, K> ordered(ids: List<K>, rows: List<T>, key: (T) -> K): List<T> { val m = rows.associateBy(key); return ids.mapNotNull { m[it] } }
         SearchResults(
-            channels = db.channels().search(q, SEARCH_LIMIT),
-            movies = db.vod().searchMovies(q, SEARCH_LIMIT),
-            series = db.vod().searchSeries(q, SEARCH_LIMIT),
+            channels = channelIds?.let { ids -> ordered(ids, ids.chunked(500).flatMap { db.channels().byIds(it) }) { it.ch.id } } ?: db.channels().search(q, SEARCH_LIMIT),
+            movies = movieIds?.let { ids -> ordered(ids, db.vod().moviesByIds(ids)) { it.m.id } } ?: db.vod().searchMovies(q, SEARCH_LIMIT),
+            series = seriesIds?.let { ids -> ordered(ids, db.vod().seriesByIds(ids)) { it.s.id } } ?: db.vod().searchSeries(q, SEARCH_LIMIT),
             episodes = db.vod().searchEpisodes(q, SEARCH_LIMIT),
             programs = progPairs,
         )
