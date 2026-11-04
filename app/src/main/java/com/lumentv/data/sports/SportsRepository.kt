@@ -106,7 +106,8 @@ class SportsRepository(
                 named.filter { (_, l, t) -> FixtureMatcher.matches(f, l, t, channelName = true) }.map { it.first }).distinctBy { it.ch.id }
             // The French channel, when the playlist has it under the same name, becomes playable too.
             val linked = tv?.let { FrenchTvGuide.best(byKey[FrenchTvGuide.channelKey(it.channel)].orEmpty()) { r -> r.ch.name } }.orEmpty()
-            Game(f, (own + linked).distinctBy { it.ch.id }, tv?.channel, tv?.start ?: 0)
+            // French channels only: the panel is for a French family.
+            Game(f, (own + linked).distinctBy { it.ch.id }.filter { FrenchTvGuide.french(it.ch.name, it.ch.groupName) }, tv?.channel, tv?.start ?: 0)
         }
     }
 

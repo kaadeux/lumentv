@@ -116,6 +116,22 @@ class FrenchTvGuide(http: OkHttpClient, private val cacheFile: File, private val
             when { "FHD" in n -> 0; "HD" in n && "UHD" !in n -> 1; "H265" in n || "HEVC" in n -> 3; "SD" in n -> 4; else -> 2 }
         }.take(2)
 
+        /**
+         * A channel in French, for the Sports panel: no country prefix but FR ("AR | beIN", "UK: Sky" are not), no foreign
+         * country or language in its name or group ("SPORT AR", "DAZN ARABIC", "beIN SPORTS ES"), no Arabic script.
+         */
+        fun french(name: String, group: String): Boolean {
+            if (!frenchOrPlain(name) || !frenchOrPlain(group)) return false
+            if ((name + group).any { it in '؀'..'ۿ' }) return false
+            val words = (com.lumentv.core.normalize(name) + " " + com.lumentv.core.normalize(group)).split(' ').toSet()
+            // "Borussia Dortmund v Real Madrid": the English way of writing a game (French channels write "-" or "/").
+            return words.none { it in foreign } && !Regex("\\S \\bv\\b \\S").containsMatchIn(name)
+        }
+
+        private val foreign = setOf("ar", "arab", "arabic", "arabe", "uk", "us", "usa", "es", "esp", "espana", "spain", "it", "ita", "italia",
+            "de", "ger", "germany", "deutsch", "pt", "portugal", "br", "brasil", "nl", "tr", "turk", "turkey", "pl", "ru", "en", "eng", "english",
+            "latino", "latam", "mx", "mena", "stan", "au", "aus", "australia", "nz", "optus", "kayo", "ca", "canada", "afrika", "africa", "india", "pk", "gr", "ro", "al", "ex yu", "exyu", "kurd", "persian", "iran")
+
         /** A playlist channel the viewer can use for a French broadcast: no country prefix, or FR. */
         fun frenchOrPlain(name: String): Boolean {
             val m = Regex("^\\s*([A-Za-z0-9]{2,3})\\s*[|:]").find(name) ?: return true
