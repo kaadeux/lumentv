@@ -630,7 +630,7 @@ private fun Hero(vm: MainViewModel, h: HeroItem, info: XVodInfo?, actions: @Comp
         val meta = listOfNotNull(ratingText(t, h.rating ?: info?.rating)) + h.meta + listOfNotNull(info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(2)?.joinToString(" • ") { it.trim() })
         if (meta.isNotEmpty()) Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.85f),
             maxLines = 1, modifier = Modifier.padding(top = 6.dp))
-        (info?.plot ?: h.plot)?.takeIf { it.isNotBlank() }?.let {
+        (t?.overview ?: info?.plot ?: h.plot)?.takeIf { it.isNotBlank() }?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.9f), maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(0.52f).padding(top = 6.dp))
         }
@@ -699,7 +699,7 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
         val meta = listOfNotNull(ratingText(t, m.m.rating)) + metaOf(null, com.lumentv.core.Featured.yearOf(m.m.year ?: info?.releaseDate, m.m.name)?.toString(),
             info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(3)?.joinToString(" • ") { it.trim() })
         Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
-        Text(info?.plot ?: "Aucun résumé disponible.", style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 3,
+        Text(t?.overview ?: info?.plot ?: "Aucun résumé disponible.", style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 3,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 10.dp))
         if (resumable) Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             ProgressLine(h!!.positionMs.toFloat() / h.durationMs.coerceAtLeast(1), Modifier.width(220.dp))
@@ -731,8 +731,8 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
         if (h != null || myStars > 0) com.lumentv.ui.components.StarRating(myStars, if (myStars > 0) "Votre note" else "Notez ce film",
             { n -> scope.launch { vm.graph.library.rate(HistoryKind.MOVIE, playlistId, uid, n, m.m.name.substringBefore(" (").trim(), m.m.poster)
                 vm.show(if (n == 0) "Note retirée" else "Note enregistrée : $n/5") } }, Modifier.padding(top = 16.dp))
-        info?.director?.takeIf { it.isNotBlank() }?.let { Text("Réalisation : $it", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, modifier = Modifier.padding(top = 14.dp)) }
-        info?.cast?.takeIf { it.isNotBlank() }?.let { Text("Avec : $it", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        t?.makers?.takeIf { it.isNotEmpty() }?.let { Text("Réalisation : " + it.joinToString(", "), style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, modifier = Modifier.padding(top = 14.dp)) }
+        t?.cast?.takeIf { it.isNotEmpty() }?.let { Text("Avec : " + it.joinToString(", "), style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(0.6f).padding(top = 4.dp)) }
         Text(m.m.category, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(top = 6.dp, bottom = 20.dp))
     }
@@ -768,7 +768,9 @@ private fun SeriesDetailTv(
         TitleArt(s.s.name, t?.logo, if (low) 24.sp else 34.sp, if (low) 52.dp else 92.dp)
         Text((listOfNotNull(ratingText(t, s.s.rating)) + metaOf(null, s.s.year, if (seasons.isNotEmpty()) "${seasons.size} saison" + if (seasons.size > 1) "s" else "" else null, s.s.category)).joinToString("  ·  "),
             style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
-        if (!low) s.s.plot?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 2,
+        if (!low) t?.cast?.takeIf { it.isNotEmpty() }?.let { Text("Avec : " + it.joinToString(", ") + (t.makers.takeIf { m -> m.isNotEmpty() }?.let { m -> "   ·   Créée par " + m.joinToString(", ") } ?: ""),
+            style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.7f).padding(top = 6.dp)) }
+        if (!low) (t?.overview ?: s.s.plot)?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 2,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 8.dp)) }
         Row(Modifier.padding(top = 12.dp).focusMemory(buttons), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             next?.let { (e, resume) ->

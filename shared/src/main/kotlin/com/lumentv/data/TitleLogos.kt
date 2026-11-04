@@ -18,8 +18,12 @@ import java.util.concurrent.TimeUnit
 class TitleLogos(http: OkHttpClient, private val key: String) {
     private val http = http.newBuilder().callTimeout(8, TimeUnit.SECONDS).build()
     private val json = Json { ignoreUnknownKeys = true }
-    /** What TMDB says of a title: its logo and its rating (out of 10, from its users' votes). */
-    class Info(val logo: String?, val rating: Double?, val votes: Int)
+    /**
+     * What TMDB says of a title: its logo, its rating (out of 10, from its users' votes), its summary in French (null
+     * when TMDB has none in French), its main actors and who made it (directors of a film, creators of a series).
+     */
+    class Info(val logo: String?, val rating: Double?, val votes: Int,
+               val overview: String? = null, val cast: List<String> = emptyList(), val makers: List<String> = emptyList())
 
     private val cache = object : LinkedHashMap<String, Info?>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Info?>?) = size > 600
@@ -29,7 +33,7 @@ class TitleLogos(http: OkHttpClient, private val key: String) {
 
     fun cached(series: Boolean, tmdb: String?, title: String, year: Int?): Info? = synchronized(cache) { cache[keyOf(series, tmdb, title, year)] }
 
-    /** Logo and rating (one request: the details with their images), null when TMDB does not know the title. Blocking. */
+    /** Logo, rating, summary and cast (one request: the details with their images and credits), null when TMDB does not know the title. Blocking. */
     fun info(series: Boolean, tmdb: String?, title: String, year: Int?): Info? {
         if (!enabled) return null
         val k = keyOf(series, tmdb, title, year)
@@ -37,12 +41,17 @@ class TitleLogos(http: OkHttpClient, private val key: String) {
         val found = runCatching {
             val kind = if (series) "tv" else "movie"
             val id = tmdb ?: search(kind, title, year) ?: return@runCatching null
-            val d = get("https://api.themoviedb.org/3/$kind/$id", "append_to_response" to "images", "include_image_language" to "fr,en,null")
-                ?: return@runCatching null
+            val d = get("https://api.themoviedb.org/3/$kind/$id", "language" to "fr-FR", "append_to_response" to "images,credits",
+                "include_image_language" to "fr,en,null") ?: return@runCatching null
             val logos = ((d["images"] as? JsonObject)?.get("logos") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
             val best = listOf("fr", "en", null).firstNotNullOfOrNull { lang -> logos.firstOrNull { it.s("iso_639_1") == lang } }
             val votes = d.s("vote_count")?.toIntOrNull() ?: 0
-            Info(best?.s("file_path")?.let { "https://image.tmdb.org/t/p/w500$it" }, d.s("vote_average")?.toDoubleOrNull()?.takeIf { votes >= MIN_VOTES && it > 0 }, votes)
+            val credits = d["credits"] as? JsonObject
+            val cast = (credits?.get("cast") as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.s("name") }.take(CAST)
+            val makers = if (series) (d["created_by"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.s("name") }
+            else (credits?.get("crew") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.filter { it.s("job") == "Director" }.mapNotNull { it.s("name") }
+            Info(best?.s("file_path")?.let { "https://image.tmdb.org/t/p/w500$it" }, d.s("vote_average")?.toDoubleOrNull()?.takeIf { votes >= MIN_VOTES && it > 0 }, votes,
+                d.s("overview")?.trim()?.takeIf { it.isNotEmpty() }, cast, makers.distinct().take(3))
         }.getOrNull()
         synchronized(cache) { cache[k] = found }
         return found
@@ -51,6 +60,8 @@ class TitleLogos(http: OkHttpClient, private val key: String) {
     companion object {
         /** Fewer votes and the rating says little (an unknown film "10/10"): not shown. */
         const val MIN_VOTES = 20
+        /** Actors shown: the first ones TMDB lists (by billing). */
+        const val CAST = 6
     }
 
     private fun search(kind: String, title: String, year: Int?): String? {

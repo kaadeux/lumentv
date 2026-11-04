@@ -270,9 +270,8 @@ internal fun PhoneMovieDetail(vm: MainViewModel, playlistId: Long, startUid: Str
                 if (h != null || myStars > 0) com.lumentv.ui.components.StarRating(myStars, if (myStars > 0) "Votre note" else "Notez ce film",
                     { n -> scope.launch { vm.graph.library.rate(HistoryKind.MOVIE, playlistId, uid, n, m.m.name.substringBefore(" (").trim(), m.m.poster)
                         vm.show(if (n == 0) "Note retirée" else "Note enregistrée : $n/5") } }, Modifier.padding(bottom = 10.dp))
-                ExpandableText(info?.plot ?: "Aucun résumé disponible.", 4)
-                info?.director?.takeIf { it.isNotBlank() }?.let { Text("Réalisation : $it", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(top = 10.dp)) }
-                info?.cast?.takeIf { it.isNotBlank() }?.let { Text("Avec : $it", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp)) }
+                ExpandableText(t?.overview ?: info?.plot ?: "Aucun résumé disponible.", 4)
+                People(t, "Réalisation")
                 Text(m.m.category, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(top = 4.dp))
             }
         }
@@ -339,7 +338,8 @@ internal fun PhoneSeriesDetail(
                 if (progress.isNotEmpty() || myStars > 0) com.lumentv.ui.components.StarRating(myStars, if (myStars > 0) "Votre note" else "Notez cette série",
                     { n -> scope.launch { vm.graph.library.rate("se", playlistId, uid, n, s.s.name, s.s.cover); vm.show(if (n == 0) "Note retirée" else "Note enregistrée : $n/5") } },
                     Modifier.padding(bottom = 10.dp))
-                s.s.plot?.takeIf { it.isNotBlank() }?.let { ExpandableText(it, 3) }
+                (t?.overview ?: s.s.plot)?.takeIf { it.isNotBlank() }?.let { ExpandableText(it, 3) }
+                People(t, "Créée par")
             }
         }
         if (seasons.size > 1) item(key = "seasons") {
@@ -450,6 +450,14 @@ internal fun PhoneChip(label: String, selected: Boolean = false, onLongClick: ((
         .padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) Palette.OnFocus else Palette.Text, maxLines = 1)
     }
+}
+
+/** Who made it ([makersLabel]) and the main actors, from TMDB only: nothing when TMDB does not know the title. */
+@Composable
+private fun People(t: com.lumentv.data.TitleLogos.Info?, makersLabel: String) {
+    t?.makers?.takeIf { it.isNotEmpty() }?.let { Text("$makersLabel : " + it.joinToString(", "), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(top = 10.dp)) }
+    t?.cast?.takeIf { it.isNotEmpty() }?.let { Text("Avec : " + it.joinToString(", "), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 3,
+        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp)) }
 }
 
 /** A summary cut to [lines]; a tap shows it all. */
