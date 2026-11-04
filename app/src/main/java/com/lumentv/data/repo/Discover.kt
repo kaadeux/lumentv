@@ -151,12 +151,19 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
             val g = (if (series) Tmdb.TV_GENRES else Tmdb.MOVIE_GENRES).map { (name, id) ->
                 async { Shelf(name, pick(limited { tmdb.list("discover/$type", 2, "with_genres" to "$id", "sort_by" to "popularity.desc", "vote_count.gte" to "50") })) }
             }
-            // TMDB knows where a title can be watched in France, not since when: "sorties récentes", not "nouveau sur".
+            // TMDB knows where a title can be watched in France, not since when. Films: the latest released ("sorties
+            // récentes"). Series: those with an episode aired in the last 60 days, most popular first, so a new season of
+            // an older series (Lupin) counts; daily shows (news, reality, soaps, talk shows) left out.
+            val since = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(System.currentTimeMillis() - 60 * 86_400_000L))
             val p = Tmdb.PLATFORMS.map { (name, id) ->
                 async {
-                    Shelf("Sur $name · sorties récentes", pick(limited {
-                        tmdb.list("discover/$type", 3, "with_watch_providers" to "$id", "watch_region" to "FR", "with_watch_monetization_types" to "flatrate",
-                            "sort_by" to "$releaseKey.desc", "$releaseKey.lte" to today, "vote_count.gte" to "10")
+                    val where = arrayOf("with_watch_providers" to "$id", "watch_region" to "FR", "with_watch_monetization_types" to "flatrate", "vote_count.gte" to "10")
+                    if (series) Shelf("Nouveaux épisodes sur $name", pick(limited {
+                        tmdb.list("discover/tv", 3, *where, "air_date.gte" to since, "air_date.lte" to today, "sort_by" to "popularity.desc",
+                            "without_genres" to "10763,10764,10766,10767")
+                    }))
+                    else Shelf("Sur $name · sorties récentes", pick(limited {
+                        tmdb.list("discover/movie", 3, *where, "sort_by" to "$releaseKey.desc", "$releaseKey.lte" to today)
                     }))
                 }
             }
