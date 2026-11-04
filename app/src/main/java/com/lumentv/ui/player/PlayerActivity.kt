@@ -589,7 +589,7 @@ private fun LiveInfoBar(vm: PlayerViewModel, videoInfo: String?, lagMs: Long) {
                         Text(timeRange(now.start, now.stop), style = MaterialTheme.typography.labelMedium, color = Palette.Accent)
                         Text("  " + now.title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    ProgressLine(progressOf(now.start, now.stop), Modifier.fillMaxWidth(0.7f).padding(vertical = 6.dp))
+                    LiveBar(now.start, now.stop, lagMs, Modifier.fillMaxWidth(0.7f).padding(vertical = 6.dp))
                     vm.nowNext.next?.let { n ->
                         Text("Ensuite ${timeRange(n.start, n.stop).substringBefore(" –")} · ${n.title}", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 1)
                     }
@@ -607,6 +607,26 @@ private fun LiveInfoBar(vm: PlayerViewModel, videoInfo: String?, lagMs: Long) {
  * Where the picture stands against live: "● En direct", or "En différé de 0:23" with a bar showing the delay over the
  * last two minutes (from pauses and stalls, ‑1 = paused). The provider's own delay is not counted: it cannot be won back.
  */
+/**
+ * One bar for the programme on now: up to live in grey, up to the picture in colour, so a delay (pause, stalls)
+ * shows as the grey part between the picture (the white mark) and live.
+ */
+@Composable
+private fun LiveBar(start: Long, stop: Long, lagMs: Long, modifier: Modifier) {
+    val now = System.currentTimeMillis()
+    val live = progressOf(start, stop, now)
+    val watched = if (lagMs > 0) progressOf(start, stop, now - lagMs) else live
+    val behind = lagMs >= com.lumentv.core.LiveLag.MIN_MS
+    Box(modifier.height(6.dp), contentAlignment = Alignment.CenterStart) {
+        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x33FFFFFF)))
+        if (behind) Box(Modifier.fillMaxWidth(live).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x77FFFFFF)))
+        Box(Modifier.fillMaxWidth(watched).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Palette.Accent))
+        if (behind) Box(Modifier.fillMaxWidth(watched).height(6.dp), contentAlignment = Alignment.CenterEnd) {
+            Box(Modifier.width(3.dp).fillMaxHeight().background(Color.White))
+        }
+    }
+}
+
 @Composable
 private fun DelayLine(lagMs: Long, reduced: String?) {
     Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -617,14 +637,7 @@ private fun DelayLine(lagMs: Long, reduced: String?) {
             behind -> "  En différé de " + clock(lagMs)
             else -> "  En direct"
         }, style = MaterialTheme.typography.labelLarge, color = Color.White)
-        if (behind) {
-            // Live on the right, the picture where it stands on the bar (two minutes wide at most).
-            val f = if (lagMs < 0) 1f else (1f - lagMs / 120_000f).coerceIn(0.05f, 1f)
-            Box(Modifier.padding(start = 12.dp).width(160.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x44FFFFFF))) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(Palette.Gold))
-            }
-            Text("   OK : revenir au direct", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-        }
+        if (behind) Text("   " + if (lagMs < 0) "OK : reprendre" else "OK : revenir au direct", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         reduced?.let { Text("   ·   Qualité réduite : $it (connexion lente)", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
     }
 }
