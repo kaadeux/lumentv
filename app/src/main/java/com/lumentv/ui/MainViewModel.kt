@@ -48,6 +48,16 @@ class MainViewModel(val graph: AppGraph) : ViewModel() {
         list?.firstOrNull { it.id == s.activePlaylistId } ?: list?.firstOrNull()
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /**
+     * What was watched and the personal ratings, kept while the app is open: the Films and Séries homes have them at
+     * once on return from a film page. Starting from an empty list each time made the rows be computed again without
+     * the viewer's taste (other rows), and the poster the viewer came back to went away with its focus.
+     */
+    val vodHistory: StateFlow<List<com.lumentv.data.db.HistoryEntity>> = graph.library.observeHistory(600)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(300_000), emptyList())
+    val ratings: StateFlow<List<com.lumentv.data.db.RatingEntity>> = graph.library.observeRatings()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(300_000), emptyList())
+
     val busy = combine(graph.playlists.busy, graph.epg.busy) { a, b -> a + b }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 

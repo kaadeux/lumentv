@@ -143,13 +143,15 @@ fun MoviesScreen(vm: MainViewModel) {
     val active by vm.active.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
-    val history by vm.graph.library.observeHistory(600).collectAsStateWithLifecycle(emptyList())
+    val history by vm.vodHistory.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val p = active ?: return EmptyState("Aucune playlist", "")
     var cat by remember(p.id) { mutableStateOf(vm.movieCategory ?: RECENT) }
     val resume = resumeMovies(vm, p.id, history)
     var catMenu by remember { mutableStateOf<String?>(null) }
-    val cats by produceState<List<CategoryCount>?>(null, p.id, changes, settings.showHidden) { value = vm.graph.library.movieCategories(p.id, settings.showHidden) }
+    @Suppress("UNCHECKED_CAST") val cats by produceState(vm.memo["cats:m:${p.id}:${settings.showHidden}"] as? List<CategoryCount>, p.id, changes, settings.showHidden) {
+        value = vm.graph.library.movieCategories(p.id, settings.showHidden).also { vm.memo["cats:m:${p.id}:${settings.showHidden}"] = it }
+    }
     val movies by produceState<List<MovieRow>?>(null, p.id, cat, changes) {
         value = null
         value = when (cat) { RECENT -> vm.graph.library.recentMovies(p.id); ALL -> vm.graph.library.movies(p.id, null); else -> vm.graph.library.movies(p.id, cat) }
@@ -161,7 +163,7 @@ fun MoviesScreen(vm: MainViewModel) {
     // Put forward above "Ajoutés récemment": new, best rated, more of the last film watched.
     val lastMovie = remember(history, p.id) { history.firstOrNull { it.kind == HistoryKind.MOVIE && it.playlistId == p.id }?.uid }
     // TMDB's lists and recommendations from what was watched (playlist-only rows without the key); again when a film is watched.
-    val ratings by vm.graph.library.observeRatings().collectAsStateWithLifecycle(emptyList())
+    val ratings by vm.ratings.collectAsStateWithLifecycle()
     val shelves = memoFlow(vm, "shelves:m:${p.id}", p.id, changes, lastMovie, ratings) { vm.graph.discover.movies(p.id, history, ratings) }
     val featured = cat == RECENT && filter.isBlank()
     val phone = com.lumentv.ui.LocalPhone.current
@@ -176,7 +178,7 @@ fun MoviesScreen(vm: MainViewModel) {
         val catRows = cats.orEmpty().filter { !com.lumentv.core.Featured.foreign("", it.category) }.take(10)
         val rows = buildList {
             if (resume.isNotEmpty()) add(HomeRow("resume", "Reprendre la lecture", resume.map { r -> resumeTile(vm, r, false) { forget = r } }))
-            shelves.forEachIndexed { i, sh -> add(HomeRow("shelf$i", sh.title, sh.items.map { movieTile(vm, "f$i", it, progress[it.m.uid]?.takeIf { h -> h.durationMs > 0 && com.lumentv.core.Resume.movieToResume(h.positionMs, h.durationMs) }?.let { h -> h.positionMs.toFloat() / h.durationMs }) })) }
+            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { movieTile(vm, "f:" + sh.title, it, progress[it.m.uid]?.takeIf { h -> h.durationMs > 0 && com.lumentv.core.Resume.movieToResume(h.positionMs, h.durationMs) }?.let { h -> h.positionMs.toFloat() / h.durationMs }) })) }
             catRows.forEach { c ->
                 val items = memoState(vm, "cat:m:${p.id}:${c.category}", p.id, changes, c.category) { vm.graph.library.categoryMovies(p.id, c.category) }
                 add(HomeRow("cat:" + c.category, c.category, items.map { movieTile(vm, "c:" + c.category, it, null) }))
@@ -232,14 +234,16 @@ fun SeriesScreen(vm: MainViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    val history by vm.graph.library.observeHistory(600).collectAsStateWithLifecycle(emptyList())
+    val history by vm.vodHistory.collectAsStateWithLifecycle()
     val p = active ?: return EmptyState("Aucune playlist", "")
     var cat by remember(p.id) { mutableStateOf(vm.seriesCategory ?: ALL) }
     val resume = resumeSeries(vm, p.id, history)
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     TopOnChange(grid, cat)
     var catMenu by remember { mutableStateOf<String?>(null) }
-    val cats by produceState<List<CategoryCount>?>(null, p.id, changes, settings.showHidden) { value = vm.graph.library.seriesCategories(p.id, settings.showHidden) }
+    @Suppress("UNCHECKED_CAST") val cats by produceState(vm.memo["cats:s:${p.id}:${settings.showHidden}"] as? List<CategoryCount>, p.id, changes, settings.showHidden) {
+        value = vm.graph.library.seriesCategories(p.id, settings.showHidden).also { vm.memo["cats:s:${p.id}:${settings.showHidden}"] = it }
+    }
     val series by produceState<List<SeriesRow>?>(null, p.id, cat, changes) {
         value = null
         value = when (cat) { ALL, RECENT2 -> vm.graph.library.series(p.id, null); RECENT -> vm.graph.library.recentSeries(p.id); else -> vm.graph.library.series(p.id, cat) }
@@ -247,7 +251,7 @@ fun SeriesScreen(vm: MainViewModel) {
     var filter by androidx.compose.runtime.saveable.rememberSaveable(p.id, cat) { mutableStateOf("") }
     // Put forward above "Toutes les séries": new or with new episodes, best rated, more of the last series watched.
     val lastSeries = remember(history, p.id) { history.firstOrNull { it.kind == HistoryKind.EPISODE && it.playlistId == p.id }?.parentUid }
-    val ratings by vm.graph.library.observeRatings().collectAsStateWithLifecycle(emptyList())
+    val ratings by vm.ratings.collectAsStateWithLifecycle()
     val shelves = memoFlow(vm, "shelves:s:${p.id}", p.id, changes, lastSeries, ratings) { vm.graph.discover.series(p.id, history, ratings) }
     val featured = cat == ALL && filter.isBlank()
     val phone = com.lumentv.ui.LocalPhone.current
@@ -261,7 +265,7 @@ fun SeriesScreen(vm: MainViewModel) {
         val catRows = cats.orEmpty().filter { !com.lumentv.core.Featured.foreign("", it.category) }.take(10)
         val rows = buildList {
             if (resume.isNotEmpty()) add(HomeRow("resume", "Reprendre la lecture", resume.map { r -> resumeTile(vm, r, true) { forget = r } }))
-            shelves.forEachIndexed { i, sh -> add(HomeRow("shelf$i", sh.title, sh.items.map { seriesTile(vm, "f$i", it) })) }
+            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { seriesTile(vm, "f:" + sh.title, it) })) }
             catRows.forEach { c ->
                 val items = memoState(vm, "cat:s:${p.id}:${c.category}", p.id, changes, c.category) { vm.graph.library.categorySeries(p.id, c.category) }
                 add(HomeRow("cat:" + c.category, c.category, items.map { seriesTile(vm, "c:" + c.category, it) }))
@@ -449,12 +453,16 @@ private fun resumeSeries(vm: MainViewModel, pid: Long, history: List<HistoryEnti
 private fun <T> memoFlow(vm: MainViewModel, key: String, vararg keys: Any?, load: () -> kotlinx.coroutines.flow.Flow<List<T>>): List<T> {
     @Suppress("UNCHECKED_CAST")
     val v by produceState(vm.memo[key] as? List<T> ?: emptyList(), *keys) {
-        // Back on the screen, the rows already shown stay until the new ones are complete: a shorter first step would
-        // take away the poster the viewer comes back to (and its focus).
+        // Back from a film page with nothing changed: the same rows, not computed again (a new result can have a row
+        // more or less, and the poster the viewer comes back to would move or go, with its focus).
+        val inputs = keys.toList()
+        if (value.isNotEmpty() && vm.memo["$key#in"] == inputs) return@produceState
+        // Otherwise the rows already shown stay until the new ones are complete: a shorter first step would also take
+        // that poster away.
         val shown = value.isNotEmpty()
         var latest: List<T>? = null
         runCatching { load().collect { rows -> latest = rows; if (!shown) { value = rows; vm.memo[key] = rows } } }
-        latest?.let { value = it; vm.memo[key] = it }
+        latest?.let { value = it; vm.memo[key] = it; vm.memo["$key#in"] = inputs }
     }
     return v
 }
@@ -464,6 +472,9 @@ private fun <T> memoFlow(vm: MainViewModel, key: String, vararg keys: Any?, load
 private fun <T> memoState(vm: MainViewModel, key: String, vararg keys: Any?, load: suspend () -> List<T>): List<T> {
     @Suppress("UNCHECKED_CAST")
     val v by produceState(vm.memo[key] as? List<T> ?: emptyList(), *keys) {
+        val inputs = keys.toList()
+        if (value.isNotEmpty() && vm.memo["$key#in"] == inputs) return@produceState
+        vm.memo["$key#in"] = inputs
         value = runCatching { load() }.onFailure { android.util.Log.w("Featured", "$key: $it") }.getOrDefault(value)
             .also { vm.memo[key] = it }
     }
