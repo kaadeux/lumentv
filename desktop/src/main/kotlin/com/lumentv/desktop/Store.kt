@@ -17,6 +17,12 @@ import java.util.zip.GZIPOutputStream
 object Store {
     val dir: File = File(System.getenv("APPDATA") ?: System.getProperty("user.home"), "LumenTV").apply { mkdirs() }
     private val catalogDir = File(dir, "catalog").apply { mkdirs() }
+
+    /** Posters and logos (Coil's disk cache). Coil's old default folder, in the temp folder, is emptied once. */
+    val imageCache: okio.Path by lazy {
+        File(System.getProperty("java.io.tmpdir"), "coil3_disk_cache").takeIf { it.isDirectory }?.let { old -> runCatching { old.deleteRecursively() } }
+        okio.Path.Companion.run { File(dir, "images").toOkioPath() }
+    }
     val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
     @Serializable

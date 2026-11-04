@@ -33,7 +33,8 @@ class Tmdb(http: OkHttpClient, private val key: String, cacheDir: File? = null) 
 
     /** The client the logos share, with the disk cache. */
     val http: OkHttpClient = http.newBuilder().callTimeout(10, TimeUnit.SECONDS).apply {
-        if (cacheDir != null) cache(Cache(File(cacheDir, "tmdb"), 40L * 1024 * 1024))
+        // Answers are small (JSON): 20 MB keeps weeks of them. Same on the TV, the phone and the PC.
+        if (cacheDir != null) cache(Cache(File(cacheDir, "tmdb"), CACHE_BYTES))
         // TMDB limits the requests per second: a "429" or a busy server is retried a little later, not lost.
         addInterceptor(com.lumentv.core.RetryInterceptor())
         // TMDB says "do not cache" or a few minutes: kept longer here, the lists change slowly and a title never.
@@ -46,6 +47,9 @@ class Tmdb(http: OkHttpClient, private val key: String, cacheDir: File? = null) 
     }.build()
     private val json = Json { ignoreUnknownKeys = true }
     private val ids = HashMap<String, String?>()
+
+    /** A cache left bigger than its limit (the limit was lowered) is emptied once; it then stays under it. Blocking. */
+    fun trimCache() { http.cache?.let { c -> if (c.size() > c.maxSize()) c.evictAll() } }
 
     val enabled get() = key.isNotBlank()
 
@@ -176,6 +180,10 @@ class Tmdb(http: OkHttpClient, private val key: String, cacheDir: File? = null) 
 
     companion object {
         /** Streaming services in France (TMDB / JustWatch ids). */
+        /** TMDB's answers kept on disk. */
+        const val CACHE_BYTES = 20L * 1024 * 1024
+        /** Posters, backdrops and logos kept on disk by the apps' image loaders (Coil): TV, phone and PC. */
+        const val IMAGE_CACHE_BYTES = 60L * 1024 * 1024
         /** The jobs that make a person the author of a title: directing a film, creating a series. */
         val MAKERS = setOf("Director", "Creator")
 

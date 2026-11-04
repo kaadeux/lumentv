@@ -70,7 +70,9 @@ private fun app() = application {
             val state = remember { AppState(scope) }
             // Posters and logos through the same private client (encrypted DNS), not Coil's own.
             coil3.compose.setSingletonImageLoaderFactory { ctx ->
-                coil3.ImageLoader.Builder(ctx).components { add(coil3.network.okhttp.OkHttpNetworkFetcherFactory(callFactory = { state.http })) }.build()
+                coil3.ImageLoader.Builder(ctx).components { add(coil3.network.okhttp.OkHttpNetworkFetcherFactory(callFactory = { state.http })) }
+                    // In the app's folder and capped as on the TV (Coil's default: Windows' temp folder, up to 250 MB).
+                    .diskCache { coil3.disk.DiskCache.Builder().directory(Store.imageCache).maxSizeBytes(com.lumentv.data.Tmdb.IMAGE_CACHE_BYTES).build() }.build()
             }
             var unlocked by remember { mutableStateOf(Access.isUnlocked()) }
             if (!unlocked) AccessScreen { unlocked = true } else {

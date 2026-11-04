@@ -89,6 +89,11 @@ class LumenApp : Application(), ImageLoaderFactory {
                 if (android.util.Log.isLoggable("LumenNet", android.util.Log.DEBUG)) android.util.Log.d("LumenNet", com.lumentv.core.NetStats.summary())
             }
         }
+        // Caches over their limit (it was lowered in 2.4.9: images 120 → 60 MB, TMDB 40 → 20 MB) are emptied once.
+        graph.appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { coil.Coil.imageLoader(this@LumenApp).diskCache?.let { if (it.size > it.maxSize) it.clear() } }
+            runCatching { graph.tmdb.trimCache() }
+        }
         graph.appScope.launch {
             val auto = graph.playlists.all().any { it.refreshHours > 0 }
             RefreshWorker.sync(this@LumenApp, auto)
@@ -110,7 +115,7 @@ class LumenApp : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .okHttpClient { graph.http }
         .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.12).build() }
-        .diskCache { DiskCache.Builder().directory(cacheDir.resolve("images")).maxSizeBytes(120L * 1024 * 1024).build() }
+        .diskCache { DiskCache.Builder().directory(cacheDir.resolve("images")).maxSizeBytes(com.lumentv.data.Tmdb.IMAGE_CACHE_BYTES).build() }
         .crossfade(false)
         // Posters and logos in 16-bit colours when they have no transparency: half the memory, no visible change on a TV.
         .allowRgb565(true)
