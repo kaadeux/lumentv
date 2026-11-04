@@ -21,13 +21,13 @@ class LibraryIndex(private val db: AppDatabase) {
         val movies: List<SmartSearch.Entry<VodLite>>, val series: List<SmartSearch.Entry<VodLite>>, val channels: List<SmartSearch.Entry<ChannelLite>>,
         private val moviesByTitle: Map<String, List<VodLite>>, private val seriesByTitle: Map<String, List<VodLite>>,
     ) {
-        /** The playlist's copy of a TMDB title (the best rated copy when there are several), or null. */
+        /** The playlist's copy of a TMDB title (in French when there is one, then subtitled, then other languages; the best quality first), or null. */
         fun find(series: Boolean, title: String, original: String, year: Int?): VodLite? {
             val map = if (series) seriesByTitle else moviesByTitle
             val candidates = (map[key(title)].orEmpty() + map[key(original)].orEmpty()).distinctBy { it.id }
             if (candidates.isEmpty()) return null
             val sameYear = candidates.filter { c -> val y = Featured.yearOf(c.year, c.name); y == null || year == null || kotlin.math.abs(y - year) <= 1 }
-            return sameYear.firstOrNull()
+            return sameYear.minWithOrNull(compareBy({ SmartSearch.languageRank(it.name) }, { SmartSearch.qualityRank(it.name) }))
         }
 
         fun find(series: Boolean, item: Tmdb.Item) = find(series, item.title, item.original, item.year)

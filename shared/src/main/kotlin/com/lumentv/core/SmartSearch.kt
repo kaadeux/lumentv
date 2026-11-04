@@ -29,6 +29,21 @@ object SmartSearch {
 
     private val otherLang = Regex("[(\\[](IT|ITA|ES|ESP|DE|GER|PT|BR|NL|PL|TR|RU|EN|ENG|US|UK|AR)[)\\]]|\\bSUBT\\s+AR\\b|\\b(ITA|ESP)\\b", RegexOption.IGNORE_CASE)
 
+    private val vost = Regex("\\bVOST(FR)?\\b", RegexOption.IGNORE_CASE)
+
+    /** For choosing a copy of a title: French or multi-language first (0), then subtitled (1), then other languages (2). */
+    fun languageRank(name: String): Int = when {
+        otherLang.containsMatchIn(name) -> 2
+        vost.containsMatchIn(name) -> 1
+        else -> 0
+    }
+
+    /** Among copies in the same language: FHD (0), HD (1), 4K (2, heavy for a small connection), unmarked (3), SD (4). */
+    fun qualityRank(name: String): Int {
+        val w = name.uppercase().split(' ', '(', ')', '[', ']', '|', '-').toSet()
+        return when { "FHD" in w || "1080P" in w -> 0; "HD" in w || "720P" in w -> 1; "4K" in w || "UHD" in w -> 2; "SD" in w -> 4; else -> 3 }
+    }
+
     const val EXACT = 1000
     const val START = 900
     const val WORD = 800
@@ -97,5 +112,22 @@ object SmartSearch {
             val t = prev; prev = cur; cur = t
         }
         return prev[b.length]
+    }
+
+    /**
+     * Whether a person's [name] answers [query]: each word of the query (2 letters or more) starts a word of the name,
+     * accents and case aside. "tom holland", "holland" and "tom hol" → "Tom Holland"; "tom cruise" → not "Tom Holland".
+     */
+    fun nameAnswers(query: String, name: String): Boolean {
+        val q = normalize(query).split(' ').filter { it.length >= 2 }
+        if (q.isEmpty() || q.sumOf { it.length } < 3) return false
+        val n = normalize(name).split(' ')
+        return q.all { w -> n.any { it.startsWith(w) } }
+    }
+
+    /** Every word of [query] is a whole word of [name] ("tom holland" is Tom Holland, not Tom Hollander). */
+    fun nameIs(query: String, name: String): Boolean {
+        val n = normalize(name).split(' ').toSet()
+        return normalize(query).split(' ').filter { it.isNotEmpty() }.let { q -> q.isNotEmpty() && q.all { it in n } }
     }
 }

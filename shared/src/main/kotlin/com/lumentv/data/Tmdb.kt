@@ -98,6 +98,35 @@ class Tmdb(http: OkHttpClient, private val key: String, cacheDir: File? = null) 
             .distinctBy { it.id }.sortedByDescending { it.popularity }
     }
 
+    /** A person TMDB knows: [department] is what they are known for ("Acting", "Directing", "Writing"…). */
+    class Person(val id: Int, val name: String, val department: String, val popularity: Double)
+
+    /** A film or series of a person: [made] when they directed or created it, else they play in it. */
+    class Work(val series: Boolean, val item: Item, val made: Boolean)
+
+    /**
+     * The people whose name answers [query] ("tom holland", "nolan"), most known first: every word of the query starts
+     * a word of their name, so a film's title ("avatar") does not bring up strangers.
+     */
+    fun people(query: String): List<Person> {
+        val o = get("https://api.themoviedb.org/3/search/person", "query" to query, "language" to "fr-FR") ?: return emptyList()
+        return (o["results"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.mapNotNull { r ->
+            val id = r.s("id")?.toIntOrNull() ?: return@mapNotNull null
+            Person(id, r.s("name") ?: return@mapNotNull null, r.s("known_for_department").orEmpty(), r.s("popularity")?.toDoubleOrNull() ?: 0.0)
+        }.filter { com.lumentv.core.SmartSearch.nameAnswers(query, it.name) }.sortedByDescending { it.popularity }
+            // "tom holland" typed in full: Tom Holland, not also Tom Hollander.
+            .let { all -> all.filter { com.lumentv.core.SmartSearch.nameIs(query, it.name) }.ifEmpty { all } }
+    }
+
+    /** Everything [person] played in, directed or created (films and series), most popular first. */
+    fun works(person: Int): List<Work> {
+        val o = get("https://api.themoviedb.org/3/person/$person/combined_credits", "language" to "fr-FR") ?: return emptyList()
+        fun list(key: String, made: Boolean) = (o[key] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            .filter { !made || it.s("job") in MAKERS }
+            .mapNotNull { r -> item(r)?.let { Work(r.s("media_type") == "tv", it, made) } }
+        return (list("crew", true) + list("cast", false)).distinctBy { "${it.series}${it.item.id}${it.made}" }.sortedByDescending { it.item.popularity }
+    }
+
     /** Free search, films or series, French titles and original ones. */
     fun search(series: Boolean, query: String): List<Item> {
         val o = get("https://api.themoviedb.org/3/search/" + (if (series) "tv" else "movie"), "query" to query, "language" to "fr-FR") ?: return emptyList()
@@ -147,6 +176,9 @@ class Tmdb(http: OkHttpClient, private val key: String, cacheDir: File? = null) 
 
     companion object {
         /** Streaming services in France (TMDB / JustWatch ids). */
+        /** The jobs that make a person the author of a title: directing a film, creating a series. */
+        val MAKERS = setOf("Director", "Creator")
+
         val PLATFORMS = listOf("Netflix" to 8, "Prime Video" to 119, "Disney+" to 337, "Max" to 1899, "Apple TV+" to 350, "Paramount+" to 531, "Canal+" to 381)
 
         /** Genre rows of the Films home (TMDB movie genres). */

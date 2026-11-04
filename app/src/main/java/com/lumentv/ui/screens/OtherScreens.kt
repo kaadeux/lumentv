@@ -149,6 +149,7 @@ fun SearchScreen(vm: MainViewModel) {
     val counts = mapOf(
         SearchTab.CHANNELS to results.channels.size, SearchTab.MOVIES to results.movies.size, SearchTab.SERIES to results.series.size,
         SearchTab.EPISODES to results.episodes.size, SearchTab.PROGRAMS to results.programs.size,
+        SearchTab.PEOPLE to results.people.size,
     )
     val all = tab == SearchTab.ALL
     fun <T> pick(list: List<T>) = if (all) list.take(PREVIEW) else list
@@ -156,7 +157,7 @@ fun SearchScreen(vm: MainViewModel) {
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item { ScreenTitle("Recherche") }
         item {
-            TvTextField("Chaîne, film, série, épisode ou programme", query, { query = it }, Modifier.fillMaxWidth(),
+            TvTextField("Chaîne, film, série, acteur, réalisateur ou programme", query, { query = it }, Modifier.fillMaxWidth(),
                 placeholder = hint("Appuyez sur OK pour saisir…", "Touchez ici pour écrire…"), keyboardType = KeyboardType.Text)
         }
         if (!results.isEmpty) item {
@@ -187,6 +188,13 @@ fun SearchScreen(vm: MainViewModel) {
             else items(results.series.chunked(6), key = { "sr" + it.first().s.id }) { PosterRow(emptyList(), it, vm) }
             if (all && results.series.size > 12) item { MoreButton(results.series.size) { select(SearchTab.SERIES) } }
         }
+        // Actors, directors, creators: one row each with what they played in / made.
+        if ((all || tab == SearchTab.PEOPLE) && results.people.isNotEmpty()) {
+            results.people.forEach { hit ->
+                item(key = "ph" + hit.key) { SectionHeader(hit.title + "  ·  " + (hit.movies.size + hit.series.size)) }
+                item(key = "pr" + hit.key) { PosterRow(hit.movies, hit.series, vm) }
+            }
+        }
         if ((all || tab == SearchTab.EPISODES) && results.episodes.isNotEmpty()) {
             if (all) item { SectionHeader("Épisodes") }
             items(pick(results.episodes), key = { "e" + it.id }) { e ->
@@ -212,7 +220,7 @@ fun SearchScreen(vm: MainViewModel) {
     }
 }
 
-enum class SearchTab(val label: String) { ALL("Tout"), CHANNELS("Chaînes"), MOVIES("Films"), SERIES("Séries"), EPISODES("Épisodes"), PROGRAMS("Programmes") }
+enum class SearchTab(val label: String) { ALL("Tout"), CHANNELS("Chaînes"), MOVIES("Films"), SERIES("Séries"), PEOPLE("Acteurs et réalisateurs"), EPISODES("Épisodes"), PROGRAMS("Programmes") }
 
 private const val PREVIEW = 6
 

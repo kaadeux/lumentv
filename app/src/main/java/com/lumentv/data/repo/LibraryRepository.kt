@@ -21,6 +21,8 @@ data class GroupInfo(val name: String, val count: Int, val hidden: Boolean, val 
 
 /** Results per kind in the global search. */
 const val SEARCH_LIMIT = 300
+/** Titles shown for one person of the search. */
+const val PERSON_LIMIT = 40
 
 object Groups {
     const val ALL = "\u0001all"
@@ -33,9 +35,14 @@ data class SearchResults(
     val series: List<SeriesRow> = emptyList(),
     val episodes: List<EpisodeEntity> = emptyList(),
     val programs: List<Pair<ProgramEntity, ChannelRow?>> = emptyList(),
+    /** Actors, directors and creators found by their name, with their titles in the playlist. */
+    val people: List<PersonHit> = emptyList(),
 ) {
-    val isEmpty get() = channels.isEmpty() && movies.isEmpty() && series.isEmpty() && episodes.isEmpty() && programs.isEmpty()
+    val isEmpty get() = channels.isEmpty() && movies.isEmpty() && series.isEmpty() && episodes.isEmpty() && programs.isEmpty() && people.isEmpty()
 }
+
+/** A person found by the search: "Avec Tom Holland", "Réalisé par Christopher Nolan", and their titles of the playlist. */
+data class PersonHit(val key: String, val title: String, val movies: List<MovieRow>, val series: List<SeriesRow>)
 
 class LibraryRepository(private val db: AppDatabase) {
     private val _changes = MutableStateFlow(0)
@@ -237,6 +244,31 @@ class LibraryRepository(private val db: AppDatabase) {
         if (q.length < 2) return@withContext SearchResults()
         val sq = com.lumentv.core.SmartSearch.Query(query)
         val idx = pid?.let { index.of(it) }
+        // People: the two best known whose name is the query, and what they played in / made that the playlist has.
+        val people = async { if (idx != null && tmdb.enabled && sq.compact.length >= 3) kotlinx.coroutines.coroutineScope {
+            tmdb.people(query).take(2).map { person ->
+                async {
+                    val works = tmdb.works(person.id)
+                    listOf(true, false).mapNotNull { made ->
+                        val found = works.filter { it.made == made }.mapNotNull { w -> idx.find(w.series, w.item)?.let { w.series to it } }
+                            .filter { (_, v) -> !com.lumentv.core.Featured.foreign(v.name, v.category) }
+                            .distinctBy { (series, v) -> "$series${com.lumentv.core.Featured.baseTitle(v.name)}" }.take(PERSON_LIMIT)
+                        if (found.isEmpty()) return@mapNotNull null
+                        val movies = found.filter { !it.first }.map { it.second.id }
+                        val series = found.filter { it.first }.map { it.second.id }
+                        val title = when {
+                            !made -> "Avec ${person.name}"
+                            movies.isEmpty() -> "Créé par ${person.name}"
+                            else -> "Réalisé par ${person.name}"
+                        }
+                        // Kept in TMDB's order (most popular first).
+                        val mv = db.vod().moviesByIds(movies).associateBy { it.m.id }
+                        val se = db.vod().seriesByIds(series).associateBy { it.s.id }
+                        PersonHit("${person.id}:$made", title, movies.mapNotNull { mv[it] }, series.mapNotNull { se[it] })
+                    }
+                }
+            }.flatMap { it.await() }
+        } else emptyList() }
         // Other titles: TMDB's French and original titles of what the query means ("seigneur des anneaux" → "The Lord of the Rings").
         val other: Pair<List<com.lumentv.data.db.VodLite>, List<com.lumentv.data.db.VodLite>> =
             if (idx != null && tmdb.enabled && sq.compact.length >= 3) kotlinx.coroutines.coroutineScope {
@@ -270,6 +302,7 @@ class LibraryRepository(private val db: AppDatabase) {
             series = seriesIds?.let { ids -> ordered(ids, db.vod().seriesByIds(ids)) { it.s.id } } ?: db.vod().searchSeries(q, SEARCH_LIMIT),
             episodes = db.vod().searchEpisodes(q, SEARCH_LIMIT),
             programs = progPairs,
+            people = people.await(),
         )
     }
 

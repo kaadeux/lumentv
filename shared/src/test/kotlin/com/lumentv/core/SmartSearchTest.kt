@@ -57,4 +57,27 @@ class SmartSearchTest {
         assertEquals(1, SmartSearch.distance("btaman", "batman", 2))
         assertEquals(3, SmartSearch.distance("abc", "xyzabc", 2))
     }
+
+    @Test fun personNames() {
+        assertEquals(true, SmartSearch.nameAnswers("tom holland", "Tom Holland"))
+        assertEquals(true, SmartSearch.nameAnswers("Holland", "Tom Holland"))
+        assertEquals(true, SmartSearch.nameAnswers("tom hol", "Tom Holland"))
+        assertEquals(true, SmartSearch.nameAnswers("denis villeneuve", "Denis Villeneuve"))
+        assertEquals(true, SmartSearch.nameAnswers("benicio del toro", "Benicio del Toro"))
+        assertEquals(true, SmartSearch.nameAnswers("Pene", "Pénélope Cruz"))
+        assertEquals(false, SmartSearch.nameAnswers("tom cruise", "Tom Holland"))
+        assertEquals(false, SmartSearch.nameAnswers("le seigneur des anneaux", "Anne Le Ny"))
+        assertEquals(false, SmartSearch.nameAnswers("to", "Tom Holland"))
+        assertEquals(true, SmartSearch.nameIs("tom holland", "Tom Holland"))
+        assertEquals(false, SmartSearch.nameIs("tom holland", "Tom Hollander"))
+    }
+
+    @Test fun frenchCopyFirst() {
+        assertEquals(0, SmartSearch.languageRank("Avengers: Endgame (2019) FHD MULTI"))
+        assertEquals(1, SmartSearch.languageRank("Avengers: Endgame Vostfr"))
+        assertEquals(2, SmartSearch.languageRank("Avengers: Endgame (IT)"))
+        assertEquals(0, SmartSearch.qualityRank("Avengers: Endgame (2019) FHD MULTI"))
+        assertEquals(4, SmartSearch.qualityRank("Avengers: Endgame SD"))
+        assertEquals(1, SmartSearch.qualityRank("Spider-Man: No Way Home (HD VF)"))
+    }
 }
