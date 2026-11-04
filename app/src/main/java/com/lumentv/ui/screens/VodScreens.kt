@@ -768,8 +768,12 @@ private fun SeriesDetailTv(
         TitleArt(s.s.name, t?.logo, if (low) 24.sp else 34.sp, if (low) 52.dp else 92.dp)
         Text((listOfNotNull(ratingText(t, s.s.rating)) + metaOf(null, s.s.year, if (seasons.isNotEmpty()) "${seasons.size} saison" + if (seasons.size > 1) "s" else "" else null, s.s.category)).joinToString("  ·  "),
             style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
-        if (!low) t?.cast?.takeIf { it.isNotEmpty() }?.let { Text("Avec : " + it.joinToString(", ") + (t.makers.takeIf { m -> m.isNotEmpty() }?.let { m -> "   ·   Créée par " + m.joinToString(", ") } ?: ""),
-            style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.7f).padding(top = 6.dp)) }
+        // One line, read whole: who created it, then the first four actors (the page has no room for a second line).
+        if (!low) t?.let { i -> listOfNotNull(i.makers.takeIf { it.isNotEmpty() }?.let { "Créée par " + it.joinToString(", ") },
+            i.cast.takeIf { it.isNotEmpty() }?.let { "Avec " + it.take(4).joinToString(", ") }).joinToString("   ·   ").takeIf { it.isNotEmpty() } }?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(0.95f).padding(top = 6.dp))
+        }
         if (!low) (t?.overview ?: s.s.plot)?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 2,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 8.dp)) }
         Row(Modifier.padding(top = 12.dp).focusMemory(buttons), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
