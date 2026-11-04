@@ -813,7 +813,10 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
     // Going down the rows, the banner shrinks to its title: more rows on screen.
     var focusedRow by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
     var rowsFocused by remember { mutableStateOf(false) }
-    val collapsed = rowsFocused && focusedRow > 0
+    // The banner keeps its size; the row going into focus slides to the top of the list, so its title
+    // ("Tendances du moment"…) is always on screen above its posters.
+    val collapsed = false
+    LaunchedEffect(focusedRow, rowsFocused) { if (rowsFocused && focusedRow >= 0) list.animateScrollToItem(focusedRow) }
     Column(Modifier.fillMaxSize()) {
         if (hero != null) Hero(vm, hero, info, actions, collapsed)
         // Rows arriving late (resume, featured) go above the categories: the list then shows the top, unless it is in use.
