@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -75,6 +76,9 @@ import kotlinx.coroutines.launch
 
 // ---- Films / Séries on the phone: a banner to swipe, then rows of posters, as on a streaming app -------------------
 
+/** How long the banner shows a title before the next one. */
+private const val HERO_MS = 6_000
+
 /** A shortcut under the banner ("Catégories ▾", "Tous les films"…). */
 internal class PhoneAction(val label: String, val onClick: () -> Unit)
 
@@ -112,11 +116,14 @@ internal fun PhoneVodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow
 @Composable
 private fun PhoneHero(vm: MainViewModel, heroes: List<HomeTile>) {
     val pager = rememberPagerState { heroes.size }
-    // Goes to the next title by itself every 6 s (back to the first after the last). It waits while a finger moves it,
-    // and stops once the banner leaves the screen (the list drops it), so it costs nothing when unseen.
+    // Goes to the next title by itself every 6 s (back to the first after the last): the dash under the banner fills up
+    // meanwhile, so one sees when it will move. It starts again when a finger moves the banner, and stops once the banner
+    // leaves the screen (the list drops it). The fill is only redrawn, the banner is not recomposed for it.
+    val progress = remember { androidx.compose.animation.core.Animatable(0f) }
     if (heroes.size > 1) androidx.compose.runtime.LaunchedEffect(pager.currentPage, pager.isScrollInProgress) {
+        progress.snapTo(0f)
         if (pager.isScrollInProgress) return@LaunchedEffect
-        kotlinx.coroutines.delay(6_000)
+        progress.animateTo(1f, androidx.compose.animation.core.tween(HERO_MS, easing = androidx.compose.animation.core.LinearEasing))
         pager.animateScrollToPage((pager.currentPage + 1) % heroes.size, animationSpec = androidx.compose.animation.core.tween(600))
     }
     Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
@@ -143,8 +150,10 @@ private fun PhoneHero(vm: MainViewModel, heroes: List<HomeTile>) {
         }
         if (heroes.size > 1) Row(Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             repeat(heroes.size) { i ->
-                Box(Modifier.size(if (i == pager.currentPage) 16.dp else 6.dp, 6.dp).clip(CircleShape)
-                    .background(if (i == pager.currentPage) Palette.Text else Palette.TextDim.copy(alpha = 0.5f)))
+                val on = i == pager.currentPage
+                val width by androidx.compose.animation.core.animateDpAsState(if (on) 22.dp else 6.dp, label = "dot")
+                Box(Modifier.size(width, 6.dp).clip(CircleShape).background(Palette.TextDim.copy(alpha = 0.5f))
+                    .then(if (on) Modifier.drawBehind { drawRect(Palette.Text, size = size.copy(width = size.width * progress.value)) } else Modifier))
             }
         }
     }
