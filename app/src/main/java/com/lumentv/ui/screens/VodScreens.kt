@@ -212,7 +212,7 @@ fun MoviesScreen(vm: MainViewModel) {
                 modifier = Modifier.fillMaxSize()) {
                 items(list, key = { it.m.id }) { r ->
                     val h = progress[r.m.uid]?.takeIf { it.playlistId == p.id }
-                    PosterTile(shortTitle(r.m.name), r.m.poster, posterLine(r.m.year, r.m.rating, r.m.name),
+                    PosterTile(com.lumentv.core.Featured.shortTitle(r.m.name), r.m.poster, com.lumentv.core.Featured.posterLine(r.m.year, r.m.rating, r.m.name),
                         h?.let { if (it.durationMs > 0) it.positionMs.toFloat() / it.durationMs else null }, r.isFavorite,
                         onClick = { vm.openFrom("m:" + r.m.uid, Screen.MovieDetail(p.id, r.m.uid)) },
                         onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.MOVIE, r.m.uid); vm.show(if (f) "Ajouté aux favoris" else "Retiré des favoris") } },
@@ -298,7 +298,7 @@ fun SeriesScreen(vm: MainViewModel) {
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 20.dp, start = 6.dp, end = 6.dp),
                 modifier = Modifier.fillMaxSize()) {
                 items(list, key = { it.s.id }) { r ->
-                    PosterTile(shortTitle(r.s.name), r.s.cover, posterLine(r.s.year, r.s.rating, null), null, r.isFavorite,
+                    PosterTile(com.lumentv.core.Featured.shortTitle(r.s.name), r.s.cover, com.lumentv.core.Featured.posterLine(r.s.year, r.s.rating, null), null, r.isFavorite,
                         onClick = { vm.openFrom("s:" + r.s.uid, Screen.SeriesDetail(p.id, r.s.uid)) },
                         onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } },
                         modifier = Modifier.returnFocus(vm, "s:" + r.s.uid))
@@ -374,15 +374,6 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
     else PhoneSeriesDetail(vm, playlistId, uid, s, eps, error, seasons, season, { season = it }, progress, ::watched,
         { l, on -> markWatched(l, on) }, { epMenu = it })
 }
-
-/** "Hope (2026) MULTI" → "Hope": the name without the year and the copy's tags (they go to [posterLine]). */
-internal fun shortTitle(name: String): String = name.substringBefore(" (").substringBefore(" [").trim().ifBlank { name }
-
-/** "2026 · ★ 7,2 · MULTI": year, rating, and for a film which copy it is. */
-internal fun posterLine(year: String?, rating: String?, name: String?): String? =
-    (listOfNotNull(com.lumentv.core.Featured.yearOf(year, name ?: "")?.toString(),
-        com.lumentv.core.Featured.rating(rating)?.let { "★ " + "%.1f".format(java.util.Locale.FRANCE, it) }) +
-        listOfNotNull(name?.let { versionLabel(it) }?.takeIf { it != "Version" && it.length <= 14 })).joinToString(" · ").ifEmpty { null }
 
 fun duration(secs: Int): String = if (secs >= 3600) "${secs / 3600} h ${"%02d".format((secs % 3600) / 60)}" else "${secs / 60} min"
 fun clock(ms: Long): String {
@@ -675,10 +666,6 @@ private fun HomePoster(vm: MainViewModel, t: HomeTile, modifier: Modifier = Modi
 
 // ---- V2 pages of a film and a series (TV) -----------------------------------------------------------------------
 
-/** "Breach (2026) VOSTFR" → "VOSTFR", "The Dog Stars (2026) 4K MULTI" → "4K MULTI": what tells a copy from another. */
-internal fun versionLabel(name: String): String =
-    name.substringAfterLast(")", "").replace(Regex("^[\\s\\-|:]+"), "").trim().ifBlank { name.substringAfter(" | ", "").trim() }.ifBlank { "Version" }
-
 /** A film's page on the TV: its picture behind, title, details, the buttons, then the summary and the cast. */
 @Composable
 private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String) {
@@ -721,7 +708,7 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
                 HeroButton("▶  Reprendre à ${clock(h!!.positionMs)}", primary = true, modifier = Modifier.focusRequester(focus).remembered(buttons, first = true)) { PlayerLauncher.movie(context, playlistId, uid, true) }
                 HeroButton("Depuis le début", modifier = Modifier.remembered(buttons)) { PlayerLauncher.movie(context, playlistId, uid, false) }
             } else HeroButton("▶  Lecture", primary = true, modifier = Modifier.focusRequester(focus).remembered(buttons, first = true)) { PlayerLauncher.movie(context, playlistId, uid, false) }
-            if (versions.size > 1) HeroButton("Version : ${versionLabel(m.m.name)}  ▾", modifier = Modifier.remembered(buttons)) { versionMenu = true }
+            if (versions.size > 1) HeroButton("Version : ${com.lumentv.core.Featured.versionLabel(m.m.name)}  ▾", modifier = Modifier.remembered(buttons)) { versionMenu = true }
             HeroButton(if (m.isFavorite) "★  Dans ma liste" else "+  Ma liste", modifier = Modifier.remembered(buttons)) { scope.launch { vm.graph.library.toggleFavorite(playlistId, PrefKind.MOVIE, uid) } }
             HeroButton(modifier = Modifier.remembered(buttons), text = when (dl?.status) {
                 com.lumentv.data.db.TransferStatus.DONE -> "⬇  Téléchargé"
@@ -748,7 +735,7 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
         Text(m.m.category, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(top = 6.dp, bottom = 20.dp))
     }
     if (versionMenu) OptionsDialog("Version", versions.map { v ->
-        MenuOption(versionLabel(v.m.name) + (com.lumentv.core.Featured.rating(v.m.rating)?.let { "  ·  ★ $it" } ?: ""), checked = v.m.uid == uid) { uid = v.m.uid }
+        MenuOption(com.lumentv.core.Featured.versionLabel(v.m.name) + (com.lumentv.core.Featured.rating(v.m.rating)?.let { "  ·  ★ $it" } ?: ""), checked = v.m.uid == uid) { uid = v.m.uid }
     }, onDismiss = { versionMenu = false }, subtitle = "La même œuvre en plusieurs qualités ou langues")
     LaunchedEffect(m.m.id) { delay(80); runCatching { focus.requestFocus() } }
 }

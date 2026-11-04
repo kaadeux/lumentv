@@ -52,7 +52,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -62,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.lumentv.core.Featured
 import com.lumentv.core.userMessage
 import java.io.File
 
@@ -87,10 +87,6 @@ fun Chip(text: String, color: Color = Pal.text, background: Color = Pal.panelHig
         Text(text, color = color, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }
-
-@Composable
-private fun Card(content: @Composable () -> Unit) = Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Pal.panel.copy(alpha = 0.92f))
-    .border(1.dp, Pal.panelHigh, RoundedCornerShape(16.dp)).padding(22.dp)) { content() }
 
 /** Download button for one film / episode: ⬇ → percentage → ✓ (plays the file). */
 @Composable
@@ -121,11 +117,6 @@ fun AppState.playFile(t: DownloadTask) {
 }
 
 @Composable
-private fun Backdrop(image: String?) {
-    AsyncImage(image, null, Modifier.fillMaxWidth().height(420.dp).blur(40.dp).alpha(0.28f), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
-}
-
-@Composable
 private fun TopActions(onBack: () -> Unit, favorite: Boolean, onFavorite: () -> Unit) = Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
     Pill("Retour", onBack, Icons.AutoMirrored.Filled.ArrowBack)
     Spacer(Modifier.weight(1f))
@@ -134,23 +125,29 @@ private fun TopActions(onBack: () -> Unit, favorite: Boolean, onFavorite: () -> 
     }
 }
 
+/** "Réalisation : …" / "Avec : …" from TMDB (nothing without it: the provider's lists are often wrong). */
 @Composable
-private fun Credits(d: Details?) {
-    if (d?.director.isNullOrBlank() && d?.cast.isNullOrBlank()) return
-    Row(horizontalArrangement = Arrangement.spacedBy(40.dp), modifier = Modifier.padding(top = 14.dp)) {
-        d?.director?.takeIf { it.isNotBlank() }?.let { Column(Modifier.weight(1f)) { Label("RÉALISATEUR"); Text(it, color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
-        d?.cast?.takeIf { it.isNotBlank() }?.let { Column(Modifier.weight(1f)) { Label("CAST"); Text(it, color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
+private fun Credit(label: String, names: List<String>, max: Int = 6) {
+    if (names.isEmpty()) return
+    Row(Modifier.padding(top = 4.dp)) {
+        Text("$label : ", color = Pal.dim)
+        Text(names.take(max).joinToString(", "), color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
-
-@Composable private fun Label(t: String) = Text(t, color = Pal.dim, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 3.dp))
 
 // ---- Film page ------------------------------------------------------------------------------------------------
 
 @Composable
-fun MovieDetail(state: AppState, m: Mv, onBack: () -> Unit) {
+fun MovieDetail(state: AppState, m0: Mv, onBack: () -> Unit) {
     val p = state.active ?: return
-    val details by produceState<Details?>(null, m.uid) { value = runCatching { state.library.movieDetails(p, m) }.getOrNull() }
+    val c = state.catalog ?: return
+    // The copy shown: "Version" switches to another one of the same film (4K, VF, VOSTFR…).
+    val versions = remember(c, m0.uid) { state.vod.versions(c, m0) }
+    var uid by remember(m0.uid) { mutableStateOf(m0.uid) }
+    val m = versions.firstOrNull { it.uid == uid } ?: m0
+    val details by produceState(state.library.cachedMovieDetails(m), m.uid) { value = runCatching { state.library.movieDetails(p, m) }.getOrNull() }
+    val year = Featured.yearOf(m.year ?: details?.release, m.name)
+    val t = rememberInfo(state, false, m.name, null, year)
     val h = state.progress(Kind.MOVIE, m.uid)
     val resumable = h != null && h.positionMs > 60_000 && !state.isWatched(Kind.MOVIE, m.uid)
     fun item(fromStart: Boolean = false): PlayItem {
@@ -158,32 +155,29 @@ fun MovieDetail(state: AppState, m: Mv, onBack: () -> Unit) {
         return PlayItem(Kind.MOVIE, m.uid, m.name, m.year, m.poster, null, state.library.movieUrl(p, m), live = false, startMs = start, userAgent = p.userAgent)
     }
     Box(Modifier.fillMaxSize()) {
-        Backdrop(details?.backdrop ?: m.poster)
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        BannerPicture(details?.backdrop ?: m.poster, 480.dp)
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { TopActions(onBack, state.isFavorite(Kind.MOVIE, m.uid)) { state.toggleFavorite(Kind.MOVIE, m.uid) } }
             item {
-                Card {
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        AsyncImage(m.poster, null, Modifier.width(190.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(m.name, style = MaterialTheme.typography.headlineMedium, color = Pal.text, fontWeight = FontWeight.Bold)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                (details?.rating ?: m.rating)?.takeIf { it.isNotBlank() && it != "0" }?.let { Chip(it, icon = Icons.Filled.Star) }
-                                m.year?.let { Chip(it) }
-                                details?.genre?.takeIf { it.isNotBlank() }?.let { Chip(it) }
-                                details?.durationSecs?.takeIf { it > 0 }?.let { Chip("${it / 3600} h ${"%02d".format(it / 60 % 60)}") }
-                                if (state.isWatched(Kind.MOVIE, m.uid)) Chip("REGARDÉ", green, green.copy(alpha = 0.15f))
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Pill(if (resumable) "Reprendre" else "Lire", { PlayerWindow.open(state, item()) }, Icons.Filled.PlayArrow, primary = true)
-                                if (resumable) Pill("Depuis le début", { PlayerWindow.open(state, item(fromStart = true)) })
-                                DownloadButton(state, m.uid, { item(fromStart = true) }, compact = false)
-                                if (resumable) Text("Reprendre à ${PlayerWindow.fmt(h!!.positionMs)}" + if (h.durationMs > 0) " · ${h.positionMs * 100 / h.durationMs} % vu" else "", color = Pal.dim)
-                            }
-                            (details?.plot)?.let { Text(it, color = Pal.text.copy(alpha = 0.9f), lineHeight = 22.sp) }
-                            Credits(details)
-                        }
+                Column(Modifier.fillMaxWidth().padding(start = 8.dp, top = 70.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TitleArt(m.name, t?.logo, 40.sp, 120.dp)
+                    val meta = listOfNotNull(ratingText(t, details?.rating ?: m.rating), year?.toString(), details?.durationSecs?.takeIf { it > 0 }?.let { "${it / 3600} h ${"%02d".format(it / 60 % 60)}" },
+                        details?.genre?.split(',')?.take(3)?.joinToString(" • ") { it.trim() }?.takeIf { it.isNotBlank() },
+                        Featured.versionLabel(m.name).takeIf { it != "Version" })
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(meta.joinToString("  ·  "), color = Pal.text.copy(alpha = 0.85f))
+                        if (state.isWatched(Kind.MOVIE, m.uid)) Chip("REGARDÉ", green, green.copy(alpha = 0.15f))
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Pill(if (resumable) "Reprendre" else "Lecture", { PlayerWindow.open(state, item()) }, Icons.Filled.PlayArrow, primary = true)
+                        if (resumable) Pill("Depuis le début", { PlayerWindow.open(state, item(fromStart = true)) })
+                        if (versions.size > 1) MenuPill("Version : ${Featured.versionLabel(m.name)}  ▾", versions.map { v -> Featured.versionLabel(v.name) to { uid = v.uid } })
+                        DownloadButton(state, m.uid, { item(fromStart = true) }, compact = false)
+                    }
+                    if (resumable) Text("Reprendre à ${PlayerWindow.fmt(h!!.positionMs)}" + if (h.durationMs > 0) " · ${h.positionMs * 100 / h.durationMs} % vu" else "", color = Pal.dim)
+                    StarRating(state.rating(Kind.MOVIE, m.uid)) { state.rate(Kind.MOVIE, m.uid, it, m.name, m.poster) }
+                    Text(t?.overview ?: details?.plot ?: "Aucun résumé disponible.", color = Pal.text.copy(alpha = 0.92f), lineHeight = 22.sp, modifier = Modifier.fillMaxWidth(0.6f))
+                    t?.let { i -> Column { Credit("Réalisation", i.makers); Credit("Avec", i.cast) } }
                 }
             }
         }
@@ -217,30 +211,27 @@ fun SeriesDetail(state: AppState, s0: Se, onBack: () -> Unit) {
     val expanded = remember(s.uid) { mutableStateMapOf<Int, Boolean>() }
     val list = rememberLazyListState()
 
+    val t = rememberInfo(state, true, s.name, s.tmdb, Featured.year(s.year))
+    val seasons = bySeason.size
+
     Box(Modifier.fillMaxSize()) {
-        Backdrop(details?.backdrop ?: s.cover)
+        BannerPicture(details?.backdrop ?: s.backdrop ?: s.cover, 480.dp)
         LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item { TopActions(onBack, state.isFavorite(Kind.SERIES, s.uid)) { state.toggleFavorite(Kind.SERIES, s.uid) } }
             item {
-                Card {
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        AsyncImage(s.cover, null, Modifier.width(170.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(s.name, style = MaterialTheme.typography.headlineMedium, color = Pal.text, fontWeight = FontWeight.Bold)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                (details?.rating ?: s.rating)?.takeIf { it.isNotBlank() && it != "0" }?.let { Chip(it, icon = Icons.Filled.Star) }
-                                details?.genre?.takeIf { it.isNotBlank() }?.let { Chip(it) }
-                                (details?.release ?: s.year)?.takeIf { it.isNotBlank() }?.let { Chip(it.take(4)) }
-                            }
-                            if (target >= 0) Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Pill(targetLabel, { PlayerWindow.open(state, item(target)) }, Icons.Filled.PlayArrow, primary = true)
-                                val e = eps[target]
-                                Text("$targetLabel : S${e.season} E${e.episode} • ${e.title}", color = Pal.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            (details?.plot ?: s.plot)?.let { Text(it, color = Pal.text.copy(alpha = 0.9f), lineHeight = 22.sp, maxLines = 6, overflow = TextOverflow.Ellipsis) }
-                            Credits(details)
-                        }
+                Column(Modifier.fillMaxWidth().padding(start = 8.dp, top = 70.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TitleArt(s.name, t?.logo, 40.sp, 120.dp)
+                    Text(listOfNotNull(ratingText(t, details?.rating ?: s.rating), (details?.release ?: s.year)?.take(4)?.takeIf { it.isNotBlank() },
+                        if (seasons > 0) "$seasons saison" + if (seasons > 1) "s" else "" else null,
+                        details?.genre?.takeIf { it.isNotBlank() } ?: s.category).joinToString("  ·  "), color = Pal.text.copy(alpha = 0.85f))
+                    if (target >= 0) Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Pill(targetLabel, { PlayerWindow.open(state, item(target)) }, Icons.Filled.PlayArrow, primary = true)
+                        val e = eps[target]
+                        Text("$targetLabel : S${e.season} E${e.episode} • ${e.title}", color = Pal.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                    StarRating(state.rating(Kind.SERIES, s.uid)) { state.rate(Kind.SERIES, s.uid, it, s.name, s.cover) }
+                    (t?.overview ?: details?.plot ?: s.plot)?.let { Text(it, color = Pal.text.copy(alpha = 0.92f), lineHeight = 22.sp, maxLines = 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.6f)) }
+                    t?.let { i -> Column { Credit("Créée par", i.makers); Credit("Avec", i.cast) } }
                 }
             }
             item {

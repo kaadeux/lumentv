@@ -261,7 +261,7 @@ internal fun PhoneMovieDetail(vm: MainViewModel, playlistId: Long, startUid: Str
                             }
                         }
                     }
-                    if (versions.size > 1) IconAction("⇄", versionLabel(m.m.name)) { versionMenu = true }
+                    if (versions.size > 1) IconAction("⇄", com.lumentv.core.Featured.versionLabel(m.m.name)) { versionMenu = true }
                 }
             }
         }
@@ -277,7 +277,7 @@ internal fun PhoneMovieDetail(vm: MainViewModel, playlistId: Long, startUid: Str
         }
     }
     if (versionMenu) OptionsDialog("Version", versions.map { v ->
-        MenuOption(versionLabel(v.m.name) + (com.lumentv.core.Featured.rating(v.m.rating)?.let { "  ·  ★ $it" } ?: ""), checked = v.m.uid == uid) { uid = v.m.uid }
+        MenuOption(com.lumentv.core.Featured.versionLabel(v.m.name) + (com.lumentv.core.Featured.rating(v.m.rating)?.let { "  ·  ★ $it" } ?: ""), checked = v.m.uid == uid) { uid = v.m.uid }
     }, onDismiss = { versionMenu = false }, subtitle = "La même œuvre en plusieurs qualités ou langues")
 }
 

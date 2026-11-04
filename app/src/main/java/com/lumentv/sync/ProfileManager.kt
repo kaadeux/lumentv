@@ -14,6 +14,7 @@ import com.lumentv.data.db.HistoryEntity
 import com.lumentv.data.db.HistoryKind
 import com.lumentv.data.db.PlaylistEntity
 import com.lumentv.data.db.PrefEntity
+import com.lumentv.data.db.RatingEntity
 import com.lumentv.data.repo.EpgRepository
 import com.lumentv.data.repo.LibraryRepository
 import com.lumentv.data.repo.PlaylistRepository
@@ -100,6 +101,7 @@ class ProfileManager(
                     playlists = current.playlists.mapValues { it.value.copy(at = 1) },
                     favorites = current.favorites.mapValues { it.value.copy(at = 1) },
                     history = current.history.mapValues { it.value.copy(at = it.value.watchedAt) },
+                    ratings = current.ratings.mapValues { it.value.copy(at = it.value.ratedAt) },
                     settings = current.settings.mapValues { it.value.copy(at = 1) },
                 ) else ProfileMerge.stampLocal(synced, current)
                 val result = sync.sync(keys, local)
@@ -124,7 +126,7 @@ class ProfileManager(
             override fun onStop(owner: LifecycleOwner) { scope.launch { syncNow() } }
         })
         scope.launch {
-            combine(library.changes, db.history().observeFingerprint(), db.playlists().observeAll(), settings.flow) { a, b, c, d -> listOf(a, b, c.map { it.id to it.name }, d) }
+            combine(library.changes, db.history().observeFingerprint(), db.playlists().observeAll(), settings.flow, db.ratings().observeAll()) { a, b, c, d, e -> listOf(a, b, c.map { it.id to it.name }, d, e) }
                 .drop(1).debounce(20_000).collect { syncNow() }
         }
         scope.launch { while (true) { delay(15 * 60_000L); syncNow() } }
@@ -158,6 +160,10 @@ class ProfileManager(
             ProfileMerge.itemKey(pk, it.kind, it.uid) to SyncHistory(pk, it.kind, it.uid, it.title, it.subtitle, it.image,
                 it.parentUid, it.watchedAt, it.positionMs, it.durationMs)
         } + synced?.history.orEmpty().filterValues { it.playlist !in here }
+        val ratings = db.ratings().all().filter { it.playlistId in keys }.associate {
+            val pk = keys.getValue(it.playlistId)
+            ProfileMerge.itemKey(pk, it.kind, it.uid) to SyncRating(pk, it.kind, it.uid, it.stars, it.ratedAt, it.title, it.image)
+        } + synced?.ratings.orEmpty().filterValues { it.playlist !in here }
         return ProfileDoc(
             playlists = pls.associate { p ->
                 keys.getValue(p.id) to SyncPlaylist(p.name, p.type, SecretBox.decrypt(p.sourceEnc), p.username, SecretBox.decrypt(p.passwordEnc),
@@ -166,6 +172,7 @@ class ProfileManager(
             favorites = favorites,
             history = history,
             settings = settings.syncValues().mapValues { SyncValue(it.value) },
+            ratings = ratings,
         )
     }
 
@@ -202,6 +209,15 @@ class ProfileManager(
             if (h.deleted) { if (cur != null) { db.history().delete(key); changed = true }; continue }
             val row = HistoryEntity(key, h.kind, pid, h.uid, h.title, h.subtitle, h.image, h.parentUid, h.watchedAt, h.positionMs, h.durationMs)
             if (cur != row) { db.history().upsert(row); changed = true }
+        }
+        val rated = db.ratings().all().associateBy { it.key }
+        for (r in d.ratings.values) {
+            val pid = ids[r.playlist] ?: continue
+            val key = LibraryRepository.key(r.kind, pid, r.uid)
+            val cur = rated[key]
+            if (r.deleted) { if (cur != null) { db.ratings().delete(key); changed = true }; continue }
+            val row = RatingEntity(key, r.kind, pid, r.uid, r.stars, r.ratedAt, r.title, r.image)
+            if (cur != row) { db.ratings().upsert(row); changed = true }
         }
         settings.applySync(d.settings.mapValues { it.value.value })
         if (changed) library.bump()

@@ -35,16 +35,18 @@ import java.util.zip.GZIPInputStream
 @Serializable data class Se(val uid: String, val name: String, val category: String, val cover: String? = null, val seriesId: Long = 0,
                             val plot: String? = null, val year: String? = null, val rating: String? = null, val tmdb: String? = null,
                             /** Last change on the provider's side (new series or new episodes), epoch ms; 0 = unknown. */
-                            val updated: Long = 0) { val norm by lazy { normalize(name) } }
+                            val updated: Long = 0,
+                            /** A wide picture of the series, for the home's banner. */
+                            val backdrop: String? = null) { val norm by lazy { normalize(name) } }
 @Serializable data class Ep(val uid: String, val title: String, val season: Int, val episode: Int, val url: String = "", val streamId: Long = 0,
                             val ext: String? = null, val image: String? = null, val plot: String? = null, val durationSecs: Int = 0, val rating: String? = null)
 
-/** What a series / film page shows beyond the list entry (Xtream only). */
-data class Details(val plot: String? = null, val genre: String? = null, val cast: String? = null, val director: String? = null,
+/** What a series / film page shows beyond the list entry (Xtream only). The cast comes from TMDB. */
+data class Details(val plot: String? = null, val genre: String? = null,
                    val rating: String? = null, val release: String? = null, val backdrop: String? = null, val durationSecs: Int = 0)
 
 /** Bumped when the cached catalog lacks something new (v2: TMDB ids of series); an older cache is reloaded. */
-const val CATALOG_VERSION = 3 // 3: series' last change date
+const val CATALOG_VERSION = 4 // 3: series' last change date; 4: series' backdrop
 
 @Serializable
 data class Catalog(
@@ -82,7 +84,7 @@ class Library(private val http: OkHttpClient) {
             version = CATALOG_VERSION,
             channels = live.mapIndexed { i, x -> Ch("x:${x.streamId}", x.name, liveCats[x.categoryId] ?: NO_GROUP, x.icon, streamId = x.streamId, epgId = x.epgId, num = x.num ?: (i + 1)) },
             movies = vod.map { x -> Mv("x:${x.streamId}", x.name, vodCats[x.categoryId] ?: NO_GROUP, x.icon, streamId = x.streamId, ext = x.ext, year = x.year, rating = x.rating, added = x.added) },
-            series = ser.map { x -> Se("x:${x.seriesId}", x.name, serCats[x.categoryId] ?: NO_GROUP, x.cover, x.seriesId, x.plot, x.year, x.rating, x.tmdb, x.updated) },
+            series = ser.map { x -> Se("x:${x.seriesId}", x.name, serCats[x.categoryId] ?: NO_GROUP, x.cover, x.seriesId, x.plot, x.year, x.rating, x.tmdb, x.updated, x.backdrop) },
             epgUrl = p.epgUrl.ifBlank { XtreamApi.xmltvUrl(XtreamCredentials(XtreamApi.normalizeServer(p.source), p.username, p.password)) },
         )
     }
@@ -141,17 +143,26 @@ class Library(private val http: OkHttpClient) {
             Ep("x:${it.id}", it.title, it.season, it.episode, streamId = it.id, ext = it.ext, image = it.image, plot = it.plot, durationSecs = it.durationSecs,
                 rating = ratings[it.id.toString()]?.toDoubleOrNull()?.let { r -> "%.1f".format(r).replace(',', '.') })
         }.sortedWith(compareBy({ it.season }, { it.episode }))
-        val d = info?.let { Details(it.s("plot"), it.s("genre"), it.s("cast"), it.s("director"), it.s("rating"), it.s("releaseDate") ?: it.s("release_date"),
+        val d = info?.let { Details(it.s("plot"), it.s("genre"), it.s("rating"), it.s("releaseDate") ?: it.s("release_date"),
             (it["backdrop_path"] as? kotlinx.serialization.json.JsonArray)?.firstOrNull()?.let { b -> (b as? kotlinx.serialization.json.JsonPrimitive)?.content }) }
         (d to episodes).also { seriesCache[s.uid] = it }
     }
 
-    /** Film page: plot, genre, cast, director, duration (Xtream only). */
+    private val movieCache = HashMap<String, Details?>()
+
+    /** Film page and banner: plot, genre, duration, backdrop (Xtream only), kept for the session. */
+    fun cachedMovieDetails(m: Mv): Details? = synchronized(movieCache) { movieCache[m.uid] }
+
     suspend fun movieDetails(p: SyncPlaylist, m: Mv): Details? = withContext(Dispatchers.IO) {
         if (p.type != "xtream") return@withContext null
+        synchronized(movieCache) { if (m.uid in movieCache) return@withContext movieCache[m.uid] }
+        loadMovieDetails(p, m).also { d -> synchronized(movieCache) { movieCache[m.uid] = d } }
+    }
+
+    private fun loadMovieDetails(p: SyncPlaylist, m: Mv): Details? {
         val root = getJson(p, "get_vod_info&vod_id=${m.streamId}") as? kotlinx.serialization.json.JsonObject
-        val info = root?.get("info") as? kotlinx.serialization.json.JsonObject ?: return@withContext null
-        Details(info.s("plot") ?: info.s("description"), info.s("genre"), info.s("cast") ?: info.s("actors"), info.s("director"), info.s("rating"),
+        val info = root?.get("info") as? kotlinx.serialization.json.JsonObject ?: return null
+        return Details(info.s("plot") ?: info.s("description"), info.s("genre"), info.s("rating"),
             info.s("releasedate") ?: info.s("release_date"),
             (info["backdrop_path"] as? kotlinx.serialization.json.JsonArray)?.firstOrNull()?.let { b -> (b as? kotlinx.serialization.json.JsonPrimitive)?.content },
             info.s("duration_secs")?.toIntOrNull() ?: XtreamApi.parseDuration(info.s("duration")))

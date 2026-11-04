@@ -18,8 +18,4 @@ class EpgMatcher(epgIds: Collection<String>, displayNames: Map<String, String>) 
     }
 
     val isEmpty get() = ids.isEmpty()
-
-    companion object {
-        val EMPTY = EpgMatcher(emptyList(), emptyMap())
-    }
 }

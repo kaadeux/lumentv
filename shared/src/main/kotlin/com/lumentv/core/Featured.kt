@@ -1,21 +1,14 @@
 package com.lumentv.core
 
-import java.util.Calendar
-
 /**
- * The rows that put films and series forward above the full lists (same on the TV, the phone and the PC), for whoever
- * does not know what to watch: what is new, the best rated of the last years, and more of what was watched last.
+ * Titles of the playlist as the Films and Séries screens show them (same on the TV, the phone and the PC).
  *
  * A provider lists the same film several times (4K, FHD, "SUBT AR"…): one poster per title is kept, the first in the
  * given order. Titles in another script or only subtitled in Arabic are left out, as are hidden categories.
  */
 object Featured {
+    /** Titles of a category row. */
     const val ROW = 20
-    /** "Les mieux notés": at least this rating, released in the last [RECENT_YEARS] years. */
-    const val GOOD = 7.0
-    const val RECENT_YEARS = 3
-    /** Above this, a rating is usually a handful of votes (an unknown film "★ 10"), not a sure value. */
-    const val BEST = 9.0
 
     /** "The Dog Stars (2026) 4K MULTI" and "The Dog Stars (2026) SUBT AR" are one title: "the dog stars". */
     fun baseTitle(name: String): String =
@@ -32,8 +25,17 @@ object Featured {
     /** The year given, else the one in the title: "Breach (2026) VOSTFR" → 2026. */
     fun yearOf(y: String?, name: String): Int? = year(y) ?: Regex("\\((\\d{4})\\)").find(name)?.groupValues?.get(1)?.toIntOrNull()
 
-    /** Released in the last [RECENT_YEARS] years. */
-    fun recent(y: String?, name: String) = (yearOf(y, name) ?: 0) >= Calendar.getInstance().get(Calendar.YEAR) - RECENT_YEARS
+    /** "Hope (2026) MULTI" → "Hope": the name without the year and the copy's tags (they go to [posterLine]). */
+    fun shortTitle(name: String): String = name.substringBefore(" (").substringBefore(" [").trim().ifBlank { name }
+
+    /** "Breach (2026) VOSTFR" → "VOSTFR", "The Dog Stars (2026) 4K MULTI" → "4K MULTI": what tells a copy from another. */
+    fun versionLabel(name: String): String =
+        name.substringAfterLast(")", "").replace(Regex("^[\\s\\-|:]+"), "").trim().ifBlank { name.substringAfter(" | ", "").trim() }.ifBlank { "Version" }
+
+    /** "2026 · ★ 7,2 · MULTI": year, rating, and for a film ([name] given) which copy it is. */
+    fun posterLine(year: String?, rating: String?, name: String?): String? =
+        (listOfNotNull(yearOf(year, name ?: "")?.toString(), rating(rating)?.let { "★ " + "%.1f".format(java.util.Locale.FRANCE, it) }) +
+            listOfNotNull(name?.let { versionLabel(it) }?.takeIf { it != "Version" && it.length <= 14 })).joinToString(" · ").ifEmpty { null }
 
     /** One per title, without the foreign copies and hidden categories, at most [ROW]. */
     fun <T> clean(list: List<T>, name: (T) -> String, category: (T) -> String, hidden: Set<String> = emptySet()): List<T> =

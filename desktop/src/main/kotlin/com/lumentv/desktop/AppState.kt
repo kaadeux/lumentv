@@ -38,6 +38,8 @@ class AppState(private val scope: CoroutineScope) {
     val http: OkHttpClient = with(com.lumentv.core.PrivateNet) { OkHttpClient.Builder().private() }.connectTimeout(15, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS)
         .followRedirects(true).followSslRedirects(true).retryOnConnectionFailure(true).build()
     val library = Library(http)
+    /** TMDB: rows of the Films / Séries homes, logos, summaries, cast, search by person. */
+    val vod = Vod(this)
     /** Official sports calendar (live and upcoming games). */
     val fixtures = com.lumentv.data.sports.FixtureClient(http)
     /** Which French channel shows each game, days ahead (xmltvfr.fr, sports channels only, twice a day at most). */
@@ -92,7 +94,7 @@ class AppState(private val scope: CoroutineScope) {
     val syncEnabled get() = BuildInfo.SYNC_URL.isNotEmpty()
     val playlists get() = doc.playlists.filterValues { !it.deleted }
     val active: SyncPlaylist? get() = activeKey?.let { playlists[it] } ?: playlists.values.firstOrNull()
-    private val activeKeyOrFirst get() = activeKey?.takeIf { it in playlists } ?: playlists.keys.firstOrNull()
+    internal val activeKeyOrFirst get() = activeKey?.takeIf { it in playlists } ?: playlists.keys.firstOrNull()
 
     fun setting(key: String, default: String = "") = doc.settings[key]?.value ?: default
     fun setSetting(key: String, value: String) = change { it.copy(settings = it.settings + (key to SyncValue(value, now()))) }
@@ -203,6 +205,9 @@ class AppState(private val scope: CoroutineScope) {
 
     fun clearHistory() = change { d -> d.copy(history = d.history.mapValues { (_, h) -> if (h.playlist == activeKeyOrFirst) h.copy(deleted = true, at = now()) else h }) }
 
+    /** A change of the profile document made elsewhere (ratings), saved and synced like the others. */
+    internal fun updateDoc(f: (ProfileDoc) -> ProfileDoc) = change(f = f)
+
     private var syncSoon: Job? = null
 
     private fun change(sync: Boolean = true, f: (ProfileDoc) -> ProfileDoc) {
@@ -226,6 +231,7 @@ class AppState(private val scope: CoroutineScope) {
             playlists = doc.playlists.mapValues { it.value.copy(at = 1) },
             favorites = doc.favorites.mapValues { it.value.copy(at = 1) },
             settings = doc.settings.mapValues { it.value.copy(at = 1) },
+            ratings = doc.ratings.mapValues { it.value.copy(at = 1) },
         )
         syncNow().getOrThrow()
     }

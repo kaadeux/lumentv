@@ -269,6 +269,5 @@ data class TmdbLinkEntity(
     val checkedAt: Long,
 )
 
-/** Light rows of the whole library, for the search and the TMDB matching (no URLs, no plots). */
-data class VodLite(val id: Long, val uid: String, val name: String, val category: String, val year: String?, val rating: String?)
+/** Light rows of the channels, for the search ([com.lumentv.data.discover.VodLite] for films and series). */
 data class ChannelLite(val id: Long, val name: String, val number: Int)

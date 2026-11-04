@@ -12,6 +12,17 @@ import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 
 class SyncTest {
+    @Test fun ratingsMergeAndSpreadTheirRemoval() {
+        val k = ProfileMerge.itemKey("pl", "mv", "x:1")
+        val tv = ProfileDoc(ratings = mapOf(k to SyncRating("pl", "mv", "x:1", 5, 100, at = 100)))
+        val pc = ProfileDoc(ratings = mapOf(k to SyncRating("pl", "mv", "x:1", 2, 200, at = 200)))
+        assertEquals(2, ProfileMerge.merge(tv, pc).ratings.getValue(k).stars)
+        // The PC took the rating away since the last sync: a tombstone, dated now, that wins on the TV.
+        val stamped = ProfileMerge.stampLocal(pc, ProfileDoc(), now = 300)
+        assertTrue(stamped.ratings.getValue(k).deleted)
+        assertTrue(ProfileMerge.merge(tv, stamped).ratings.getValue(k).deleted)
+    }
+
     @Test fun pbkdf2MatchesRfc7914Vector() {
         val dk = ProfileKeys.pbkdf2Sha256("passwd".toByteArray(), "salt".toByteArray(), 1, 64)
         assertEquals("55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc" +

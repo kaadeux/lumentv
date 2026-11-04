@@ -110,10 +110,10 @@ interface ChannelDao {
 @Dao
 interface VodDao {
     @Query("SELECT id, uid, name, category, year, rating FROM movies WHERE playlistId = :pid")
-    suspend fun movieIndex(pid: Long): List<VodLite>
+    suspend fun movieIndex(pid: Long): List<com.lumentv.data.discover.VodLite>
 
     @Query("SELECT id, uid, name, category, year, rating FROM series WHERE playlistId = :pid")
-    suspend fun seriesIndex(pid: Long): List<VodLite>
+    suspend fun seriesIndex(pid: Long): List<com.lumentv.data.discover.VodLite>
 
     @Query("""SELECT m.*, p.favorite AS favorite FROM movies m LEFT JOIN prefs p ON p.playlistId = m.playlistId AND p.kind = 'mv' AND p.uid = m.uid
         WHERE m.id IN (:ids)""")
@@ -155,16 +155,6 @@ interface VodDao {
     @Query("""SELECT s.*, p.favorite AS favorite FROM series s LEFT JOIN prefs p ON p.playlistId = s.playlistId AND p.kind = 'se' AND p.uid = s.uid
         WHERE s.playlistId = :pid ORDER BY s.updatedAt DESC, s.number LIMIT :limit""")
     suspend fun recentSeries(pid: Long, limit: Int): List<SeriesRow>
-
-    @Query("""SELECT m.*, p.favorite AS favorite FROM movies m LEFT JOIN prefs p ON p.playlistId = m.playlistId AND p.kind = 'mv' AND p.uid = m.uid
-        WHERE m.playlistId = :pid AND CAST(m.rating AS REAL) BETWEEN :min AND 9.0
-        ORDER BY CAST(m.rating AS REAL) DESC LIMIT :limit""")
-    suspend fun topMovies(pid: Long, min: Double, limit: Int): List<MovieRow>
-
-    @Query("""SELECT s.*, p.favorite AS favorite FROM series s LEFT JOIN prefs p ON p.playlistId = s.playlistId AND p.kind = 'se' AND p.uid = s.uid
-        WHERE s.playlistId = :pid AND CAST(s.rating AS REAL) BETWEEN :min AND 9.0
-        ORDER BY CAST(s.rating AS REAL) DESC LIMIT :limit""")
-    suspend fun topSeries(pid: Long, min: Double, limit: Int): List<SeriesRow>
 
     @Query("SELECT category, COUNT(*) AS count, MIN(number) AS firstNumber FROM series WHERE playlistId = :pid GROUP BY category ORDER BY firstNumber")
     suspend fun seriesCategories(pid: Long): List<CategoryCount>

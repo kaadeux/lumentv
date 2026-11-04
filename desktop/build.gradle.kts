@@ -10,7 +10,7 @@ plugins {
     id("org.jetbrains.compose")
 }
 
-val appVersion = "1.6.0"
+val appVersion = "1.7.0"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -73,14 +73,16 @@ val buildInfo by tasks.registering {
     val code = localProp("lumen.accessCode")
     val sync = localProp("lumen.syncUrl")
     val update = localProp("lumen.updateUrl").replace("/version.json", "/desktop.json")
-    inputs.property("v", appVersion); inputs.property("s", sync); inputs.property("u", update); inputs.property("c", code.isNotEmpty())
+    // TMDB key (free, read only): logos, ratings, summaries, cast and the rows of the Films / Séries homes.
+    val tmdb = localProp("lumen.tmdbKey")
+    inputs.property("v", appVersion); inputs.property("s", sync); inputs.property("u", update); inputs.property("c", code.isNotEmpty()); inputs.property("t", tmdb)
     outputs.dir(buildInfoDir)
     doLast {
         val hash = if (code.isEmpty()) "" else sha256("lumen-access:$code")
         val f = buildInfoDir.get().file("com/lumentv/desktop/BuildInfo.kt").asFile
         f.parentFile.mkdirs()
         f.writeText("package com.lumentv.desktop\n\nobject BuildInfo {\n    const val VERSION = \"$appVersion\"\n" +
-            "    const val SYNC_URL = \"$sync\"\n    const val UPDATE_URL = \"$update\"\n    const val ACCESS_HASH = \"$hash\"\n}\n")
+            "    const val SYNC_URL = \"$sync\"\n    const val UPDATE_URL = \"$update\"\n    const val ACCESS_HASH = \"$hash\"\n    const val TMDB_KEY = \"$tmdb\"\n}\n")
     }
 }
 kotlin.sourceSets.named("main") { kotlin.srcDir(buildInfoDir) }

@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
  * Everything a profile shares between devices. Each entry carries the time it last changed ([at]); merging two
  * copies keeps, entry by entry, the most recent one. Removals are kept as tombstones so they spread too.
  *
- * Playlists are keyed by [playlistKey] (same account = same key on every device); favourites and history by
+ * Playlists are keyed by [playlistKey] (same account = same key on every device); favourites, history and ratings by
  * "playlistKey|kind|uid", where uid is the provider's stable id for the channel / film / episode / series.
  */
 @Serializable
@@ -16,6 +16,8 @@ data class ProfileDoc(
     val favorites: Map<String, SyncFavorite> = emptyMap(),
     val history: Map<String, SyncHistory> = emptyMap(),
     val settings: Map<String, SyncValue> = emptyMap(),
+    /** Personal star ratings of films ("mv") and series ("se"). Older devices ignore them. */
+    val ratings: Map<String, SyncRating> = emptyMap(),
 )
 
 @Serializable
@@ -61,6 +63,20 @@ data class SyncHistory(
     val at: Long = 0,
 )
 
+/** A personal rating: 1 to 5 stars. [deleted]: the rating was taken away. */
+@Serializable
+data class SyncRating(
+    val playlist: String,
+    val kind: String,
+    val uid: String,
+    val stars: Int,
+    val ratedAt: Long,
+    val title: String = "",
+    val image: String? = null,
+    val deleted: Boolean = false,
+    val at: Long = 0,
+)
+
 @Serializable
 data class SyncValue(val value: String, val at: Long = 0)
 
@@ -82,6 +98,7 @@ object ProfileMerge {
             favorites = lww(a.favorites, b.favorites) { it.at },
             history = lww(a.history, b.history) { it.at },
             settings = lww(a.settings, b.settings) { it.at },
+            ratings = lww(a.ratings, b.ratings) { it.at },
         )
     }
 
@@ -94,6 +111,7 @@ object ProfileMerge {
             playlists = d.playlists.filterValues { !it.deleted || it.at > cutoff },
             favorites = d.favorites.filterValues { it.on || it.at > cutoff },
             history = history,
+            ratings = d.ratings.filterValues { !it.deleted || it.at > cutoff },
         )
     }
 
@@ -106,6 +124,7 @@ object ProfileMerge {
         playlists = stamp(synced.playlists, current.playlists, now, { it.copy(at = 0) }, { p, t -> p.copy(at = t) }, { it.copy(deleted = true) }) { it.deleted },
         favorites = stamp(synced.favorites, current.favorites, now, { it.copy(at = 0) }, { p, t -> p.copy(at = t) }, { it.copy(on = false) }) { !it.on },
         history = stamp(synced.history, current.history, now, { it.copy(at = 0) }, { p, t -> p.copy(at = t) }, { it.copy(deleted = true) }) { it.deleted },
+        ratings = stamp(synced.ratings, current.ratings, now, { it.copy(at = 0) }, { p, t -> p.copy(at = t) }, { it.copy(deleted = true) }) { it.deleted },
         // A setting missing on this device is simply not set here: it is not a removal.
         settings = synced.settings + current.settings.mapValues { (k, v) ->
             synced.settings[k]?.takeIf { it.value == v.value } ?: v.copy(at = now)

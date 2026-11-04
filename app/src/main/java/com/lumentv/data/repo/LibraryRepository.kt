@@ -21,8 +21,6 @@ data class GroupInfo(val name: String, val count: Int, val hidden: Boolean, val 
 
 /** Results per kind in the global search. */
 const val SEARCH_LIMIT = 300
-/** Titles shown for one person of the search. */
-const val PERSON_LIMIT = 40
 
 object Groups {
     const val ALL = "\u0001all"
@@ -121,41 +119,9 @@ class LibraryRepository(private val db: AppDatabase) {
         com.lumentv.core.Featured.clean(db.vod().series(pid, category).sortedByDescending { it.s.updatedAt }, { it.s.name }, { it.s.category })
     }
 
-    /** A row of the featured section ("Nouveautés", "Les mieux notés", "Parce que vous avez regardé…"). */
+    /** A row of the Films / Séries home ("Tendances du moment", a category…). */
     class Shelf<T>(val title: String, val items: List<T>)
 
-    /** Films put forward above the list: new, best rated of the last years, more of the last one watched. */
-    suspend fun featuredMovies(pid: Long, lastWatched: String?): List<Shelf<MovieRow>> = withContext(Dispatchers.IO) {
-        val hidden = hiddenSet(pid, PrefKind.MOVIE_CATEGORY)
-        fun clean(l: List<MovieRow>) = com.lumentv.core.Featured.clean(l, { it.m.name }, { it.m.category }, hidden)
-        val last = lastWatched?.let { db.vod().movieByUid(pid, it) }
-        listOfNotNull(
-            Shelf("Nouveautés", clean(db.vod().recentMovies(pid, 200))),
-            // The year is often only in the title ("Breach (2026)"): the recent ones are kept here, not in SQL.
-            Shelf("Les mieux notés", clean(db.vod().topMovies(pid, com.lumentv.core.Featured.GOOD, 3000).filter { com.lumentv.core.Featured.recent(it.m.year, it.m.name) })),
-            last?.let { l ->
-                val base = com.lumentv.core.Featured.baseTitle(l.m.name)
-                Shelf("Parce que vous avez regardé ${l.m.name.substringBefore(" (")}", clean(db.vod().movies(pid, l.m.category)
-                    .filter { com.lumentv.core.Featured.baseTitle(it.m.name) != base }
-                    .sortedWith(compareByDescending<MovieRow> { com.lumentv.core.Featured.rating(it.m.rating) ?: 0.0 }.thenByDescending { it.m.addedAt })))
-            },
-        ).filter { it.items.size >= 3 }
-    }
-
-    /** Series put forward above the list: new or with new episodes, best rated of the last years, more of the last one watched. */
-    suspend fun featuredSeries(pid: Long, lastWatched: String?): List<Shelf<SeriesRow>> = withContext(Dispatchers.IO) {
-        val hidden = hiddenSet(pid, PrefKind.SERIES_CATEGORY)
-        fun clean(l: List<SeriesRow>) = com.lumentv.core.Featured.clean(l, { it.s.name }, { it.s.category }, hidden)
-        val last = lastWatched?.let { db.vod().seriesByUid(pid, it) }
-        listOfNotNull(
-            Shelf("Nouveautés", clean(db.vod().recentSeries(pid, 200))),
-            Shelf("Les mieux notées", clean(db.vod().topSeries(pid, com.lumentv.core.Featured.GOOD, 3000).filter { com.lumentv.core.Featured.recent(it.s.year, it.s.name) })),
-            last?.let { l ->
-                Shelf("Parce que vous avez regardé ${l.s.name}", clean(db.vod().series(pid, l.s.category).filter { it.s.uid != l.s.uid }
-                    .sortedWith(compareByDescending<SeriesRow> { com.lumentv.core.Featured.rating(it.s.rating) ?: 0.0 }.thenByDescending { it.s.updatedAt })))
-            },
-        ).filter { it.items.size >= 3 }
-    }
     suspend fun seriesByUid(pid: Long, uid: String) = withContext(Dispatchers.IO) { db.vod().seriesByUid(pid, uid) }
     suspend fun storedEpisodes(pid: Long, seriesUid: String) = withContext(Dispatchers.IO) { db.vod().episodes(pid, seriesUid) }
 
@@ -244,42 +210,15 @@ class LibraryRepository(private val db: AppDatabase) {
         if (q.length < 2) return@withContext SearchResults()
         val sq = com.lumentv.core.SmartSearch.Query(query)
         val idx = pid?.let { index.of(it) }
-        // People: the two best known whose name is the query, and what they played in / made that the playlist has.
-        val people = async { if (idx != null && tmdb.enabled && sq.compact.length >= 3) kotlinx.coroutines.coroutineScope {
-            tmdb.people(query).take(2).map { person ->
-                async {
-                    val works = tmdb.works(person.id)
-                    listOf(true, false).mapNotNull { made ->
-                        val found = works.filter { it.made == made }.mapNotNull { w -> idx.find(w.series, w.item)?.let { w.series to it } }
-                            .filter { (_, v) -> !com.lumentv.core.Featured.foreign(v.name, v.category) }
-                            .distinctBy { (series, v) -> "$series${com.lumentv.core.Featured.baseTitle(v.name)}" }.take(PERSON_LIMIT)
-                        if (found.isEmpty()) return@mapNotNull null
-                        val movies = found.filter { !it.first }.map { it.second.id }
-                        val series = found.filter { it.first }.map { it.second.id }
-                        val title = when {
-                            !made -> "Avec ${person.name}"
-                            movies.isEmpty() -> "Créé par ${person.name}"
-                            else -> "Réalisé par ${person.name}"
-                        }
-                        // Kept in TMDB's order (most popular first).
-                        val mv = db.vod().moviesByIds(movies).associateBy { it.m.id }
-                        val se = db.vod().seriesByIds(series).associateBy { it.s.id }
-                        PersonHit("${person.id}:$made", title, movies.mapNotNull { mv[it] }, series.mapNotNull { se[it] })
-                    }
-                }
-            }.flatMap { it.await() }
-        } else emptyList() }
-        // Other titles: TMDB's French and original titles of what the query means ("seigneur des anneaux" → "The Lord of the Rings").
-        val other: Pair<List<com.lumentv.data.db.VodLite>, List<com.lumentv.data.db.VodLite>> =
-            if (idx != null && tmdb.enabled && sq.compact.length >= 3) kotlinx.coroutines.coroutineScope {
-                val mv = async { tmdb.search(false, query).take(8).mapNotNull { idx.find(false, it) } }
-                val se = async { tmdb.search(true, query).take(8).mapNotNull { idx.find(true, it) } }
-                mv.await() to se.await()
-            } else emptyList<com.lumentv.data.db.VodLite>() to emptyList()
-        fun merge(local: List<com.lumentv.data.db.VodLite>, alt: List<com.lumentv.data.db.VodLite>) =
-            (local + alt).distinctBy { it.id }.distinctBy { com.lumentv.core.Featured.baseTitle(it.name) }.take(SEARCH_LIMIT)
-        val movieIds = idx?.let { merge(com.lumentv.core.SmartSearch.search(sq, it.movies, SEARCH_LIMIT * 2), other.first) }?.map { it.id }
-        val seriesIds = idx?.let { merge(com.lumentv.core.SmartSearch.search(sq, it.series, SEARCH_LIMIT * 2), other.second) }?.map { it.id }
+        // Films, series and people: the same search as the PC (TitleSearch).
+        val found = idx?.let { com.lumentv.data.discover.TitleSearch.search(query, it, tmdb, SEARCH_LIMIT) }
+        val people = found?.people.orEmpty().map { h ->
+            val mv = db.vod().moviesByIds(h.movies.map { it.id }).associateBy { it.m.id }
+            val se = db.vod().seriesByIds(h.series.map { it.id }).associateBy { it.s.id }
+            PersonHit(h.key, h.title, h.movies.mapNotNull { mv[it.id] }, h.series.mapNotNull { se[it.id] })
+        }
+        val movieIds = found?.movies?.map { it.id }
+        val seriesIds = found?.series?.map { it.id }
         val channelIds = idx?.let { com.lumentv.core.SmartSearch.search(sq, it.channels, SEARCH_LIMIT) }?.map { it.id }
         val programs = db.epg().search(q, System.currentTimeMillis(), SEARCH_LIMIT)
         val byPlaylist = HashMap<Long, Map<String, ChannelRow>>()
@@ -302,7 +241,7 @@ class LibraryRepository(private val db: AppDatabase) {
             series = seriesIds?.let { ids -> ordered(ids, db.vod().seriesByIds(ids)) { it.s.id } } ?: db.vod().searchSeries(q, SEARCH_LIMIT),
             episodes = db.vod().searchEpisodes(q, SEARCH_LIMIT),
             programs = progPairs,
-            people = people.await(),
+            people = people,
         )
     }
 
