@@ -29,6 +29,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import com.lumentv.core.Redact
+import com.lumentv.core.TrackNames
 import com.lumentv.data.repo.StreamSpec
 import com.lumentv.data.settings.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -181,6 +182,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
 
         override fun onTracksChanged(tracks: Tracks) {
             _tracksVersion.value++
+            forcedFrench()
             val f = player.videoFormat
             f?.frameRate?.takeIf { it > 0f }?.let { r -> if (_state.value.frameRate <= 0f) { Log.i(TAG, "frame rate from the stream: $r"); _state.value = _state.value.copy(frameRate = r) } }
             _state.value = _state.value.copy(videoInfo = f?.let { v ->
@@ -251,6 +253,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         cancelRetry()
         current = spec
         attempt = 0
+        subtitlesSettled = false
         _state.value = PlaybackState(buffering = true)
         prepare(spec, startPositionMs)
     }
@@ -342,6 +345,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
                 val label = listOfNotNull(
                     lang ?: extraLabel ?: "Piste ${out.size + 1}",
                     extraLabel?.takeIf { lang != null },
+                    "forcés".takeIf { type == C.TRACK_TYPE_TEXT && f.selectionFlags and C.SELECTION_FLAG_FORCED != 0 && !TrackNames.isForced(false, f.label) },
                     if (type == C.TRACK_TYPE_AUDIO && f.channelCount > 0) channels(f.channelCount) else null,
                     f.sampleMimeType?.substringAfter('/')?.uppercase()?.takeIf { type == C.TRACK_TYPE_AUDIO },
                 ).joinToString(" · ")
@@ -351,7 +355,31 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         return out
     }
 
+    /** Set once the subtitles of the current film / episode were chosen (by [forcedFrench] or the viewer). */
+    private var subtitlesSettled = false
+
+    /**
+     * With the subtitles off (the default), French forced subtitles are shown when the film has them: only the lines
+     * in another language (a phone call in Russian, a sign). Once per film or episode; the viewer's choice then stays.
+     */
+    private fun forcedFrench() {
+        if (subtitlesSettled || settings.subtitlesOn) return
+        val texts = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        if (texts.isEmpty()) return
+        subtitlesSettled = true
+        for (g in texts) for (i in 0 until g.length) {
+            val f = g.getTrackFormat(i)
+            if (g.isTrackSupported(i) && TrackNames.isForced(f.selectionFlags and C.SELECTION_FLAG_FORCED != 0, f.label) && TrackNames.isFrench(f.language, f.label)) {
+                Log.i(TAG, "French forced subtitles selected")
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i)).build()
+                return
+            }
+        }
+    }
+
     fun select(type: Int, option: TrackOption) {
+        if (type == C.TRACK_TYPE_TEXT) subtitlesSettled = true
         val b = player.trackSelectionParameters.buildUpon()
         if (option.group == null) {
             b.setTrackTypeDisabled(type, true)

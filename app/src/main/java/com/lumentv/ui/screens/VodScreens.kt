@@ -384,9 +384,9 @@ fun clock(ms: Long): String {
 
 // ---- Reprendre la lecture -------------------------------------------------------------------------------------
 
-/** One poster of the "Reprendre la lecture" row. [forget] are the history lines removed with it. */
+/** One poster of the "Reprendre la lecture" row: OK opens [page], "Reprendre" [play]s. [forget] are the history lines removed with it. */
 private class ResumeItem(val key: String, val title: String, val line: String?, val image: String?, val progress: Float?,
-                         val play: () -> Unit, val forget: List<String>)
+                         val play: () -> Unit, val forget: List<String>, val page: Screen)
 
 /** Films started and not finished, the last watched first. */
 @Composable
@@ -396,7 +396,7 @@ private fun resumeMovies(vm: MainViewModel, pid: Long, history: List<HistoryEnti
         history.filter { it.kind == HistoryKind.MOVIE && it.playlistId == pid && com.lumentv.core.Resume.movieToResume(it.positionMs, it.durationMs) }
             .take(com.lumentv.core.Resume.LIMIT).map { h ->
                 ResumeItem(h.key, h.title, com.lumentv.core.Resume.remaining(h.positionMs, h.durationMs), h.image,
-                    h.positionMs.toFloat() / h.durationMs.coerceAtLeast(1), { PlayerLauncher.movie(context, pid, h.uid, true) }, listOf(h.key))
+                    h.positionMs.toFloat() / h.durationMs.coerceAtLeast(1), { PlayerLauncher.movie(context, pid, h.uid, true) }, listOf(h.key), Screen.MovieDetail(pid, h.uid))
             }
     }
 }
@@ -411,7 +411,7 @@ private fun resumeSeries(vm: MainViewModel, pid: Long, history: List<HistoryEnti
     @Suppress("UNCHECKED_CAST")
     val items by produceState(vm.memo["resume:s:$pid"] as? List<ResumeItem> ?: emptyList(), history, pid) {
         value = history.filter { it.kind == HistoryKind.EPISODE && it.playlistId == pid && it.parentUid != null }
-            .groupBy { it.parentUid!! }.values.map { eps -> furthest(eps) to eps.map { it.key } to eps.maxOf { it.watchedAt } }
+            .groupBy { it.parentUid!! }.values.map { eps -> com.lumentv.core.Resume.furthest(eps, { it.subtitle }, { it.watchedAt }) to eps.map { it.key } to eps.maxOf { it.watchedAt } }
             .sortedByDescending { it.second }.map { it.first }
             .mapNotNull { (h, keys) ->
                 val sUid = h.parentUid!!
@@ -419,15 +419,24 @@ private fun resumeSeries(vm: MainViewModel, pid: Long, history: List<HistoryEnti
                 if (!com.lumentv.core.Resume.watched(h.positionMs, h.durationMs)) {
                     ResumeItem(sUid, h.title, listOfNotNull(h.subtitle?.substringBefore(" · "), com.lumentv.core.Resume.remaining(h.positionMs, h.durationMs)).joinToString(" · "),
                         cover, if (h.durationMs > 0) h.positionMs.toFloat() / h.durationMs else null,
-                        { PlayerLauncher.episode(context, pid, sUid, h.uid, true) }, keys)
+                        { PlayerLauncher.episode(context, pid, sUid, h.uid, true) }, keys, Screen.SeriesDetail(pid, sUid))
                 } else {
-                    val eps = vm.graph.library.storedEpisodes(pid, sUid)
-                    val i = eps.indexOfFirst { it.uid == h.uid }
+                    var eps = vm.graph.library.storedEpisodes(pid, sUid)
+                    var i = eps.indexOfFirst { it.uid == h.uid }
+                    // Watched elsewhere (the profile brings what was seen, not the episode list) or the list here is
+                    // older than that episode: the provider is asked now, so a series seen to its end leaves the row
+                    // instead of showing "Continuer".
+                    if (eps.isEmpty() || i < 0) runCatching {
+                        val p = vm.graph.playlists.get(pid)
+                        val s = vm.graph.library.seriesByUid(pid, sUid)
+                        if (p?.type == PlaylistType.XTREAM && s != null) eps = vm.graph.playlists.loadXtreamEpisodes(p, sUid, s.s.seriesId)
+                        i = eps.indexOfFirst { it.uid == h.uid }
+                    }
                     when {
-                        // Episodes not on this device yet (watched elsewhere): the series page fetches them.
-                        eps.isEmpty() || i < 0 -> ResumeItem(sUid, h.title, "Continuer", cover, null, { vm.open(Screen.SeriesDetail(pid, sUid)) }, keys)
+                        // Still unknown (offline, M3U): the series page tells.
+                        eps.isEmpty() || i < 0 -> ResumeItem(sUid, h.title, "Continuer", cover, null, { vm.open(Screen.SeriesDetail(pid, sUid)) }, keys, Screen.SeriesDetail(pid, sUid))
                         i + 1 < eps.size -> eps[i + 1].let { n ->
-                            ResumeItem(sUid, h.title, "Suivant : S${n.season} E${n.episode}", cover, null, { PlayerLauncher.episode(context, pid, sUid, n.uid, false) }, keys)
+                            ResumeItem(sUid, h.title, "Suivant : S${n.season} E${n.episode}", cover, null, { PlayerLauncher.episode(context, pid, sUid, n.uid, false) }, keys, Screen.SeriesDetail(pid, sUid))
                         }
                         else -> null
                     }
@@ -530,11 +539,14 @@ private fun seriesTile(vm: MainViewModel, rowKey: String, r: SeriesRow): HomeTil
 }
 
 @Composable
-private fun resumeTile(vm: MainViewModel, r: ResumeItem, series: Boolean, onLong: () -> Unit): HomeTile =
-    HomeTile("resume:${r.key}", r.title, r.image, r.progress,
+private fun resumeTile(vm: MainViewModel, r: ResumeItem, series: Boolean, onLong: () -> Unit): HomeTile {
+    // The poster opens the film's or series' page (to choose: go on, start again, another episode); "Reprendre" plays.
+    val open = { vm.openFrom("resume:${r.key}", r.page) }
+    return HomeTile("resume:${r.key}", r.title, r.image, r.progress,
         HeroItem("r:${r.key}", r.title, listOfNotNull(r.line), if (series) "Reprendre là où vous en étiez." else null, r.image,
-            playLabel = "Reprendre", play = r.play, more = r.play, series = series),
-        onClick = r.play, onLong = onLong)
+            playLabel = "Reprendre", play = r.play, more = open, series = series),
+        onClick = open, onLong = onLong)
+}
 
 /**
  * The home of Films or Séries on the TV, as on a streaming service: a banner with the focused title over its picture
@@ -861,15 +873,3 @@ internal fun TitleArt(title: String, logo: String?, size: androidx.compose.ui.un
             lineHeight = size * 1.12f, modifier = Modifier.fillMaxWidth(0.6f))
     }
 }
-
-/** "S4 E6 · …" → (4, 6). */
-private fun seasonEpisode(subtitle: String?): Pair<Int, Int>? =
-    subtitle?.let { Regex("^S(\\d+) E(\\d+)").find(it) }?.let { it.groupValues[1].toInt() to it.groupValues[2].toInt() }
-
-/**
- * Of a series' history, the episode furthest in the series (season, then number), the last one watched when unknown:
- * the series is resumed there, and leaves "Reprendre la lecture" once its last episode is seen.
- */
-private fun furthest(eps: List<HistoryEntity>): HistoryEntity =
-    eps.filter { seasonEpisode(it.subtitle) != null }.maxWithOrNull(compareBy({ seasonEpisode(it.subtitle)!!.first }, { seasonEpisode(it.subtitle)!!.second }))
-        ?: eps.maxBy { it.watchedAt }

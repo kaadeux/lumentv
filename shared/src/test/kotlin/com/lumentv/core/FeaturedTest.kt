@@ -25,3 +25,15 @@ class FeaturedTest {
         assertFalse(Featured.foreign("ARTE Reportage", "FR · Documentaire"))
     }
 }
+
+class ResumeTest {
+    private class H(val subtitle: String?, val watchedAt: Long)
+
+    @Test fun furthestEpisodeNotTheLastWatched() {
+        // From: the whole series seen up to S4 E10, then S1 E1 watched again today.
+        val eps = listOf(H("S4 E10 · Fin", 100), H("S2 E3 · …", 50), H("S1 E1 · Voyage au bout du jour", 900))
+        org.junit.Assert.assertEquals("S4 E10 · Fin", Resume.furthest(eps, { it.subtitle }, { it.watchedAt }).subtitle)
+        // Without "S… E…" in the subtitles: the last one watched.
+        org.junit.Assert.assertEquals(9L, Resume.furthest(listOf(H(null, 3), H("Bonus", 9)), { it.subtitle }, { it.watchedAt }).watchedAt)
+    }
+}

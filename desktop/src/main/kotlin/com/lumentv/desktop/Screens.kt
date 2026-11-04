@@ -219,7 +219,8 @@ fun MoviesScreen(state: AppState) {
                 val m = c.movies.firstOrNull { it.uid == r.key } ?: return@mapNotNull null
                 val base = state.movieTile("resume", m) { open = it }
                 HomeTile(base.key, base.title, r.image ?: m.poster, r.line, r.progress, false,
-                    base.hero.playing("Reprendre") { scope.launch { r.play() } }, { scope.launch { r.play() } }, onRemove = { forget = r })
+                    // The poster opens the film's page; "Reprendre" of the banner plays.
+                    base.hero.playing("Reprendre") { scope.launch { r.play() } }, { open = m }, onRemove = { forget = r })
             }))
             shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { state.movieTile("f:" + sh.title, it) { m -> open = m } })) }
             catRows.forEach { (name, list) -> add(HomeRow("cat:$name", name, list.map { state.movieTile("c:$name", it) { m -> open = m } })) }
@@ -287,7 +288,8 @@ fun SeriesScreen(state: AppState) {
                 val s = c.series.firstOrNull { it.uid == r.key } ?: return@mapNotNull null
                 val base = state.seriesTile("resume", s) { open = it }
                 HomeTile(base.key, base.title, r.image ?: s.cover, r.line, r.progress, false,
-                    base.hero.playing("Reprendre") { scope.launch { r.play() } }, { scope.launch { r.play() } }, onRemove = { forget = r })
+                    // The poster opens the series' page; "Reprendre" of the banner plays.
+                    base.hero.playing("Reprendre") { scope.launch { r.play() } }, { open = s }, onRemove = { forget = r })
             }))
             shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { state.seriesTile("f:" + sh.title, it) { s -> open = s } })) }
             catRows.forEach { (name, list) -> add(HomeRow("cat:$name", name, list.map { state.seriesTile("c:$name", it) { s -> open = s } })) }
@@ -485,7 +487,8 @@ private fun resumeSeries(state: AppState, onOpen: (Se) -> Unit): List<ResumeItem
     val c = state.catalog ?: return emptyList()
     val items by produceState(emptyList<ResumeItem>(), state.doc.history, state.activeKey, c) {
         value = state.historyOf(Kind.EPISODE).filter { it.parentUid != null }.groupBy { it.parentUid!! }.values
-            .map { eps -> eps.first() to eps.map { it.uid } }
+            // The furthest episode reached, not the last one watched (an earlier one watched again does not count).
+            .map { eps -> com.lumentv.core.Resume.furthest(eps, { it.subtitle }, { it.watchedAt }) to eps.map { it.uid } }
             .mapNotNull { (h, uids) ->
                 val s = c.series.firstOrNull { it.uid == h.parentUid } ?: return@mapNotNull null
                 if (!com.lumentv.core.Resume.watched(h.positionMs, h.durationMs)) {

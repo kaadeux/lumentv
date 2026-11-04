@@ -529,7 +529,9 @@ class PlayerWindow private constructor(private val state: AppState) {
         if (pickedAudio == null && audio.isNotEmpty()) player.audio().trackDescriptions().firstOrNull { matches(it.description(), audio) }?.let { player.audio().setTrack(it.id()) }
         if (pickedSubs != null) return
         if (subsOn && subs.isNotEmpty()) player.subpictures().trackDescriptions().firstOrNull { matches(it.description(), subs) }?.let { player.subpictures().setTrack(it.id()) }
-        else if (!subsOn) player.subpictures().setTrack(-1)
+        // Subtitles off (the default): French forced subtitles when the film has them (only the lines in another language).
+        else if (!subsOn) player.subpictures().setTrack(player.subpictures().trackDescriptions()
+            .firstOrNull { it.id() >= 0 && com.lumentv.core.TrackNames.isForced(false, it.description()) && com.lumentv.core.TrackNames.isFrench(null, it.description()) }?.id() ?: -1)
     }
 
     private fun matches(description: String?, lang: String): Boolean {

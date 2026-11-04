@@ -21,4 +21,17 @@ object Resume {
         val min = ((durationMs - positionMs).coerceAtLeast(0) / 60_000).toInt().coerceAtLeast(1)
         return if (min >= 60) "Reste ${min / 60} h ${"%02d".format(min % 60)}" else "Reste $min min"
     }
+
+    /** "S4 E6 · …" → (4, 6). */
+    fun seasonEpisode(subtitle: String?): Pair<Int, Int>? =
+        subtitle?.let { Regex("^S(\\d+) E(\\d+)").find(it) }?.let { it.groupValues[1].toInt() to it.groupValues[2].toInt() }
+
+    /**
+     * Of a series' history, the episode furthest in the series (season, then number), the last one watched when
+     * unknown: the series goes on from there, and leaves "Reprendre la lecture" once its last episode is seen, even
+     * when an earlier one was watched again since.
+     */
+    fun <T> furthest(eps: List<T>, subtitle: (T) -> String?, watchedAt: (T) -> Long): T =
+        eps.filter { seasonEpisode(subtitle(it)) != null }.maxWithOrNull(compareBy({ seasonEpisode(subtitle(it))!!.first }, { seasonEpisode(subtitle(it))!!.second }))
+            ?: eps.maxBy(watchedAt)
 }
