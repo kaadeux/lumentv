@@ -89,19 +89,19 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
             one(items.mapNotNull { idx.find(series, it) }.filter { ok(it) && it.uid !in seen && it.id !in skip })
 
         val taste = coroutineScope {
-            val trending = async { limited { tmdb.list("trending/$type/week", 3) } }
-            val fresh = async { limited { tmdb.list(if (series) "tv/on_the_air" else "movie/now_playing", 3, *region) } }
-            val popular = async { limited { tmdb.list("$type/popular", 3, *region) } }
-            val top = async { limited { tmdb.list("$type/top_rated", 5) } }
+            val trending = async { limited { tmdb.list("trending/$type/week", 5) } }
+            val fresh = async { limited { tmdb.list(if (series) "tv/on_the_air" else "movie/now_playing", 5, *region) } }
+            val popular = async { limited { tmdb.list("$type/popular", 5, *region) } }
+            val top = async { limited { tmdb.list("$type/top_rated", 6) } }
             val details = seeds.map { s -> async { s to limited { tmdb.details(series, s.tmdbId) } } }.awaitAll()
                 .mapNotNull { (s, d) -> d?.let { s to it } }
             val profile = Profile(details)
             // The people the viewer likes most: their other titles join the candidates.
             val people = profile.topPeople(3).map { (person, w) -> async { limited { tmdb.credits(series, person) } to w } }
             val genres = profile.topGenres(2)
-            val genreLists = genres.map { g -> async { limited { tmdb.list("discover/$type", 2, "with_genres" to "$g", "sort_by" to "popularity.desc", "vote_count.gte" to "150") } } }
+            val genreLists = genres.map { g -> async { limited { tmdb.list("discover/$type", 3, "with_genres" to "$g", "sort_by" to "popularity.desc", "vote_count.gte" to "150") } } }
             val gems = if (genres.isEmpty()) null else async {
-                limited { tmdb.list("discover/$type", 2, "with_genres" to genres.joinToString("|"), "sort_by" to "vote_average.desc", "vote_count.gte" to "200", "vote_count.lte" to "4000") }
+                limited { tmdb.list("discover/$type", 3, "with_genres" to genres.joinToString("|"), "sort_by" to "vote_average.desc", "vote_count.gte" to "200", "vote_count.lte" to "4000") }
             }
 
             // Candidates: recommendations and similar titles of what was liked, the liked people's titles, the favourite genres.
@@ -149,7 +149,7 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
         val releaseKey = if (series) "first_air_date" else "primary_release_date"
         val extra = coroutineScope {
             val g = (if (series) Tmdb.TV_GENRES else Tmdb.MOVIE_GENRES).map { (name, id) ->
-                async { Shelf(name, pick(limited { tmdb.list("discover/$type", 2, "with_genres" to "$id", "sort_by" to "popularity.desc", "vote_count.gte" to "50") })) }
+                async { Shelf(name, pick(limited { tmdb.list("discover/$type", 4, "with_genres" to "$id", "sort_by" to "popularity.desc", "vote_count.gte" to "50") })) }
             }
             // TMDB knows where a title can be watched in France, not since when. Films: the latest released ("sorties
             // récentes"). Series: those with an episode aired in the last 60 days, most popular first, so a new season of
@@ -159,11 +159,11 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
                 async {
                     val where = arrayOf("with_watch_providers" to "$id", "watch_region" to "FR", "with_watch_monetization_types" to "flatrate", "vote_count.gte" to "10")
                     if (series) Shelf("Nouveaux épisodes sur $name", pick(limited {
-                        tmdb.list("discover/tv", 3, *where, "air_date.gte" to since, "air_date.lte" to today, "sort_by" to "popularity.desc",
+                        tmdb.list("discover/tv", 5, *where, "air_date.gte" to since, "air_date.lte" to today, "sort_by" to "popularity.desc",
                             "without_genres" to "10763,10764,10766,10767")
                     }))
                     else Shelf("Sur $name · sorties récentes", pick(limited {
-                        tmdb.list("discover/movie", 3, *where, "sort_by" to "$releaseKey.desc", "$releaseKey.lte" to today)
+                        tmdb.list("discover/movie", 5, *where, "sort_by" to "$releaseKey.desc", "$releaseKey.lte" to today)
                     }))
                 }
             }
@@ -235,7 +235,8 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
     }
 
     companion object {
-        const val ROW = 20
+        /** Titles per row (at most): enough to browse, rows stay quick (posters are loaded as they come into view). */
+        const val ROW = 40
         const val MIN_ROW = 3
         /** Shown from the first rating. */
         const val MY_RATINGS = "Vos notes"
