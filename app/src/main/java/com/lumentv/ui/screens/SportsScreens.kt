@@ -2,6 +2,8 @@
 
 package com.lumentv.ui.screens
 
+import androidx.compose.foundation.layout.height
+import com.lumentv.ui.glassPill
 import com.lumentv.ui.components.panelWidth
 
 import androidx.compose.foundation.background
@@ -81,9 +83,8 @@ private fun DayHeader(text: String) =
 
 @Composable
 private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FocusSurface(onClick, selected = selected, shape = RoundedCornerShape(20.dp), focusedScale = 1.05f) {
-        Text((if (selected) "✓ " else "") + label, style = MaterialTheme.typography.labelLarge, maxLines = 1,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+    com.lumentv.ui.GlassChip(onClick, Modifier.glassPill(RoundedCornerShape(22.dp)).height(38.dp), selected = selected, shape = RoundedCornerShape(22.dp)) {
+        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp))
     }
 }
 
@@ -179,8 +180,8 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
 /** A filter as one button: "Compétition · Toutes ▾". Opens its list. */
 @Composable
 private fun MenuButton(title: String, value: String, active: Boolean, onClick: () -> Unit) {
-    FocusSurface(onClick, shape = RoundedCornerShape(20.dp), container = if (active) Palette.Accent.copy(alpha = 0.25f) else Palette.PanelHigh, focusedScale = 1.05f) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    com.lumentv.ui.GlassChip(onClick, Modifier.glassPill(RoundedCornerShape(22.dp)).height(38.dp), selected = active, dot = false, shape = RoundedCornerShape(22.dp)) {
+        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("$title · ", style = MaterialTheme.typography.labelLarge, color = Palette.TextDim, maxLines = 1)
             Text(value, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp))
             Text("  ▾", style = MaterialTheme.typography.labelLarge, color = Palette.Accent)

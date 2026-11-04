@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.glassPill
 import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.ui.graphics.Color
@@ -174,21 +175,20 @@ fun LiveScreen(vm: MainViewModel) {
         // V2: the groups as tabs across the top ("Mes chaînes" first), then the channels and the focused one's programme.
         val specials = listOf(GroupInfo(Groups.FAVORITES, 0, false, false), GroupInfo(Groups.ALL, p.channelCount, false, false))
         val chosen = com.lumentv.ui.components.rememberEnterTarget()
-        Row(Modifier.padding(bottom = 12.dp).clip(RoundedCornerShape(26.dp)).background(Color(0xB3141416)).border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(26.dp)).padding(4.dp)) {
+        Row(Modifier.padding(bottom = 12.dp).glassPill().padding(4.dp)) {
             LazyRow(Modifier.enterOn(chosen), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 items(specials + groups.orEmpty(), key = { it.name }) { g ->
                     val on = g.name == group
-                    FocusSurface(
+                    com.lumentv.ui.GlassChip(
                         onClick = {
                             if (g.locked && g.name !in vm.unlocked.value) { pinFor = g.name; pinError = null }
                             group = g.name; vm.liveGroup = g.name
                         },
                         onLongClick = { if (g.name != Groups.ALL && g.name != Groups.FAVORITES) groupMenu = g },
-                        modifier = if (on) Modifier.enterHere(chosen) else Modifier, shape = RoundedCornerShape(22.dp),
-                        container = if (on) Color(0x33FFFFFF) else Color.Transparent, focusedScale = 1.04f,
+                        modifier = (if (on) Modifier.enterHere(chosen) else Modifier).height(38.dp), selected = on,
                     ) {
                         Text(when (g.name) { Groups.ALL -> "Toutes"; Groups.FAVORITES -> "★  Mes chaînes"; else -> g.name } + if (g.locked) "  🔒" else "",
-                            style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                            style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp))
                     }
                 }
             }

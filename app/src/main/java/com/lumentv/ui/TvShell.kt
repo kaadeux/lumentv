@@ -2,6 +2,9 @@
 
 package com.lumentv.ui
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -93,28 +96,35 @@ fun TopNav(tabs: List<TopTab>, icons: List<TopIcon>, selected: Screen, first: Fo
         Spacer(Modifier.weight(1f))
         val current = tabs.firstOrNull { it.screen == selected }
         val last = remember { FocusRequester() }
-        // Entering the tabs: from the icons on their right, the last tab (the nearest); from the screen below, the current one.
-        Row(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xCC17171A)).border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(30.dp))
-            .padding(4.dp).focusProperties { enter = { dir -> if (dir == androidx.compose.ui.focus.FocusDirection.Left && tabs.last().screen != selected) last else first } }.focusGroup(),
-            horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            tabs.forEach { t ->
-                val on = t.screen == selected
-                FocusSurface({ onSelect(t.screen) }, Modifier.then(if (on || (current == null && t === tabs.first())) Modifier.focusRequester(first) else Modifier)
-                    .then(if (t === tabs.last() && !(on || (current == null && t === tabs.first()))) Modifier.focusRequester(last) else Modifier),
-                    shape = RoundedCornerShape(26.dp), container = if (on) Color(0x33FFFFFF) else Color.Transparent, focusedScale = 1.04f) {
-                    Text(t.label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
-                    if (on) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp).size(4.dp).clip(CircleShape).background(Palette.Accent))
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        // Where each tab is in the pill, for the lens that slides from tab to tab (spring) under the focus.
+        val spots = remember { androidx.compose.runtime.mutableStateMapOf<Int, Pair<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp>>() }
+        var focusedTab by remember { mutableStateOf(-1) }
+        val target = if (focusedTab >= 0) focusedTab else tabs.indexOfFirst { it.screen == selected }
+        Box(Modifier.glassPill().padding(4.dp), contentAlignment = Alignment.CenterStart) {
+            spots[target]?.let { (x, w) -> SlidingLens(x, w, active = focusedTab >= 0, visible = true) }
+            // Entering the tabs: from the icons on their right, the last tab (the nearest); from the screen below, the current one.
+            Row(Modifier.focusProperties { enter = { dir -> if (dir == androidx.compose.ui.focus.FocusDirection.Left && tabs.last().screen != selected) last else first } }.focusGroup(),
+                horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                tabs.forEachIndexed { i, t ->
+                    val on = t.screen == selected
+                    GlassChip({ onSelect(t.screen) },
+                        Modifier.then(if (on || (current == null && t === tabs.first())) Modifier.focusRequester(first) else Modifier)
+                            .then(if (t === tabs.last() && !(on || (current == null && t === tabs.first()))) Modifier.focusRequester(last) else Modifier)
+                            .height(40.dp)
+                            .onGloballyPositioned { c -> with(density) { spots[i] = c.positionInParent().x.toDp() to c.size.width.toDp() } },
+                        selected = on, ownLens = false, onFocus = { f -> if (f) focusedTab = i else if (focusedTab == i) focusedTab = -1 }) {
+                        Text(t.label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 20.dp))
+                    }
                 }
             }
         }
         Spacer(Modifier.weight(1f))
-        Row(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xCC17171A)).border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(30.dp)).padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(Modifier.glassPill().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             icons.forEach { i ->
                 val on = i.screen != null && i.screen == selected
-                FocusSurface({ i.onClick?.invoke() ?: i.screen?.let(onSelect) }, shape = CircleShape,
-                    container = if (on) Color(0x33FFFFFF) else Color.Transparent, focusedScale = 1.08f) {
-                    Icon(i.icon, i.label, Modifier.padding(9.dp).size(20.dp))
+                GlassChip({ i.onClick?.invoke() ?: i.screen?.let(onSelect) }, Modifier.size(40.dp), selected = on, shape = CircleShape, dot = false) {
+                    Icon(i.icon, i.label, Modifier.size(20.dp))
                 }
             }
         }

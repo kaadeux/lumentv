@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.ui.glassPill
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.lumentv.ui.components.remembered
 import com.lumentv.ui.components.focusMemory
@@ -1020,12 +1021,11 @@ private fun SeriesDetailTv(
             { n -> scope.launch { vm.graph.library.rate("se", playlistId, uid, n, s.s.name, s.s.cover); vm.show(if (n == 0) "Note retirée" else "Note enregistrée : $n/5") } },
             Modifier.padding(top = 8.dp))
         Column(Modifier.weight(1f).onFocusChanged { low = it.hasFocus }) {
-        if (seasons.size > 1) Row(Modifier.padding(top = 10.dp).clip(RoundedCornerShape(26.dp)).background(Color(0x99141416)).padding(4.dp)) {
+        if (seasons.size > 1) Row(Modifier.padding(top = 10.dp).glassPill().padding(4.dp)) {
             LazyRow(Modifier.focusMemory(seasonMemory), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 items(seasons) { n ->
-                    FocusSurface({ onSeason(n) }, Modifier.remembered(seasonMemory, first = n == season), shape = RoundedCornerShape(22.dp),
-                        container = if (n == season) Color(0x33FFFFFF) else Color.Transparent, focusedScale = 1.04f) {
-                        Text("Saison $n", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
+                    com.lumentv.ui.GlassChip({ onSeason(n) }, Modifier.remembered(seasonMemory, first = n == season).height(38.dp), selected = n == season) {
+                        Text("Saison $n", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 18.dp))
                     }
                 }
             }
