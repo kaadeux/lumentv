@@ -88,7 +88,7 @@ class SportsRepository(
         val leagues = SportsFunnel.effectiveLeagues(prefs.sports, prefs.leagues)
         if (leagues.isEmpty()) return@withContext emptyList()
         val t0 = System.currentTimeMillis()
-        fun lap(what: String) = Log.i(TAG, "$what +${System.currentTimeMillis() - t0} ms")
+        fun lap(what: String) { if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(TAG, "$what +${System.currentTimeMillis() - t0} ms") }
         // Calendar, French guide and the playlist's channels are independent: fetched together.
         val listingsAsync = async { runCatching { frenchGuide.listings() }.getOrDefault(emptyList()).also { lap("guide FR") } }
         val mapsAsync = async { channelMaps(pid).also { lap("channels") } }

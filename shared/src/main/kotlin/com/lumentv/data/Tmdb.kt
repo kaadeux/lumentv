@@ -34,6 +34,8 @@ class Tmdb(http: OkHttpClient, private val key: String, cacheDir: File? = null) 
     /** The client the logos share, with the disk cache. */
     val http: OkHttpClient = http.newBuilder().callTimeout(10, TimeUnit.SECONDS).apply {
         if (cacheDir != null) cache(Cache(File(cacheDir, "tmdb"), 40L * 1024 * 1024))
+        // TMDB limits the requests per second: a "429" or a busy server is retried a little later, not lost.
+        addInterceptor(com.lumentv.core.RetryInterceptor())
         // TMDB says "do not cache" or a few minutes: kept longer here, the lists change slowly and a title never.
         addNetworkInterceptor { chain ->
             val req = chain.request()
@@ -131,9 +133,14 @@ class Tmdb(http: OkHttpClient, private val key: String, cacheDir: File? = null) 
         )
     }
 
+    /** Same request asked twice at once (two rows, the banner and a page): one call to TMDB, shared. */
+    private val inFlight = com.lumentv.core.InFlight<String, JsonObject?>()
+
     private fun get(url: String, vararg params: Pair<String, String>): JsonObject? = runCatching {
         val u = url.toHttpUrl().newBuilder().addQueryParameter("api_key", key).apply { params.forEach { (k, v) -> addQueryParameter(k, v) } }.build()
-        http.newCall(Request.Builder().url(u).build()).execute().use { r -> if (!r.isSuccessful) null else json.parseToJsonElement(r.body!!.string()) as? JsonObject }
+        inFlight.get(u.toString()) {
+            http.newCall(Request.Builder().url(u).build()).execute().use { r -> if (!r.isSuccessful) null else json.parseToJsonElement(r.body!!.string()) as? JsonObject }
+        }
     }.getOrNull()
 
     private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.contentOrNull

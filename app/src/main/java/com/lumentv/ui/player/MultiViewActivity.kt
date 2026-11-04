@@ -162,7 +162,7 @@ private fun Tile(graph: AppGraph, row: ChannelRow?, focused: Boolean, first: Boo
     DisposableEffect(row?.ch?.id, lifecycle) {
         fun create() {
             if (row == null || controller != null) return
-            val settings = kotlinx.coroutines.runBlocking { graph.settings.current() }
+            val settings = graph.settings.now()
             val c = PlayerController(context, graph.streamHttp, settings)
             controller = c
             scope.launch {

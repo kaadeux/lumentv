@@ -99,7 +99,8 @@ data class Fixture(
  * (about 15 KB per competition and day), kept 5 minutes. Replays never appear: only real games are listed.
  */
 class FixtureClient(http: OkHttpClient) {
-    private val http = http.newBuilder().callTimeout(10, TimeUnit.SECONDS).build()
+    // TheSportsDB answers "429" when asked too often: retried a little later (see RetryInterceptor).
+    private val http = http.newBuilder().callTimeout(10, TimeUnit.SECONDS).addInterceptor(com.lumentv.core.RetryInterceptor()).build()
     private val json = Json { ignoreUnknownKeys = true }
     private val cache = HashMap<String, Pair<Long, List<Fixture>>>()
 

@@ -2,6 +2,8 @@
 
 package com.lumentv.ui
 
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -66,14 +68,26 @@ fun ScreenBackdrop(url: String?) {
 
 @Composable
 fun BackdropLayer() {
-    Crossfade(Backdrop.url, animationSpec = tween(450), label = "backdrop") { url ->
+    // Performance (measured on the box: a third of each frame while moving between posters): the picture and its two
+    // shades are drawn once into one cached layer, at the screen's size, and only redrawn when the picture changes;
+    // a short fade between two pictures, so two full-screen layers are rarely drawn together.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val shade = remember {
+        Brush.horizontalGradient(0.18f to Palette.Background, 0.55f to Palette.Background.copy(alpha = 0.55f), 1f to Color.Transparent)
+    }
+    val fade = remember {
+        Brush.verticalGradient(0f to Palette.Background.copy(alpha = 0.55f), 0.18f to Color.Transparent, 0.55f to Color.Transparent, 0.78f to Palette.Background)
+    }
+    Crossfade(Backdrop.url, animationSpec = tween(220), label = "backdrop") { url ->
         if (url == null) return@Crossfade
-        Box(Modifier.fillMaxSize()) {
+        val request = remember(url) {
+            coil.request.ImageRequest.Builder(context).data(url).size(1280, 720).allowHardware(true).build()
+        }
+        Box(Modifier.fillMaxSize().graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+            .drawWithContent { drawContent(); drawRect(shade); drawRect(fade) }) {
             // On the right two thirds, as on a streaming service: the text sits on the dark left part.
-            AsyncImage(url, null, contentScale = ContentScale.Crop, alignment = Alignment.TopEnd,
+            AsyncImage(request, null, contentScale = ContentScale.Crop, alignment = Alignment.TopEnd,
                 modifier = Modifier.fillMaxSize().padding(start = 220.dp))
-            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0.18f to Palette.Background, 0.55f to Palette.Background.copy(alpha = 0.55f), 1f to Color.Transparent)))
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Palette.Background.copy(alpha = 0.55f), 0.18f to Color.Transparent, 0.55f to Color.Transparent, 0.78f to Palette.Background)))
         }
     }
 }

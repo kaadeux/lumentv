@@ -1,5 +1,6 @@
 package com.lumentv.data.settings
 
+import kotlinx.coroutines.launch
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -100,6 +101,18 @@ class SettingsStore(private val context: Context) {
     }
 
     suspend fun current(): Settings = flow.first()
+
+    /** The latest settings, kept up to date by [keepWarm]: read without waiting for the file. */
+    @Volatile private var last: Settings? = null
+
+    /** Follows the settings for the life of the app, so [now] answers from memory. */
+    fun keepWarm(scope: kotlinx.coroutines.CoroutineScope) { scope.launch { flow.collect { last = it } } }
+
+    /**
+     * The settings at once, for code on the main thread that builds a player: from memory (see [keepWarm]); only if the
+     * file was never read yet (the very first instant of the app) does it wait for it.
+     */
+    fun now(): Settings = last ?: kotlinx.coroutines.runBlocking { current() }.also { last = it }
 
     suspend fun <T> set(key: Preferences.Key<T>, value: T) {
         context.dataStore.edit { it[key] = value }

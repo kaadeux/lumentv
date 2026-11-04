@@ -160,7 +160,7 @@ class PlayerActivity : ComponentActivity() {
         super.onStart()
         val g = (application as LumenApp).graph
         // Settings decide the buffer and languages of the player, so read them before it is built (a small local file).
-        val settings = kotlinx.coroutines.runBlocking { g.settings.current() }
+        val settings = g.settings.now()
         val c = PlayerController(this, g.streamHttp, settings)
         controller = c
         vm.attach(c)

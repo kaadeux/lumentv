@@ -797,28 +797,27 @@ private fun resumeTile(vm: MainViewModel, r: ResumeItem, series: Boolean, onLong
  * The home of Films or Séries on the TV, as on a streaming service: a banner with the focused title over its picture
  * (Lecture, Plus d'infos), then rows of posters. [actions]: the buttons after the banner's own (Catégories…).
  */
+/**
+ * Which poster has the focus, which row, and the title the banner shows. Read only by the banner and by the row
+ * scroller, never by the home itself: moving from poster to poster then redraws the banner, not every row and poster
+ * of the home (measured on the box: the UI thread was the bottleneck, a frame every 31 ms).
+ */
+@androidx.compose.runtime.Stable
+private class HomeFocus(initial: HeroItem?) {
+    var pending by mutableStateOf<HeroItem?>(null)
+    var hero by mutableStateOf(initial)
+    var row by androidx.compose.runtime.mutableIntStateOf(-1)
+    var rowsFocused by mutableStateOf(false)
+}
+
 @Composable
 private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, actions: @Composable () -> Unit) {
     val first = rows.firstOrNull { it.tiles.isNotEmpty() }?.tiles?.firstOrNull()?.hero
-    // The banner follows the focused poster, a moment after it stops moving (no flicker while scrolling).
-    var focusedHero by remember { mutableStateOf(vm.memo[memoKey] as? HeroItem) }
-    var pending by remember { mutableStateOf<HeroItem?>(null) }
-    LaunchedEffect(pending) { pending?.let { delay(280); focusedHero = it; vm.memo[memoKey] = it } }
-    val hero = focusedHero ?: first
-    val info by produceState<XVodInfo?>(hero?.movie?.let { vm.graph.artwork.cached(it) }, hero?.key) {
-        value = hero?.movie?.let { vm.graph.artwork.movie(it) }
-    }
-    ScreenBackdrop(info?.backdrop ?: hero?.image)
+    val focus = remember { HomeFocus(vm.memo[memoKey] as? HeroItem) }
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
-    // Going down the rows, the banner shrinks to its title: more rows on screen.
-    var focusedRow by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
-    var rowsFocused by remember { mutableStateOf(false) }
-    // The banner keeps its size; the row going into focus slides to the top of the list, so its title
-    // ("Tendances du moment"…) is always on screen above its posters.
-    val collapsed = false
-    LaunchedEffect(focusedRow, rowsFocused) { if (rowsFocused && focusedRow >= 0) list.animateScrollToItem(focusedRow) }
     Column(Modifier.fillMaxSize()) {
-        if (hero != null) Hero(vm, hero, info, actions, collapsed)
+        HeroArea(vm, memoKey, focus, first, actions)
+        RowScroller(focus, list)
         // Rows arriving late (resume, featured) go above the categories: the list then shows the top, unless it is in use.
         var inUse by remember { mutableStateOf(false) }
         val shown = rows.filter { it.tiles.isNotEmpty() }
@@ -828,7 +827,7 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
             val k = shown.firstOrNull()?.key
             if (k != firstKey) { if (firstKey != null && !inUse && vm.returnKey == null) list.scrollToItem(0); firstKey = k }
         }
-        LazyColumn(Modifier.fillMaxSize().onFocusChanged { inUse = it.hasFocus; rowsFocused = it.hasFocus }, state = list, verticalArrangement = Arrangement.spacedBy(2.dp),
+        LazyColumn(Modifier.fillMaxSize().onFocusChanged { inUse = it.hasFocus; focus.rowsFocused = it.hasFocus }, state = list, verticalArrangement = Arrangement.spacedBy(2.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 30.dp)) {
             shown.forEachIndexed { rowIndex, row ->
                 item(key = row.key) {
@@ -838,7 +837,9 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
                         // Entering a row (Up / Down) lands on its first poster, or the one it was left from, not the one level with the focus.
                         val mem = com.lumentv.ui.components.rememberFocusMemory()
                         LazyRow(Modifier.focusMemory(mem), horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 10.dp)) {
-                            itemsIndexed(row.tiles, key = { _, t -> t.key }) { i, t -> HomePoster(vm, t, Modifier.remembered(mem, first = i == 0)) { pending = t.hero; focusedRow = rowIndex } }
+                            itemsIndexed(row.tiles, key = { _, t -> t.key }) { i, t ->
+                                HomePoster(vm, t, Modifier.remembered(mem, first = i == 0)) { focus.pending = t.hero; focus.row = rowIndex }
+                            }
                         }
                     }
                 }
@@ -847,22 +848,40 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
     }
 }
 
+/** The banner and the picture behind: they follow the focused poster, a moment after it stops moving (no flicker). */
 @Composable
-private fun Hero(vm: MainViewModel, h: HeroItem, info: XVodInfo?, actions: @Composable () -> Unit, collapsed: Boolean) {
-    val height by androidx.compose.animation.core.animateDpAsState(if (collapsed) 96.dp else 232.dp, label = "hero")
-    Column(Modifier.fillMaxWidth().height(height).padding(start = 4.dp, top = 8.dp), verticalArrangement = Arrangement.Bottom) {
+private fun HeroArea(vm: MainViewModel, memoKey: String, focus: HomeFocus, first: HeroItem?, actions: @Composable () -> Unit) {
+    LaunchedEffect(focus.pending) { focus.pending?.let { delay(280); focus.hero = it; vm.memo[memoKey] = it } }
+    val hero = focus.hero ?: first
+    val info by produceState<XVodInfo?>(hero?.movie?.let { vm.graph.artwork.cached(it) }, hero?.key) {
+        value = hero?.movie?.let { vm.graph.artwork.movie(it) }
+    }
+    ScreenBackdrop(info?.backdrop ?: hero?.image)
+    // The banner keeps its size (the rows slide under it, see RowScroller).
+    if (hero != null) Hero(vm, hero, info, actions)
+}
+
+/** The row going into focus slides to the top of the list, so its title ("Tendances du moment"…) stays on screen. */
+@Composable
+private fun RowScroller(focus: HomeFocus, list: androidx.compose.foundation.lazy.LazyListState) {
+    LaunchedEffect(focus.row, focus.rowsFocused) { if (focus.rowsFocused && focus.row >= 0) list.animateScrollToItem(focus.row) }
+}
+
+@Composable
+private fun Hero(vm: MainViewModel, h: HeroItem, info: XVodInfo?, actions: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().height(232.dp).padding(start = 4.dp, top = 8.dp), verticalArrangement = Arrangement.Bottom) {
         val t = tmdbInfo(vm, h.title, h.series, h.tmdb ?: info?.tmdb, h.year)
-        TitleArt(h.title, t?.logo, if (collapsed) 22.sp else 30.sp, if (collapsed) 46.dp else 84.dp)
+        TitleArt(h.title, t?.logo, 30.sp, 84.dp)
         val meta = listOfNotNull(ratingText(t, h.rating ?: info?.rating)) + h.meta + listOfNotNull(info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(2)?.joinToString(" • ") { it.trim() })
         if (meta.isNotEmpty()) Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.85f),
             maxLines = 1, modifier = Modifier.padding(top = 6.dp))
-        if (!collapsed) (info?.plot ?: h.plot)?.takeIf { it.isNotBlank() }?.let {
+        (info?.plot ?: h.plot)?.takeIf { it.isNotBlank() }?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.9f), maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(0.52f).padding(top = 6.dp))
         }
         // Down from the tabs lands on "Lecture", not on the button under the tab.
         val buttons = com.lumentv.ui.components.rememberFocusMemory()
-        if (!collapsed) Row(Modifier.padding(top = 14.dp).focusMemory(buttons), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(top = 14.dp).focusMemory(buttons), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             HeroButton("▶  " + h.playLabel, primary = true, modifier = Modifier.remembered(buttons, first = true), onClick = h.play)
             HeroButton("Plus d'infos", onClick = h.more)
             actions()

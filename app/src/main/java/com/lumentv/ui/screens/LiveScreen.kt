@@ -418,7 +418,7 @@ private fun LiveVideo(vm: MainViewModel, row: ChannelRow) {
         }
         fun create() {
             if (mini != null || controller != null) return
-            val c = com.lumentv.player.PlayerController(context, vm.graph.streamHttp, kotlinx.coroutines.runBlocking { vm.graph.settings.current() })
+            val c = com.lumentv.player.PlayerController(context, vm.graph.streamHttp, vm.graph.settings.now())
             c.player.volume = 0f
             controller = c
             com.lumentv.data.xtream.ScreenGuard.started()

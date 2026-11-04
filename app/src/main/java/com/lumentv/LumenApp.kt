@@ -26,13 +26,14 @@ import java.util.concurrent.TimeUnit
 class AppGraph(app: Application) {
     val appContext: Application = app
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    val settings = SettingsStore(app)
+    val settings = SettingsStore(app).also { it.keepWarm(appScope) }
     val db = AppDatabase.create(app)
 
     init { PrivateNet.init(java.io.File(app.filesDir, "https_hosts.txt")) }
 
     /** Encrypted DNS and HTTPS whenever the server allows it (see PrivateNet): the internet provider sees less. */
     val http: OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor(com.lumentv.core.NetStats.interceptor)
         .private()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -81,6 +82,13 @@ class LumenApp : Application(), ImageLoaderFactory {
         super.onCreate()
         graph = AppGraph(this)
         graph.profile.start()
+        // Request counters, for measuring: "adb shell setprop log.tag.LumenNet DEBUG" writes them every minute.
+        graph.appScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(60_000)
+                if (android.util.Log.isLoggable("LumenNet", android.util.Log.DEBUG)) android.util.Log.d("LumenNet", com.lumentv.core.NetStats.summary())
+            }
+        }
         graph.appScope.launch {
             val auto = graph.playlists.all().any { it.refreshHours > 0 }
             RefreshWorker.sync(this@LumenApp, auto)
@@ -89,7 +97,8 @@ class LumenApp : Application(), ImageLoaderFactory {
             (s.activePlaylistId.takeIf { it > 0 } ?: graph.playlists.all().firstOrNull()?.id)?.let {
                 // Ready before the viewer opens Films or the search: the library's index (titles in memory).
                 runCatching { graph.index.of(it) }
-                graph.sports.prewarm(it)
+                // The sports (a 9 MB guide when older than 12 h) wait for the first screen to be drawn and used.
+                graph.appScope.launch { kotlinx.coroutines.delay(8_000); graph.sports.prewarm(it) }
             }
             // Lists saved before v4 lack the series' TMDB ids (recap / intro buttons): reload them once.
             graph.playlists.all().filter { it.type == com.lumentv.data.db.PlaylistType.XTREAM && it.seriesCount > 0 }.forEach { p ->
