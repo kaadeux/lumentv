@@ -95,12 +95,21 @@ class FrenchTvGuide(http: OkHttpClient, private val cacheFile: File, private val
          * The first broadcast naming both teams of [f], within about a day of the official kick-off (the official time
          * may be off; later broadcasts are replays). @return the listing, or null.
          */
-        fun broadcast(f: Fixture, listings: List<Listing>): Listing? {
-            if (f.home == null || f.away == null) return null
-            return listings.asSequence()
-                .filter { it.start in (f.start - 30 * 3_600_000L)..(f.start + 30 * 3_600_000L) }
+        fun broadcast(f: Fixture, listings: List<Listing>): Listing? = broadcasts(f, listings).firstOrNull()
+
+        /**
+         * The live broadcasts of [f]: the programmes naming both teams that start around the official kick-off (from an
+         * hour before, for the build-up, to 45 minutes after), nearest first; Canal+ and Canal+ Live 1 can both show it.
+         * Programmes earlier or later the same day are replays and only count when there is no live one (the official
+         * time can be wrong), the nearest to kick-off first.
+         */
+        fun broadcasts(f: Fixture, listings: List<Listing>): List<Listing> {
+            if (f.home == null || f.away == null) return emptyList()
+            val named = listings.filter { it.start in (f.start - 30 * 3_600_000L)..(f.start + 30 * 3_600_000L) }
                 .filter { l -> val t = " ${l.title} "; listOf(f.home, f.away).all { team -> team.aliases.any { a -> t.contains(" $a ") || (a.length >= 6 && t.contains(a)) } } }
-                .sortedBy { it.start }.firstOrNull()
+            val live = named.filter { it.start in (f.start - 60 * 60_000L)..(f.start + 45 * 60_000L) }
+            return if (live.isNotEmpty()) live.sortedBy { kotlin.math.abs(it.start - f.start) }
+            else named.sortedBy { kotlin.math.abs(it.start - f.start) }.take(1)
         }
 
         /**

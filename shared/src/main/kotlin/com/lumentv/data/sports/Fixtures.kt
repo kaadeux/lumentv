@@ -42,11 +42,28 @@ data class Team(val name: String, val short: String?, val abbr: String?, val log
             // City + initials, as guides write it: "Paris Saint-Germain" → "paris sg".
             stripped.split(' ').takeIf { it.size >= 3 }?.let { w -> out += w[0] + " " + w.drop(1).joinToString("") { it.take(1) } }
         }
+        // The French names the guides use ("Napoli" → "naples", "Como" → "come", "Bayern Munich" → "bayern munich").
+        out.toList().forEach { a -> a.split(' ').forEach { w -> frenchNames[w]?.let { out += it } }; frenchNames[a]?.let { out += it } }
         out.filter { it.length >= 3 }
     }
 
     private companion object {
         val noise = setOf("fc", "ac", "as", "sc", "cf", "afc", "ssc", "us", "sco", "ogc", "rc", "stade", "olympique", "club", "de", "du", "la", "le", "les", "real", "sporting")
+
+        /** A club's name in French TV guides, by the (normalised) name or word ESPN uses. */
+        val frenchNames = mapOf(
+            "napoli" to "naples", "como" to "come", "milan" to "milan ac", "ac milan" to "milan ac", "internazionale" to "inter milan",
+            "inter" to "inter milan", "roma" to "as rome", "lazio" to "lazio rome", "fiorentina" to "fiorentina", "bayern munich" to "bayern munich",
+            "bayern" to "bayern munich", "munchen" to "munich", "barcelona" to "barcelone", "sevilla" to "seville", "atletico madrid" to "atletico madrid",
+            "athletic club" to "athletic bilbao", "copenhagen" to "copenhague", "kobenhavn" to "copenhague", "brugge" to "bruges", "club brugge" to "club bruges",
+            "olympiacos" to "olympiakos", "red star belgrade" to "etoile rouge", "crvena zvezda" to "etoile rouge", "dynamo kyiv" to "dynamo kiev",
+            "shakhtar donetsk" to "shakhtar donetsk", "sporting cp" to "sporting portugal", "sporting" to "sporting portugal", "frankfurt" to "francfort",
+            "eintracht frankfurt" to "eintracht francfort", "slavia prague" to "slavia prague", "slavia praha" to "slavia prague", "sparta praha" to "sparta prague",
+            "bodo glimt" to "bodo glimt", "young boys" to "young boys", "salzburg" to "salzbourg", "red bull salzburg" to "salzbourg", "celtic" to "celtic glasgow",
+            "rangers" to "glasgow rangers", "psv" to "psv eindhoven", "feyenoord" to "feyenoord rotterdam", "monchengladbach" to "monchengladbach",
+            "genoa" to "genes", "torino" to "turin", "venezia" to "venise", "galatasaray" to "galatasaray", "fenerbahce" to "fenerbahce", "ferencvaros" to "ferencvaros",
+            "anderlecht" to "anderlecht", "betis" to "betis seville", "real betis" to "betis seville", "tottenham hotspur" to "tottenham", "wolverhampton" to "wolverhampton",
+        )
     }
 }
 

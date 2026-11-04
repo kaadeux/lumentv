@@ -238,9 +238,10 @@ private suspend fun load(state: AppState, c: Catalog, chosen: Set<String>, days:
         val named = c.channels.mapNotNull { ch -> EventChannelParser.parse(ch.name)?.let { (l, t) -> Triple(ch, normalize(l), t) } }
         val byKey = c.channels.filter { com.lumentv.data.sports.FrenchTvGuide.frenchOrPlain(it.name) }.groupBy { com.lumentv.data.sports.FrenchTvGuide.channelKey(it.name) }
         games.map { f ->
-            val tv = com.lumentv.data.sports.FrenchTvGuide.broadcast(f, listings)
+            val shows = com.lumentv.data.sports.FrenchTvGuide.broadcasts(f, listings)
+            val tv = shows.firstOrNull()
             // The French channel, when the playlist has it under the same name, becomes playable too.
-            val linked = tv?.let { com.lumentv.data.sports.FrenchTvGuide.best(byKey[com.lumentv.data.sports.FrenchTvGuide.channelKey(it.channel)].orEmpty()) { ch -> ch.name } }.orEmpty()
+            val linked = shows.flatMap { l -> com.lumentv.data.sports.FrenchTvGuide.best(byKey[com.lumentv.data.sports.FrenchTvGuide.channelKey(l.channel)].orEmpty()) { ch -> ch.name } }.distinctBy { it.uid }
             // The French guide's broadcaster first; the playlist's own guide only when it says nothing.
             val own = (progs.filter { (_, title, start) -> FixtureMatcher.matches(f, title, start) } +
                 named.filter { (_, title, start) -> FixtureMatcher.matches(f, title, start, channelName = true) }).map { it.first }
