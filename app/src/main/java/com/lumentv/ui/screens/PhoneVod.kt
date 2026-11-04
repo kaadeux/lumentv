@@ -73,6 +73,8 @@ import com.lumentv.ui.components.ProgressLine
 import com.lumentv.ui.player.PlayerLauncher
 import com.lumentv.ui.theme.Palette
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.async
 
 // ---- Films / Séries on the phone: a banner to swipe, then rows of posters, as on a streaming app -------------------
 
@@ -101,8 +103,13 @@ internal fun PhoneVodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow
     androidx.compose.runtime.DisposableEffect(list) {
         onDispose { vm.memo["$memoKey:index"] = list.firstVisibleItemIndex; vm.memo["$memoKey:offset"] = list.firstVisibleItemScrollOffset }
     }
+    // The banner starts moving once every row is there: no row arrived for 1.5 s (TMDB's rows come in steps).
+    var ready by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(shown.sumOf { it.key.hashCode() * 31 + it.tiles.size }) {
+        ready = false; kotlinx.coroutines.delay(1_500); ready = true
+    }
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = 16.dp)) {
-        if (heroes.isNotEmpty()) item(key = "hero") { PhoneHero(vm, heroes) }
+        if (heroes.isNotEmpty()) item(key = "hero") { PhoneHero(vm, heroes, ready) }
         if (actions.isNotEmpty()) item(key = "actions") {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)) {
                 items(actions, key = { it.label }) { a -> PhoneChip(a.label, onClick = a.onClick) }
@@ -114,17 +121,27 @@ internal fun PhoneVodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow
 
 /** The banner: the picture of the title, its logo, rating and two buttons; a swipe shows the next title. */
 @Composable
-private fun PhoneHero(vm: MainViewModel, heroes: List<HomeTile>) {
+private fun PhoneHero(vm: MainViewModel, heroes: List<HomeTile>, ready: Boolean) {
     val pager = rememberPagerState { heroes.size }
-    // Goes to the next title by itself every 6 s (back to the first after the last): the dash under the banner fills up
-    // meanwhile, so one sees when it will move. It starts again when a finger moves the banner, and stops once the banner
-    // leaves the screen (the list drops it). The fill is only redrawn, the banner is not recomposed for it.
+    // Goes to the next title by itself every 6 s (back to the first after the last), once the page has loaded ([ready]):
+    // the dash under the banner fills up meanwhile. A finger moving the banner starts the wait again on the title it
+    // lands on. Stops once the banner leaves the screen (the list drops it); the fill is only redrawn, not recomposed.
     val progress = remember { androidx.compose.animation.core.Animatable(0f) }
-    if (heroes.size > 1) androidx.compose.runtime.LaunchedEffect(pager.currentPage, pager.isScrollInProgress) {
+    androidx.compose.runtime.LaunchedEffect(ready, heroes.size) {
         progress.snapTo(0f)
-        if (pager.isScrollInProgress) return@LaunchedEffect
-        progress.animateTo(1f, androidx.compose.animation.core.tween(HERO_MS, easing = androidx.compose.animation.core.LinearEasing))
-        pager.animateScrollToPage((pager.currentPage + 1) % heroes.size, animationSpec = androidx.compose.animation.core.tween(600))
+        if (!ready || heroes.size < 2) return@LaunchedEffect
+        while (true) {
+            androidx.compose.runtime.snapshotFlow { pager.isScrollInProgress }.first { !it }
+            val start = pager.currentPage
+            progress.snapTo(0f)
+            // The wait ends full (move on), or early when a finger moves the banner (start again).
+            val full = kotlinx.coroutines.coroutineScope {
+                val touched = async { androidx.compose.runtime.snapshotFlow { pager.isScrollInProgress || pager.currentPage != start }.first { it }; false }
+                val filled = async { progress.animateTo(1f, androidx.compose.animation.core.tween(HERO_MS, easing = androidx.compose.animation.core.LinearEasing)); true }
+                kotlinx.coroutines.selects.select { touched.onAwait { it }; filled.onAwait { it } }.also { touched.cancel(); filled.cancel() }
+            }
+            if (full) pager.animateScrollToPage((start + 1) % heroes.size, animationSpec = androidx.compose.animation.core.tween(600))
+        }
     }
     Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
         HorizontalPager(pager, Modifier.fillMaxWidth(), pageSpacing = 10.dp, key = { heroes[it].key }) { page ->
