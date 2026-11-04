@@ -253,7 +253,7 @@ fun MoviesScreen(state: AppState) {
                 LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     items(list, key = { it.uid }) { m ->
                         Poster(Featured.shortTitle(m.name), m.poster, Featured.posterLine(m.year, m.rating, m.name), ratio(state.progress(Kind.MOVIE, m.uid)),
-                            state.isFavorite(Kind.MOVIE, m.uid)) { open = m }
+                            state.isFavorite(Kind.MOVIE, m.uid), altImage = state.posterOf(m)) { open = m }
                     }
                 }
             }
@@ -321,7 +321,7 @@ fun SeriesScreen(state: AppState) {
                 Filter(filter, if (cat == ALL || cat == RECENT) "Rechercher une série" else "Rechercher dans cette liste") { filter = it }
                 LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     items(list, key = { it.uid }) { s ->
-                        Poster(Featured.shortTitle(s.name), s.cover, Featured.posterLine(s.year, s.rating, null), null, state.isFavorite(Kind.SERIES, s.uid)) { open = s }
+                        Poster(Featured.shortTitle(s.name), s.cover, Featured.posterLine(s.year, s.rating, null), null, state.isFavorite(Kind.SERIES, s.uid), altImage = state.posterOf(s)) { open = s }
                     }
                 }
             }
@@ -397,7 +397,7 @@ private fun MovieRow(state: AppState, list: List<Mv>, open: (Mv) -> Unit) =
     ScrollRow(Modifier.padding(vertical = 6.dp)) {
         items(list, key = { it.uid }) { m ->
             Box(Modifier.width(140.dp)) {
-                Poster(Featured.shortTitle(m.name), m.poster, Featured.posterLine(m.year, m.rating, m.name), ratio(state.progress(Kind.MOVIE, m.uid)), state.isFavorite(Kind.MOVIE, m.uid)) { open(m) }
+                Poster(Featured.shortTitle(m.name), m.poster, Featured.posterLine(m.year, m.rating, m.name), ratio(state.progress(Kind.MOVIE, m.uid)), state.isFavorite(Kind.MOVIE, m.uid), altImage = state.posterOf(m)) { open(m) }
             }
         }
     }
@@ -406,7 +406,7 @@ private fun MovieRow(state: AppState, list: List<Mv>, open: (Mv) -> Unit) =
 private fun SeriesRow(state: AppState, list: List<Se>, open: (Se) -> Unit) =
     ScrollRow(Modifier.padding(vertical = 6.dp)) {
         items(list, key = { it.uid }) { s ->
-            Box(Modifier.width(140.dp)) { Poster(Featured.shortTitle(s.name), s.cover, Featured.posterLine(s.year, s.rating, null), null, state.isFavorite(Kind.SERIES, s.uid)) { open(s) } }
+            Box(Modifier.width(140.dp)) { Poster(Featured.shortTitle(s.name), s.cover, Featured.posterLine(s.year, s.rating, null), null, state.isFavorite(Kind.SERIES, s.uid), altImage = state.posterOf(s)) { open(s) } }
         }
     }
 

@@ -95,7 +95,11 @@ fun Shell(state: AppState) {
             Text(state.active?.name ?: "Aucune playlist", style = MaterialTheme.typography.bodySmall, color = Pal.dim, modifier = Modifier.padding(start = 12.dp, bottom = 16.dp))
             Section.entries.forEach { s ->
                 NavigationDrawerItem(
-                    label = { Text(s.label) }, icon = { Icon(s.icon, null) }, selected = s == section, onClick = { section = s },
+                    label = { Text(s.label) }, icon = { Icon(s.icon, null) }, selected = s == section, onClick = {
+                        // Films and Séries chosen again open at the top of their home (a page opened inside keeps the place on return).
+                        if (s != section && (s == Section.Movies || s == Section.Series)) sectionStates.removeState(s.name)
+                        section = s
+                    },
                     colors = NavigationDrawerItemDefaults.colors(selectedContainerColor = Pal.accent.copy(alpha = 0.22f), unselectedContainerColor = Pal.side,
                         selectedTextColor = Pal.text, unselectedTextColor = Pal.dim, selectedIconColor = Pal.accent, unselectedIconColor = Pal.dim),
                     modifier = Modifier.padding(vertical = 2.dp),

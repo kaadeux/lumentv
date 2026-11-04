@@ -190,7 +190,7 @@ private fun PhoneRow(row: HomeRow) {
             items(row.tiles, key = { it.key }) { t ->
                 Column(Modifier.width(104.dp)) {
                     Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(8.dp)).combinedClickable(onClick = t.onClick, onLongClick = t.onLong)) {
-                        Poster(t.image, t.title, Modifier.fillMaxSize())
+                        Poster(t.image, t.title, Modifier.fillMaxSize(), t.search)
                         t.progress?.takeIf { it > 0f }?.let { ProgressLine(it, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp)) }
                     }
                     // "Reprendre la lecture": which episode, how long is left.

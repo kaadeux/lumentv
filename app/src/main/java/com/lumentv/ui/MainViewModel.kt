@@ -83,6 +83,19 @@ class MainViewModel(val graph: AppGraph) : ViewModel() {
     fun open(s: Screen) { stack.add(s) }
     fun openRoot(s: Screen) { returnKey = null; stack.clear(); stack.add(s) }
 
+    /** Films and Séries chosen in the tabs: opened fresh, at the top of their home (Back from a page keeps the place). */
+    val freshScreens = HashSet<Screen>()
+
+    /** A tab chosen. */
+    fun openTab(s: Screen) {
+        if (s != root && (s == Screen.Movies || s == Screen.Series)) {
+            freshScreens += s
+            if (s == Screen.Movies) movieCategory = null else seriesCategory = null
+            memo.keys.removeAll { it.startsWith(if (s == Screen.Movies) "hero:m:" else "hero:s:") }
+        }
+        openRoot(s)
+    }
+
     /** The poster / line a sub-screen was opened from: it gets the focus back when Back returns to the list. */
     var returnKey: String? = null
     fun openFrom(key: String, s: Screen) { returnKey = key; open(s) }

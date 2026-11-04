@@ -20,10 +20,12 @@ class TitleLogos(http: OkHttpClient, private val key: String) {
     private val json = Json { ignoreUnknownKeys = true }
     /**
      * What TMDB says of a title: its logo, its rating (out of 10, from its users' votes), its summary in French (null
-     * when TMDB has none in French), its main actors and who made it (directors of a film, creators of a series).
+     * when TMDB has none in French), its main actors and who made it (directors of a film, creators of a series), and
+     * its poster (French when there is one): shown when the provider's is missing or does not load.
      */
     class Info(val logo: String?, val rating: Double?, val votes: Int,
-               val overview: String? = null, val cast: List<String> = emptyList(), val makers: List<String> = emptyList())
+               val overview: String? = null, val cast: List<String> = emptyList(), val makers: List<String> = emptyList(),
+               val poster: String? = null)
 
     private val cache = object : LinkedHashMap<String, Info?>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Info?>?) = size > 600
@@ -40,7 +42,7 @@ class TitleLogos(http: OkHttpClient, private val key: String) {
         synchronized(cache) { if (cache.containsKey(k)) return cache[k] }
         val found = runCatching {
             val kind = if (series) "tv" else "movie"
-            val id = tmdb ?: search(kind, title, year) ?: return@runCatching null
+            val id = tmdb ?: search(kind, clean(title), year ?: com.lumentv.core.Featured.yearOf(null, title)) ?: return@runCatching null
             val d = get("https://api.themoviedb.org/3/$kind/$id", "language" to "fr-FR", "append_to_response" to "images,credits",
                 "include_image_language" to "fr,en,null") ?: return@runCatching null
             val logos = ((d["images"] as? JsonObject)?.get("logos") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
@@ -51,7 +53,8 @@ class TitleLogos(http: OkHttpClient, private val key: String) {
             val makers = if (series) (d["created_by"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.s("name") }
             else (credits?.get("crew") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.filter { it.s("job") == "Director" }.mapNotNull { it.s("name") }
             Info(best?.s("file_path")?.let { "https://image.tmdb.org/t/p/w500$it" }, d.s("vote_average")?.toDoubleOrNull()?.takeIf { votes >= MIN_VOTES && it > 0 }, votes,
-                d.s("overview")?.trim()?.takeIf { it.isNotEmpty() }, cast, makers.distinct().take(3))
+                d.s("overview")?.trim()?.takeIf { it.isNotEmpty() }, cast, makers.distinct().take(3),
+                d.s("poster_path")?.let { "https://image.tmdb.org/t/p/w342$it" })
         }.getOrNull()
         synchronized(cache) { cache[k] = found }
         return found
@@ -78,6 +81,9 @@ class TitleLogos(http: OkHttpClient, private val key: String) {
         }
     }
 
-    private fun keyOf(series: Boolean, tmdb: String?, title: String, year: Int?) = (if (series) "tv" else "mv") + "|" + (tmdb ?: "$title|$year")
+    private fun keyOf(series: Boolean, tmdb: String?, title: String, year: Int?) = (if (series) "tv" else "mv") + "|" + (tmdb ?: "${clean(title)}|${year ?: com.lumentv.core.Featured.yearOf(null, title)}")
+
+    /** The provider's title as TMDB knows it ("Les Misérables SD" → "Les Misérables"). */
+    private fun clean(title: String) = com.lumentv.core.Featured.searchTitle(title)
     private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.contentOrNull
 }

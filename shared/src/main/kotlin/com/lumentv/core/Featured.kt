@@ -30,7 +30,20 @@ object Featured {
     fun year(y: String?): Int? = y?.take(4)?.toIntOrNull()
 
     /** The year given, else the one in the title: "Breach (2026) VOSTFR" → 2026. */
-    fun yearOf(y: String?, name: String): Int? = year(y) ?: Regex("\\((\\d{4})\\)").find(name)?.groupValues?.get(1)?.toIntOrNull()
+    fun yearOf(y: String?, name: String): Int? = year(y) ?: yearInName.find(name)?.let { (it.groups[1] ?: it.groups[2])?.value?.toIntOrNull() }
+
+    /** "(2012)", or " - 2012" as some providers write it ("Les Misérables - 2012"). */
+    private val yearInName = Regex("\\(((?:19|20)\\d{2})\\)|\\s-\\s((?:19|20)\\d{2})\\b")
+
+    /**
+     * The title as TMDB knows it: without the year and the copy's tags. "Les Misérables SD", "Les Misérables - 2012",
+     * "Dune (2021) 4K MULTI" → "Les Misérables", "Les Misérables", "Dune".
+     */
+    fun searchTitle(name: String): String =
+        shortTitle(name).replace(yearSuffix, "").replace(copyTags, "").trim(' ', '-', '|', ':').ifBlank { shortTitle(name) }
+
+    private val yearSuffix = Regex("\\s-\\s(19|20)\\d{2}\\b.*$")
+    private val copyTags = Regex("\\b(4K|UHD|FHD|HD|SD|HDR|MULTI|VOSTFR|VOST|VFF|VFQ|VF|VOF|VO)\\b", RegexOption.IGNORE_CASE)
 
     /** "Hope (2026) MULTI" → "Hope": the name without the year and the copy's tags (they go to [posterLine]). */
     fun shortTitle(name: String): String = name.substringBefore(" (").substringBefore(" [").trim().ifBlank { name }

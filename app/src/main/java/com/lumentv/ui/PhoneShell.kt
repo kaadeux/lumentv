@@ -146,7 +146,7 @@ fun PhoneShell(vm: MainViewModel, firstLaunch: Boolean, screen: @Composable (Scr
             tabs.forEach { t ->
                 val on = vm.root == t.screen || (t.screen == Screen.More && inMore)
                 Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable { vm.openRoot(t.screen) }.padding(vertical = 6.dp),
+                    Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable { vm.openTab(t.screen) }.padding(vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Icon(t.icon, contentDescription = null, tint = if (on) Palette.Text else Palette.TextDim, modifier = Modifier.padding(vertical = 2.dp).size(24.dp))

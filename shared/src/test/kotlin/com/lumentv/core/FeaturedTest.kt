@@ -37,3 +37,15 @@ class ResumeTest {
         org.junit.Assert.assertEquals(9L, Resume.furthest(listOf(H(null, 3), H("Bonus", 9)), { it.subtitle }, { it.watchedAt }).watchedAt)
     }
 }
+
+class SearchTitleTest {
+    @Test fun providerTitlesAsTmdbKnowsThem() {
+        org.junit.Assert.assertEquals("Les Misérables", Featured.searchTitle("Les Misérables SD"))
+        org.junit.Assert.assertEquals("Les Misérables", Featured.searchTitle("Les Misérables - 2012"))
+        org.junit.Assert.assertEquals(2012, Featured.yearOf(null, "Les Misérables - 2012"))
+        org.junit.Assert.assertEquals("Dune", Featured.searchTitle("Dune (2021) 4K MULTI"))
+        org.junit.Assert.assertEquals("Spider-Man : No Way Home", Featured.searchTitle("Spider-Man : No Way Home"))
+        org.junit.Assert.assertEquals("Vice-Versa", Featured.searchTitle("Vice-Versa "))
+        org.junit.Assert.assertEquals(2026, Featured.yearOf(null, "Breach (2026) VOSTFR"))
+    }
+}

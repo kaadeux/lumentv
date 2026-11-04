@@ -146,7 +146,9 @@ class HeroItem(
 }
 
 class HomeTile(val key: String, val title: String, val image: String?, val caption: String?, val progress: Float?, val favorite: Boolean,
-               val hero: HeroItem, val onClick: () -> Unit, val onRemove: (() -> Unit)? = null)
+               val hero: HeroItem, val onClick: () -> Unit, val onRemove: (() -> Unit)? = null,
+               /** TMDB's poster, when the provider's is missing or does not load. */
+               val altImage: (suspend () -> String?)? = null)
 
 class HomeRow(val key: String, val title: String, val tiles: List<HomeTile>)
 
@@ -218,7 +220,7 @@ private fun Hero(state: AppState, h: HeroItem, actions: @Composable () -> Unit) 
 @Composable
 private fun HomePoster(t: HomeTile, onHover: () -> Unit) {
     Box(Modifier.width(140.dp).onPointerEvent(PointerEventType.Enter) { onHover() }) {
-        Poster(t.title, t.image, t.caption, t.progress, t.favorite, t.onClick)
+        Poster(t.title, t.image, t.caption, t.progress, t.favorite, t.altImage, t.onClick)
         t.onRemove?.let { remove ->
             IconButton(remove, Modifier.align(Alignment.TopStart).padding(4.dp).size(28.dp).clip(RoundedCornerShape(14.dp)).background(Pal.bg.copy(alpha = 0.75f))) {
                 Icon(Icons.Filled.Close, "Retirer de Reprendre la lecture", tint = Pal.text, modifier = Modifier.size(16.dp))
@@ -227,12 +229,20 @@ private fun HomePoster(t: HomeTile, onHover: () -> Unit) {
     }
 }
 
-/** A poster: picture, progress, title and its line (year, rating, copy). */
+/**
+ * A poster: picture, progress, title and its line (year, rating, copy). When the provider's picture is missing or does
+ * not load (dead server, image taken off TMDB), [altImage] (TMDB's poster) takes its place, else the title in text.
+ */
 @Composable
-fun Poster(title: String, image: String?, caption: String?, progress: Float?, favorite: Boolean, onClick: () -> Unit) {
+fun Poster(title: String, image: String?, caption: String?, progress: Float?, favorite: Boolean, altImage: (suspend () -> String?)? = null, onClick: () -> Unit) {
+    var failed by remember(image) { mutableStateOf(image.isNullOrBlank()) }
+    val alt by produceState<String?>(null, failed, title) { if (failed && altImage != null) value = runCatching { altImage() }.getOrNull() }
+    val shown = if (failed) alt else image
     Column(Modifier.clip(RoundedCornerShape(10.dp)).background(Pal.panel).combinedClickable(onClick = onClick)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(Pal.panelHigh)) {
-            AsyncImage(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
+        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(Pal.panelHigh), contentAlignment = Alignment.Center) {
+            if (shown == null) Text(title, color = Pal.dim, fontSize = 13.sp, maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(10.dp))
+            else AsyncImage(shown, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
+                onError = { if (!failed) failed = true })
             if (favorite) Icon(Icons.Filled.Favorite, null, tint = Pal.accent, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(18.dp))
         }
         progress?.let { LinearProgressIndicator({ it.coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(3.dp)) }
@@ -294,6 +304,10 @@ fun MenuPill(label: String, options: List<Pair<String, () -> Unit>>) {
 
 fun ratio(h: com.lumentv.sync.SyncHistory?) = h?.takeIf { it.durationMs > 0 }?.let { it.positionMs.toFloat() / it.durationMs }
 
+/** TMDB's poster of a film or a series (French when there is one). */
+fun AppState.posterOf(m: Mv): suspend () -> String? = { vod.info(false, m.name, null, Featured.yearOf(m.year, m.name))?.poster }
+fun AppState.posterOf(s: Se): suspend () -> String? = { vod.info(true, s.name, s.tmdb, Featured.year(s.year))?.poster }
+
 fun AppState.movieTile(rowKey: String, m: Mv, open: (Mv) -> Unit): HomeTile {
     val h = progress(Kind.MOVIE, m.uid)
     val resumable = h != null && com.lumentv.core.Resume.movieToResume(h.positionMs, h.durationMs)
@@ -303,14 +317,14 @@ fun AppState.movieTile(rowKey: String, m: Mv, open: (Mv) -> Unit): HomeTile {
         HeroItem("m:${m.uid}", m.name, false, null, year, m.poster, listOfNotNull(year?.toString()), null, m.rating,
             if (resumable) "Reprendre" else "Lecture", { playMovie(m) }, { open(m) },
             backdrop = { active?.let { p -> runCatching { library.movieDetails(p, m) }.getOrNull()?.backdrop } }),
-        onClick = { open(m) })
+        onClick = { open(m) }, altImage = posterOf(m))
 }
 
 fun AppState.seriesTile(rowKey: String, s: Se, open: (Se) -> Unit): HomeTile =
     HomeTile("$rowKey:${s.uid}", Featured.shortTitle(s.name), s.cover, Featured.posterLine(s.year, s.rating, null), null, isFavorite(Kind.SERIES, s.uid),
         HeroItem("s:${s.uid}", s.name, true, s.tmdb, Featured.year(s.year), s.backdrop ?: s.cover, listOfNotNull(s.year?.take(4), s.category), s.plot, s.rating,
             "Voir la série", { open(s) }, { open(s) }, backdrop = { s.backdrop }),
-        onClick = { open(s) })
+        onClick = { open(s) }, altImage = posterOf(s))
 
 /**
  * The rows of a home: computed in the background (TMDB), kept while a page is open over the home, and replaced only

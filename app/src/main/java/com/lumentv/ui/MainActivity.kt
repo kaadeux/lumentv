@@ -95,7 +95,11 @@ class MainActivity : ComponentActivity() {
         // Phone: the menus stay upright (sideways they would be cramped); a tablet turns freely. The player goes sideways itself.
         if (phone && resources.configuration.smallestScreenWidthDp < 600) requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         setContent {
-            LumenTheme { androidx.compose.runtime.CompositionLocalProvider(LocalPhone provides phone) {
+            // A poster missing at the provider's (or not loading) is asked of TMDB.
+            val posters: suspend (com.lumentv.ui.components.PosterSearch) -> String? = remember { { s ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vm.graph.logos.info(s.series, s.tmdb, com.lumentv.core.Featured.shortTitle(s.name), s.year)?.poster }
+            } }
+            LumenTheme { androidx.compose.runtime.CompositionLocalProvider(LocalPhone provides phone, com.lumentv.ui.components.LocalPosterLookup provides posters) {
                 var unlocked by remember { mutableStateOf(com.lumentv.core.Access.isUnlocked(this)) }
                 if (!unlocked) AccessScreen(onUnlocked = { unlocked = true }, onQuit = { finish() })
                 else {
@@ -197,7 +201,7 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
     }) {
         BackdropLayer()
         Column(Modifier.fillMaxSize()) {
-            TopNav(tabs, icons, vm.root, topFocus) { vm.openRoot(it) }
+            TopNav(tabs, icons, vm.root, topFocus) { vm.openTab(it) }
             Box(Modifier.weight(1f).fillMaxWidth().padding(start = 40.dp, top = 4.dp, end = 40.dp, bottom = 16.dp)
                 .onFocusChanged { contentHasFocus = it.hasFocus }.focusRequester(contentFocus).focusGroup()) {
                 ScreenContent(vm, vm.current, states)
@@ -211,7 +215,14 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
 
 /** The screen itself, the same on the TV and the phone (each lays itself out for the device). */
 @Composable
-fun ScreenContent(vm: MainViewModel, screen: Screen, states: androidx.compose.runtime.saveable.SaveableStateHolder) =
+fun ScreenContent(vm: MainViewModel, screen: Screen, states: androidx.compose.runtime.saveable.SaveableStateHolder) {
+    // A tab chosen again: its saved place is forgotten (see MainViewModel.openTab).
+    if (vm.freshScreens.remove(screen)) states.removeState(screen.toString())
+    ScreenContentIn(vm, screen, states)
+}
+
+@Composable
+private fun ScreenContentIn(vm: MainViewModel, screen: Screen, states: androidx.compose.runtime.saveable.SaveableStateHolder) =
     states.SaveableStateProvider(screen.toString()) {
             when (val s = screen) {
                 Screen.Live -> LiveScreen(vm)

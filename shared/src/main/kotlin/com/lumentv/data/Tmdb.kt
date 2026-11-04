@@ -138,8 +138,10 @@ class Tmdb(http: OkHttpClient, private val key: String, cacheDir: File? = null) 
     }
 
     /** The TMDB id of a title from the playlist, found by its name and year (kept, the absence too). */
-    fun idOf(series: Boolean, title: String, year: Int?): String? {
+    fun idOf(series: Boolean, name: String, year: Int?): String? {
         if (!enabled) return null
+        // "Les Misérables - 2012", "Dune 4K": searched as "Les Misérables" (2012), "Dune".
+        val title = com.lumentv.core.Featured.searchTitle(name)
         val k = (if (series) "tv|" else "mv|") + title + "|" + year
         synchronized(ids) { if (ids.containsKey(k)) return ids[k] }
         val kind = if (series) "tv" else "movie"

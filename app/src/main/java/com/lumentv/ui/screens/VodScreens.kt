@@ -126,10 +126,10 @@ private fun gridGap() = if (com.lumentv.ui.LocalPhone.current) 10.dp else 14.dp
 
 @Composable
 private fun PosterTile(title: String, image: String?, subtitle: String?, progress: Float?, favorite: Boolean, onClick: () -> Unit, onLong: () -> Unit,
-                       modifier: Modifier = Modifier) {
+                       modifier: Modifier = Modifier, search: com.lumentv.ui.components.PosterSearch? = null) {
     Column {
         FocusSurface(onClick, modifier.fillMaxWidth().aspectRatio(2f / 3f), onLongClick = onLong, focusedScale = 1.06f, shape = RoundedCornerShape(8.dp)) {
-            Poster(image, title, Modifier.fillMaxSize())
+            Poster(image, title, Modifier.fillMaxSize(), search)
             if (favorite) Text("★", color = Palette.Gold, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp))
             if (progress != null && progress > 0f) ProgressLine(progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp))
         }
@@ -216,7 +216,7 @@ fun MoviesScreen(vm: MainViewModel) {
                         h?.let { if (it.durationMs > 0) it.positionMs.toFloat() / it.durationMs else null }, r.isFavorite,
                         onClick = { vm.openFrom("m:" + r.m.uid, Screen.MovieDetail(p.id, r.m.uid)) },
                         onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.MOVIE, r.m.uid); vm.show(if (f) "Ajouté aux favoris" else "Retiré des favoris") } },
-                        modifier = Modifier.returnFocus(vm, "m:" + r.m.uid))
+                        modifier = Modifier.returnFocus(vm, "m:" + r.m.uid), search = com.lumentv.ui.components.PosterSearch(false, r.m.name, null, com.lumentv.core.Featured.yearOf(r.m.year, r.m.name)))
                 }
             }
         }
@@ -301,7 +301,7 @@ fun SeriesScreen(vm: MainViewModel) {
                     PosterTile(com.lumentv.core.Featured.shortTitle(r.s.name), r.s.cover, com.lumentv.core.Featured.posterLine(r.s.year, r.s.rating, null), null, r.isFavorite,
                         onClick = { vm.openFrom("s:" + r.s.uid, Screen.SeriesDetail(p.id, r.s.uid)) },
                         onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } },
-                        modifier = Modifier.returnFocus(vm, "s:" + r.s.uid))
+                        modifier = Modifier.returnFocus(vm, "s:" + r.s.uid), search = com.lumentv.ui.components.PosterSearch(true, r.s.name, r.s.tmdb, com.lumentv.core.Featured.year(r.s.year)))
                 }
             }
         }
@@ -505,7 +505,10 @@ internal class HeroItem(
 )
 
 internal class HomeTile(val key: String, val title: String, val image: String?, val progress: Float?, val hero: HeroItem,
-                       val onClick: () -> Unit, val onLong: (() -> Unit)? = null)
+                       val onClick: () -> Unit, val onLong: (() -> Unit)? = null) {
+    /** For TMDB's poster when the provider's is missing. */
+    val search get() = com.lumentv.ui.components.PosterSearch(hero.series, hero.title, hero.tmdb, hero.year)
+}
 
 internal class HomeRow(val key: String, val title: String, val tiles: List<HomeTile>)
 
@@ -671,7 +674,7 @@ fun HeroButton(text: String, primary: Boolean = false, modifier: Modifier = Modi
 private fun HomePoster(vm: MainViewModel, t: HomeTile, modifier: Modifier = Modifier, onFocus: () -> Unit) {
     FocusSurface(t.onClick, modifier.width(104.dp).aspectRatio(2f / 3f).returnFocus(vm, t.key).onFocusChanged { if (it.isFocused) onFocus() },
         onLongClick = t.onLong, focusedScale = 1.08f, shape = RoundedCornerShape(10.dp)) {
-        Poster(t.image, t.title, Modifier.fillMaxSize())
+        Poster(t.image, t.title, Modifier.fillMaxSize(), t.search)
         t.progress?.takeIf { it > 0f }?.let { ProgressLine(it, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp)) }
     }
 }

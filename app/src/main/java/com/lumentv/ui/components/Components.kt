@@ -267,13 +267,30 @@ fun Logo(url: String?, name: String, modifier: Modifier = Modifier, size: Dp = 4
     }
 }
 
+/** A film or series a poster is of, to ask TMDB for its poster when the provider's is missing or broken. */
+class PosterSearch(val series: Boolean, val name: String, val tmdb: String? = null, val year: Int? = null)
+
+/** Finds a poster on TMDB (set by the app: [com.lumentv.ui.MainActivity]); null without TMDB. */
+val LocalPosterLookup = androidx.compose.runtime.staticCompositionLocalOf<(suspend (PosterSearch) -> String?)?> { null }
+
+/**
+ * A poster: the provider's picture, else (none, or it does not load: dead server, image taken off TMDB) TMDB's
+ * poster of the title when [search] says which title it is, else the title in text.
+ */
 @Composable
-fun Poster(url: String?, title: String, modifier: Modifier = Modifier) {
+fun Poster(url: String?, title: String, modifier: Modifier = Modifier, search: PosterSearch? = null) {
+    var failed by androidx.compose.runtime.remember(url) { androidx.compose.runtime.mutableStateOf(url.isNullOrBlank()) }
+    val lookup = LocalPosterLookup.current
+    val alt by androidx.compose.runtime.produceState<String?>(null, failed, search?.name) {
+        if (failed && search != null && lookup != null) value = runCatching { lookup(search) }.getOrNull()
+    }
+    val shown = if (failed) alt else url
     Box(modifier.clip(RoundedCornerShape(8.dp)).background(Palette.PanelHigh), contentAlignment = Alignment.Center) {
         Text(title, color = Palette.TextDim, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center,
             maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(8.dp))
-        if (!url.isNullOrBlank()) {
-            AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        if (!shown.isNullOrBlank()) {
+            AsyncImage(model = shown, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
+                onError = { if (!failed) failed = true })
         }
     }
 }
