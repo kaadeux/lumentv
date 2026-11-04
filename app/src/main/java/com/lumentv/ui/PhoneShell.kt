@@ -2,6 +2,10 @@
 
 package com.lumentv.ui
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -107,17 +111,21 @@ fun PhoneShell(vm: MainViewModel, firstLaunch: Boolean, screen: @Composable (Scr
 
     Column(Modifier.fillMaxSize().background(Palette.Background)) {
         // Title bar
-        Row(Modifier.fillMaxWidth().background(Palette.Panel).padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (sub || vm.root !in tabs.map { it.screen }) IconTap(Icons.AutoMirrored.Filled.ArrowBack, "Retour") { goBack() }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            val home = !sub && vm.root in tabs.map { it.screen } && current != Screen.More
+            if (!home && (sub || vm.root !in tabs.map { it.screen })) IconTap(Icons.AutoMirrored.Filled.ArrowBack, "Retour") { goBack() }
             else Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (!sub) Text(p?.name ?: "Aucune playlist", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1)
-            }
+            if (home) Row(Modifier.weight(1f).padding(horizontal = 4.dp), verticalAlignment = Alignment.Bottom) {
+                Text("lumen", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Palette.Text)
+                Text("TV", fontSize = 22.sp, fontWeight = FontWeight.Light, color = Palette.Text)
+                Box(Modifier.padding(start = 2.dp, bottom = 6.dp).size(5.dp).clip(CircleShape).background(Palette.Accent))
+                Text("   $title", style = MaterialTheme.typography.titleMedium, color = Palette.TextDim, maxLines = 1, modifier = Modifier.padding(bottom = 1.dp))
+            } else Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp))
             if (p != null && current != Screen.Search) IconTap(Icons.Filled.Search, "Rechercher") { vm.open(Screen.Search) }
         }
         // Screen
-        Box(Modifier.weight(1f).fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 10.dp)) {
+        Box(Modifier.weight(1f).fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp)) {
             if (current == Screen.More) MoreList(vm, more) else screen(current)
         }
         // Mini-player (a channel kept playing small while browsing)
@@ -132,7 +140,8 @@ fun PhoneShell(vm: MainViewModel, firstLaunch: Boolean, screen: @Composable (Scr
             }
         }
         // Tabs
-        Row(Modifier.fillMaxWidth().background(Palette.Panel).padding(vertical = 4.dp)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x14FFFFFF)))
+        Row(Modifier.fillMaxWidth().background(Color(0xF20E0E10)).padding(vertical = 4.dp)) {
             val inMore = vm.root == Screen.More || more.any { it.screen == vm.root }
             tabs.forEach { t ->
                 val on = vm.root == t.screen || (t.screen == Screen.More && inMore)
@@ -140,10 +149,9 @@ fun PhoneShell(vm: MainViewModel, firstLaunch: Boolean, screen: @Composable (Scr
                     Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable { vm.openRoot(t.screen) }.padding(vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Box(Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) Palette.AccentSoft else Palette.Panel).padding(horizontal = 18.dp, vertical = 4.dp)) {
-                        Icon(t.icon, contentDescription = null, tint = if (on) Palette.Accent else Palette.TextDim, modifier = Modifier.size(24.dp))
-                    }
+                    Icon(t.icon, contentDescription = null, tint = if (on) Palette.Text else Palette.TextDim, modifier = Modifier.padding(vertical = 2.dp).size(24.dp))
                     Text(t.label, style = MaterialTheme.typography.labelMedium, color = if (on) Palette.Text else Palette.TextDim)
+                    Box(Modifier.padding(top = 3.dp).size(if (on) 16.dp else 0.dp, 3.dp).clip(CircleShape).background(Palette.Accent))
                 }
             }
         }

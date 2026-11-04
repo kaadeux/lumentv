@@ -157,17 +157,19 @@ fun LiveScreen(vm: MainViewModel) {
             }
 
     if (phone) Column(Modifier.fillMaxSize()) {
-        // Phone: the group is a big button (the list opens in a window), then the channels over the whole width.
-        val g = groups?.firstOrNull { it.name == group }
-        FocusSurface(onClick = { groupPicker = true }, onLongClick = { g?.let { if (it.name != Groups.ALL && it.name != Groups.FAVORITES) groupMenu = it } },
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), container = Palette.PanelHigh) {
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Groupe", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                    Text(when (group) { Groups.ALL -> "Toutes les chaînes"; Groups.FAVORITES -> "★ Favoris"; else -> group },
-                        style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // Phone: the groups as pills to swipe (a long press: hide / lock), "Groupes ▾" lists them all; then the channels.
+        val specials = listOf(GroupInfo(Groups.FAVORITES, 0, false, false), GroupInfo(Groups.ALL, p.channelCount, false, false))
+        val pills = rememberLazyListState()
+        LaunchedEffect(group, groups) { (specials + groups.orEmpty()).indexOfFirst { it.name == group }.takeIf { it > 1 }?.let { pills.animateScrollToItem(it) } }
+        LazyRow(state = pills, horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp),
+            modifier = Modifier.padding(bottom = 6.dp)) {
+            item(key = "picker") { PhoneChip("Groupes  ▾") { groupPicker = true } }
+            items(specials + groups.orEmpty(), key = { it.name }) { g ->
+                PhoneChip(when (g.name) { Groups.ALL -> "Toutes"; Groups.FAVORITES -> "★ Mes chaînes"; else -> g.name } + if (g.locked) "  🔒" else "",
+                    selected = g.name == group, onLongClick = if (g.name != Groups.ALL && g.name != Groups.FAVORITES) ({ groupMenu = g }) else null) {
+                    if (g.locked && g.name !in vm.unlocked.value) { pinFor = g.name; pinError = null }
+                    group = g.name; vm.liveGroup = g.name
                 }
-                Text("Changer  ▾", style = MaterialTheme.typography.labelLarge, color = Palette.Accent)
             }
         }
         channelColumn()
