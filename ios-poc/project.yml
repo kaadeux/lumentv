@@ -1,0 +1,43 @@
+# Phase 0 of the iPhone version: a throwaway test app that checks, on a real iPhone installed through SideStore,
+# what the code alone cannot tell: KSPlayer playing the provider's MKV / AVI films and TS channels, Picture in
+# Picture, AirPlay, audio and subtitle tracks. Generated with XcodeGen on GitHub Actions (no Mac needed).
+name: LumenPOC
+options:
+  bundleIdPrefix: com.lumentv
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  KSPlayer:
+    # The revision another-iptv-player ships: still built from source (later revisions are a closed binary
+    # needing Xcode 26). Depends on FFmpegKit 6.x.
+    url: https://github.com/kingslay/KSPlayer.git
+    revision: 92c18fae716f63a080541c4bcc77247ade181426
+targets:
+  LumenPOC:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    dependencies:
+      - package: KSPlayer
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: Lumen POC
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIBackgroundModes: [audio]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        # IPTV servers are plain http: iOS blocks that unless allowed.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Lecture AirPlay vers un appareil du réseau local.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lumentv.poc
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        ENABLE_BITCODE: "NO"
