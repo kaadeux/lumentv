@@ -45,7 +45,8 @@ class Updater(private val context: android.content.Context, private val http: Ok
     suspend fun check(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
         if (!enabled) return@withContext Result.success(null)
         runCatching {
-            // A query string defeats intermediate caches (raw.githubusercontent.com caches a few minutes).
+            // raw.githubusercontent.com keeps a file 5 minutes and ignores the query string (checked 2026-11-04): a new
+            // version shows up to 5 minutes after publish.ps1. The query is kept for other caches on the way.
             val req = Request.Builder().url(BuildConfig.UPDATE_URL + "?t=" + System.currentTimeMillis() / 60_000).build()
             http.newCall(req).execute().use { r ->
                 if (!r.isSuccessful) error("HTTP ${r.code}")
