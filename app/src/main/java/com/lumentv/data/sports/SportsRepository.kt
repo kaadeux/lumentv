@@ -100,14 +100,19 @@ class SportsRepository(
         val index = indexAsync.await()
         val (named, byKey) = mapsAsync.await()
         val listings = listingsAsync.await()
+        // The French sports channels (those of the French guide): a fallback channel must be one of them.
+        val sportKeys = listings.mapTo(HashSet()) { FrenchTvGuide.channelKey(it.channel) }
         list.map { f ->
             val tv = FrenchTvGuide.broadcast(f, listings)
             val own = (progs.filter { FixtureMatcher.matches(f, it.titleNorm, it.start) }.flatMap { index[it.epgKey].orEmpty() } +
                 named.filter { (_, l, t) -> FixtureMatcher.matches(f, l, t, channelName = true) }.map { it.first }).distinctBy { it.ch.id }
             // The French channel, when the playlist has it under the same name, becomes playable too.
             val linked = tv?.let { FrenchTvGuide.best(byKey[FrenchTvGuide.channelKey(it.channel)].orEmpty()) { r -> r.ch.name } }.orEmpty()
+            // The French guide (xmltvfr.fr) says who broadcasts the game in France: its channels in the playlist only. The
+            // playlist's own guide is a fallback (a local channel's magazine can mention a game it does not show).
+            val chosen = if (linked.isNotEmpty()) linked else own.filter { sportKeys.isEmpty() || FrenchTvGuide.channelKey(it.ch.name) in sportKeys }
             // French channels only: the panel is for a French family.
-            Game(f, (own + linked).distinctBy { it.ch.id }.filter { FrenchTvGuide.french(it.ch.name, it.ch.groupName) }, tv?.channel, tv?.start ?: 0)
+            Game(f, chosen.distinctBy { it.ch.id }.filter { FrenchTvGuide.french(it.ch.name, it.ch.groupName) }, tv?.channel, tv?.start ?: 0)
         }
     }
 
