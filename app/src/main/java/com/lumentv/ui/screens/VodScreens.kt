@@ -810,6 +810,7 @@ private class HomeFocus(initial: HeroItem?) {
     var rowsFocused by mutableStateOf(false)
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, actions: @Composable () -> Unit) {
     val first = rows.firstOrNull { it.tiles.isNotEmpty() }?.tiles?.firstOrNull()?.hero
@@ -827,6 +828,10 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
             val k = shown.firstOrNull()?.key
             if (k != firstKey) { if (firstKey != null && !inUse && vm.returnKey == null) list.scrollToItem(0); firstKey = k }
         }
+        // The list's place is set by RowScroller only (row title at the top): a poster getting the focus (and growing)
+        // must not nudge the list down. The rows themselves keep the usual sideways scrolling (rowSpec below).
+        val rowSpec = androidx.compose.foundation.gestures.LocalBringIntoViewSpec.current
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides StayPut) {
         LazyColumn(Modifier.fillMaxSize().onFocusChanged { inUse = it.hasFocus; focus.rowsFocused = it.hasFocus }, state = list, verticalArrangement = Arrangement.spacedBy(2.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 30.dp)) {
             shown.forEachIndexed { rowIndex, row ->
@@ -836,16 +841,25 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
                             modifier = Modifier.padding(start = 4.dp, top = 6.dp))
                         // Entering a row (Up / Down) lands on its first poster, or the one it was left from, not the one level with the focus.
                         val mem = com.lumentv.ui.components.rememberFocusMemory()
+                        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides rowSpec) {
                         LazyRow(Modifier.focusMemory(mem), horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 10.dp)) {
                             itemsIndexed(row.tiles, key = { _, t -> t.key }) { i, t ->
                                 HomePoster(vm, t, Modifier.remembered(mem, first = i == 0)) { focus.pending = t.hero; focus.row = rowIndex }
                             }
+                        }
                         }
                     }
                 }
             }
         }
     }
+    }
+}
+
+/** Never scrolls to bring a focused child into view (the home's list of rows, see VodHome). */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private object StayPut : androidx.compose.foundation.gestures.BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float) = 0f
 }
 
 /** The banner and the picture behind: they follow the focused poster, a moment after it stops moving (no flicker). */
