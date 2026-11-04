@@ -167,6 +167,9 @@ fun VodHome(state: AppState, rows: List<HomeRow>, list: LazyListState, actions: 
     // Rows arriving late (resume, TMDB) go above the categories: the list then shows the top, unless the viewer scrolled.
     var scrolled by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(shown.firstOrNull()?.key) { if (!scrolled && list.firstVisibleItemIndex > 0) list.scrollToItem(0) }
+    // A click on a poster half off screen does not scroll the list or its row to show it whole: back from its page,
+    // the home would no longer be where it was. The wheel and the arrows scroll them.
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides StayPut) {
     Box(Modifier.fillMaxSize()) {
         BannerPicture(backdrop, 420.dp)
         Column(Modifier.fillMaxSize()) {
@@ -185,6 +188,12 @@ fun VodHome(state: AppState, rows: List<HomeRow>, list: LazyListState, actions: 
             }
         }
     }
+    }
+}
+
+/** Never scrolls to bring a clicked or focused child into view (see [VodHome]). */
+private object StayPut : androidx.compose.foundation.gestures.BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float) = 0f
 }
 
 @Composable

@@ -14,10 +14,17 @@ object Featured {
     fun baseTitle(name: String): String =
         normalize(name.substringBefore(" (").substringBefore(" [").substringBefore(" | ").replace(Regex("\\b(4K|FHD|HD|SD|MULTI|VOSTFR|VOST|VF|VFF|VOF|SUBT AR)\\b.*$", RegexOption.IGNORE_CASE), ""))
 
-    /** Arabic titles, Arabic-subtitled copies and Arabic categories, not for this family. */
+    /**
+     * Arabic titles, Arabic-subtitled or dubbed copies and Arabic categories, not for this family: "AR · ARABE",
+     * "Séries SUB-AR", "Séries DUB-AR", "Séries ARABES", "AR | The Greatest"…
+     */
     fun foreign(name: String, category: String): Boolean =
-        name.any { it in '؀'..'ۿ' } || Regex("\\bSUBT AR\\b", RegexOption.IGNORE_CASE).containsMatchIn(name) ||
-            category.trimStart().startsWith("AR", ignoreCase = true)
+        name.any { it in '؀'..'ۿ' } || subtAr.containsMatchIn(name) || arPrefix.containsMatchIn(name) ||
+            category.trimStart().startsWith("AR", ignoreCase = true) || arCategory.containsMatchIn(category)
+
+    private val subtAr = Regex("\\bSUBT AR\\b", RegexOption.IGNORE_CASE)
+    private val arPrefix = Regex("^\\s*AR\\s*[|:·-]")
+    private val arCategory = Regex("\\b(SUBT?|DUB)[\\s-]*AR\\b|\\bARAB(E|ES|Y|IC|IQUE|IQUES)?\\b", RegexOption.IGNORE_CASE)
 
     fun rating(r: String?): Double? = r?.replace(',', '.')?.toDoubleOrNull()?.takeIf { it > 0 }
     fun year(y: String?): Int? = y?.take(4)?.toIntOrNull()
