@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import androidx.compose.foundation.lazy.itemsIndexed
 import com.lumentv.ui.components.remembered
 import com.lumentv.ui.components.focusMemory
 import com.lumentv.ui.ScreenBackdrop
@@ -690,7 +691,12 @@ private fun SectionTitle(text: String) =
 private fun <T> memoFlow(vm: MainViewModel, key: String, vararg keys: Any?, load: () -> kotlinx.coroutines.flow.Flow<List<T>>): List<T> {
     @Suppress("UNCHECKED_CAST")
     val v by produceState(vm.memo[key] as? List<T> ?: emptyList(), *keys) {
-        runCatching { load().collect { rows -> value = rows; vm.memo[key] = rows } }
+        // Back on the screen, the rows already shown stay until the new ones are complete: a shorter first step would
+        // take away the poster the viewer comes back to (and its focus).
+        val shown = value.isNotEmpty()
+        var latest: List<T>? = null
+        runCatching { load().collect { rows -> latest = rows; if (!shown) { value = rows; vm.memo[key] = rows } } }
+        latest?.let { value = it; vm.memo[key] = it }
     }
     return v
 }
@@ -825,8 +831,10 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
                     Column {
                         Text(row.title, style = MaterialTheme.typography.titleMedium, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(start = 4.dp, top = 6.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 10.dp)) {
-                            items(row.tiles, key = { it.key }) { t -> HomePoster(vm, t) { pending = t.hero; focusedRow = rowIndex } }
+                        // Entering a row (Up / Down) lands on its first poster, or the one it was left from, not the one level with the focus.
+                        val mem = com.lumentv.ui.components.rememberFocusMemory()
+                        LazyRow(Modifier.focusMemory(mem), horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 10.dp)) {
+                            itemsIndexed(row.tiles, key = { _, t -> t.key }) { i, t -> HomePoster(vm, t, Modifier.remembered(mem, first = i == 0)) { pending = t.hero; focusedRow = rowIndex } }
                         }
                     }
                 }
@@ -848,8 +856,10 @@ private fun Hero(vm: MainViewModel, h: HeroItem, info: XVodInfo?, actions: @Comp
             Text(it, style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.9f), maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(0.52f).padding(top = 6.dp))
         }
-        if (!collapsed) Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            HeroButton("▶  " + h.playLabel, primary = true, onClick = h.play)
+        // Down from the tabs lands on "Lecture", not on the button under the tab.
+        val buttons = com.lumentv.ui.components.rememberFocusMemory()
+        if (!collapsed) Row(Modifier.padding(top = 14.dp).focusMemory(buttons), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            HeroButton("▶  " + h.playLabel, primary = true, modifier = Modifier.remembered(buttons, first = true), onClick = h.play)
             HeroButton("Plus d'infos", onClick = h.more)
             actions()
         }
@@ -866,8 +876,8 @@ fun HeroButton(text: String, primary: Boolean = false, modifier: Modifier = Modi
 }
 
 @Composable
-private fun HomePoster(vm: MainViewModel, t: HomeTile, onFocus: () -> Unit) {
-    FocusSurface(t.onClick, Modifier.width(104.dp).aspectRatio(2f / 3f).returnFocus(vm, t.key).onFocusChanged { if (it.isFocused) onFocus() },
+private fun HomePoster(vm: MainViewModel, t: HomeTile, modifier: Modifier = Modifier, onFocus: () -> Unit) {
+    FocusSurface(t.onClick, modifier.width(104.dp).aspectRatio(2f / 3f).returnFocus(vm, t.key).onFocusChanged { if (it.isFocused) onFocus() },
         onLongClick = t.onLong, focusedScale = 1.08f, shape = RoundedCornerShape(10.dp)) {
         Poster(t.image, t.title, Modifier.fillMaxSize())
         t.progress?.takeIf { it > 0f }?.let { ProgressLine(it, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp)) }

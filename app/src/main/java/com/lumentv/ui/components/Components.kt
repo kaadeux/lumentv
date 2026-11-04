@@ -142,7 +142,7 @@ fun Modifier.returnFocus(vm: com.lumentv.ui.MainViewModel, key: String): Modifie
     var got by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         // The screen is put back in place first (lists, rows): try a few times until the poster takes the focus.
-        repeat(10) {
+        repeat(25) {
             kotlinx.coroutines.delay(60)
             runCatching { r.requestFocus() }
             kotlinx.coroutines.delay(20)
