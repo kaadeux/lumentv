@@ -61,16 +61,25 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > build.log 2>&1             || { grep -E "error:" -A4 build.log | head -120; exit 1; }
           tail -n 20 build.log
 
-      - name: IPA
+      # The IPA holds the TMDB key and the sync server's address (Info.plist): it leaves the runner encrypted only,
+      # so the repository can be public (anyone signed in to GitHub can download a public repository's artifacts).
+      # The owner decrypts it on the PC with the same password before putting it on the private SideStore source:
+      #   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in LumenTV.ipa.enc -out LumenTV.ipa -pass file:.ipa_password
+      - name: IPA (encrypted)
         working-directory: iosApp
+        env:
+          LUMEN_IPA_PASSWORD: ${{ secrets.LUMEN_IPA_PASSWORD }}
         run: |
+          if [ -z "$LUMEN_IPA_PASSWORD" ]; then echo "Secret LUMEN_IPA_PASSWORD missing: no IPA is uploaded in clear."; exit 1; fi
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/LumenTV.app Payload/
           zip -qry LumenTV.ipa Payload
-          ls -la LumenTV.ipa
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in LumenTV.ipa -out LumenTV.ipa.enc -pass env:LUMEN_IPA_PASSWORD
+          rm -rf LumenTV.ipa Payload
+          ls -la LumenTV.ipa.enc
 
       - uses: actions/upload-artifact@v4
         with:
-          name: LumenTV-ipa
-          path: iosApp/LumenTV.ipa
-          retention-days: 14
+          name: LumenTV-ipa-encrypted
+          path: iosApp/LumenTV.ipa.enc
+          retention-days: 7
