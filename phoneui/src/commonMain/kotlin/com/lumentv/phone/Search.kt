@@ -9,16 +9,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -52,7 +48,6 @@ import com.lumentv.data.db.HistoryEntity
 import com.lumentv.data.db.HistoryKind
 import com.lumentv.data.db.PlaylistEntity
 import com.lumentv.data.repo.LibraryRepository
-import com.lumentv.data.repo.PersonHit
 import com.lumentv.data.repo.SearchResults
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -91,7 +86,6 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
     val movies = remember(r) { r?.movies?.let { oneEach(it, { m -> m.m.name }, { m -> m.m.category }) }.orEmpty() }
     val series = remember(r) { r?.series?.let { oneEach(it, { s -> s.s.name }, { s -> s.s.category }) }.orEmpty() }
     LazyColumn(state = rememberList("search"), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Text("Recherche", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp)) }
         item {
             OutlinedTextField(query, { query = it }, placeholder = { Text("Film, série, acteur, chaîne…") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Search),
@@ -172,8 +166,7 @@ internal suspend fun playChannel(core: AppCore, player: VideoPlayer, c: ChannelR
     val spec = core.resolver.channel(c.ch)
     core.library.record(HistoryEntity(LibraryRepository.key(HistoryKind.CHANNEL, c.ch.playlistId, c.ch.uid), HistoryKind.CHANNEL,
         c.ch.playlistId, c.ch.uid, c.ch.name, c.ch.groupName, c.ch.logo, watchedAt = nowMillis()))
-    play(core, player, spec, c.ch.name, now, 0, c.ch.playlistId, Playback.lowerVariants(core, c),
-        PlaySource("live", c.ch.playlistId, c.ch.uid, channelId = c.ch.id, group = c.ch.groupName)) { _, _ -> }
+    play(core, player, spec, c.ch.name, now, 0, c.ch.playlistId, Playback.lowerVariants(core, c)) { _, _ -> }
 }
 
 @Composable
@@ -191,19 +184,5 @@ private fun Line(title: String, subtitle: String?, image: String?, onClick: () -
     Column(Modifier.padding(start = 12.dp)) {
         Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
         subtitle?.takeIf { it.isNotBlank() }?.let { Text(it, color = Palette.TextDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-    }
-}
-
-/** An actor's or director's films and series in the playlist. */
-@Composable
-internal fun PersonPage(hit: PersonHit, open: (Route) -> Unit, back: () -> Unit) {
-    val movies = oneEach(hit.movies, { it.m.name }, { it.m.category })
-    val series = oneEach(hit.series, { it.s.name }, { it.s.category })
-    Column {
-        Header(hit.title, back)
-        LazyVerticalGrid(GridCells.Adaptive(108.dp), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(movies.size) { i -> val m = movies[i]; Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } }
-            items(series.size) { i -> val s = series[i]; Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } }
-        }
     }
 }

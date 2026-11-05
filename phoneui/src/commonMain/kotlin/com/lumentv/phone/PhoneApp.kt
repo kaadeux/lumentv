@@ -22,16 +22,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,24 +45,30 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import coil3.compose.AsyncImage
 import com.lumentv.AppCore
 import com.lumentv.core.Featured
 import com.lumentv.core.SecretBox
 import com.lumentv.core.nowMillis
 import com.lumentv.data.db.ChannelRow
-import com.lumentv.data.db.EpisodeEntity
 import com.lumentv.data.db.HistoryEntity
-import com.lumentv.data.db.HistoryKind
 import com.lumentv.data.db.MovieRow
 import com.lumentv.data.db.PlaylistEntity
 import com.lumentv.data.db.PlaylistType
 import com.lumentv.data.db.SeriesRow
-import com.lumentv.data.repo.LibraryRepository
+import com.lumentv.data.repo.Groups
 import com.lumentv.data.repo.StreamSpec
 import com.lumentv.data.settings.Keys
 import com.lumentv.data.xtream.XtreamApi
@@ -78,9 +80,7 @@ import kotlinx.coroutines.withContext
 internal sealed interface Route {
     data class Movie(val row: MovieRow) : Route
     data class Series(val row: SeriesRow) : Route
-    data class Group(val name: String) : Route
     data class Categories(val series: Boolean) : Route
-    data class Person(val hit: com.lumentv.data.repo.PersonHit) : Route
     data object Favorites : Route
     data object Guide : Route
     data class GuideChannel(val channel: ChannelRow) : Route
@@ -89,7 +89,26 @@ internal sealed interface Route {
     data object Downloads : Route
 }
 
-private enum class Tab(val label: String, val icon: String) { MOVIES("Films", "🎬"), SERIES("Séries", "📺"), LIVE("TV", "📡"), SEARCH("Recherche", "🔍"), MORE("Plus", "☰") }
+private enum class Tab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    MOVIES("Films", androidx.compose.material.icons.Icons.Filled.PlayArrow),
+    SERIES("Séries", androidx.compose.material.icons.Icons.AutoMirrored.Filled.List),
+    LIVE("TV", androidx.compose.material.icons.Icons.Filled.Home),
+    SEARCH("Recherche", androidx.compose.material.icons.Icons.Filled.Search),
+    MORE("Plus", androidx.compose.material.icons.Icons.Filled.Menu),
+}
+
+/** The title bar's words for a page (as the Android phone's: "Film", "Série", "Paramètres"…). */
+private fun titleOf(r: Route): String = when (r) {
+    is Route.Movie -> "Film"
+    is Route.Series -> "Série"
+    is Route.Categories -> if (r.series) "Séries" else "Films"
+    Route.Favorites -> "Favoris"
+    Route.Guide -> "Guide TV"
+    is Route.GuideChannel -> r.channel.ch.name
+    Route.Sports -> "Sport"
+    Route.Settings -> "Paramètres"
+    Route.Downloads -> "Téléchargés"
+}
 
 /**
  * The iPhone app (and, step by step, the Android phone's): the account to add first, then Films, Séries and TV over
@@ -189,44 +208,35 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
     val back: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.size - 1) }
     // Where each list was: kept while going into a title and back, emptied when another tab is opened (it starts at the top).
     val memory = remember { ScrollMemory() }
-    // Android's back: the page before, then Films from another tab.
-    PlatformBackHandler(stack.isNotEmpty() || tab != Tab.MOVIES) {
-        if (stack.isNotEmpty()) back() else { tab = Tab.MOVIES; memory.clear() }
-    }
     androidx.compose.runtime.CompositionLocalProvider(LocalScroll provides memory) {
-    Scaffold(
-        containerColor = Palette.Background,
-        bottomBar = {
-            NavigationBar(containerColor = Palette.Panel) {
-                Tab.entries.forEach { t ->
-                    NavigationBarItem(selected = tab == t, onClick = { tab = t; stack.clear(); memory.clear() },
-                        icon = { Text(t.icon, fontSize = 20.sp) }, label = { Text(t.label) })
-                }
-            }
-        },
-    ) { pad ->
-        Box(Modifier.fillMaxSize().padding(pad)) {
+    // The Android phone's frame: its title bar (lumenTV and the tab, or ← and the page) and its tabs at the bottom.
+    Column(Modifier.fillMaxSize().background(Palette.Background).windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+        androidx.compose.foundation.layout.WindowInsetsSides.Top + androidx.compose.foundation.layout.WindowInsetsSides.Horizontal))) {
+        val route = stack.lastOrNull()
+        TitleBar(if (route == null) null else titleOf(route), tab.label, onBack = back, onSearch = if (tab != Tab.SEARCH || route != null) ({
+            tab = Tab.SEARCH; stack.clear(); memory.clear()
+        }) else null)
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             when (val r = stack.lastOrNull()) {
-                is Route.Movie -> MoviePage(core, r.row, player, back)
-                is Route.Series -> SeriesPage(core, p, r.row, player, back)
-                is Route.Group -> ChannelsPage(core, p, r.name, player, back)
-                is Route.Person -> PersonPage(r.hit, open, back)
-                Route.Favorites -> FavoritesPage(core, p, player, open, back)
-                Route.Guide -> GuidePage(core, p, open, back)
-                is Route.GuideChannel -> GuideChannelPage(core, r.channel, player, back)
-                Route.Sports -> SportsPage(core, p, player, back)
-                Route.Settings -> SettingsPage(core, p, back)
-                Route.Downloads -> DownloadsPage(core, player, back)
-                is Route.Categories -> if (r.series) SeriesCategories(core, p, open, back) else MovieCategories(core, p, open, back)
+                is Route.Movie -> MoviePage(core, r.row, player)
+                is Route.Series -> SeriesPage(core, p, r.row, player)
+                Route.Favorites -> FavoritesPage(core, p, player, open)
+                Route.Guide -> GuidePage(core, p, open)
+                is Route.GuideChannel -> GuideChannelPage(core, r.channel, player)
+                Route.Sports -> SportsPage(core, p, player)
+                Route.Settings -> SettingsPage(core, p)
+                Route.Downloads -> DownloadsPage(core, player)
+                is Route.Categories -> if (r.series) SeriesCategories(core, p, open) else MovieCategories(core, p, open)
                 null -> when (tab) {
                     Tab.MOVIES -> MoviesHome(core, p, player, open)
                     Tab.SERIES -> SeriesHome(core, p, player, open)
-                    Tab.LIVE -> LiveHome(core, p, open)
+                    Tab.LIVE -> LiveHome(core, p, player, open)
                     Tab.SEARCH -> SearchHome(core, p, player, open)
                     Tab.MORE -> MoreHome(open)
                 }
             }
         }
+        Tabs(tab) { t -> tab = t; stack.clear(); memory.clear() }
     }
     // Another device of the subscription is playing: the TV's warning, then play anyway or not.
     val pending by Playback.pending.collectAsState()
@@ -239,12 +249,46 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
     }
 }
 
+/** "lumenTV• Films" on a tab, "← Film" on a page; the magnifier opens the search. */
 @Composable
-internal fun Header(title: String, back: (() -> Unit)? = null) = Row(
-    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
+private fun TitleBar(page: String?, tab: String, onBack: () -> Unit, onSearch: (() -> Unit)?) = Row(
+    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp).height(52.dp), verticalAlignment = Alignment.CenterVertically,
 ) {
-    if (back != null) Text("‹", fontSize = 30.sp, modifier = Modifier.clickable(onClick = back).padding(end = 12.dp))
-    Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    if (page != null) IconTap(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, "Retour", onBack)
+    else Spacer(Modifier.width(12.dp))
+    if (page == null) Row(Modifier.weight(1f).padding(horizontal = 4.dp), verticalAlignment = Alignment.Bottom) {
+        Text("lumen", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Palette.Text)
+        Text("TV", fontSize = 22.sp, fontWeight = FontWeight.Light, color = Palette.Text)
+        Box(Modifier.padding(start = 2.dp, bottom = 6.dp).size(5.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Palette.Accent))
+        Text("   $tab", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Palette.TextDim, maxLines = 1, modifier = Modifier.padding(bottom = 1.dp))
+    } else Text(page, fontSize = 22.sp, fontWeight = FontWeight.Normal, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.weight(1f).padding(horizontal = 4.dp))
+    if (onSearch != null) IconTap(androidx.compose.material.icons.Icons.Filled.Search, "Rechercher", onSearch)
+}
+
+@Composable
+private fun IconTap(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) =
+    Box(Modifier.size(48.dp).clip(RoundedCornerShape(24.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        androidx.compose.material3.Icon(icon, contentDescription = label, tint = Palette.Text, modifier = Modifier.size(24.dp))
+    }
+
+/** The tabs at the bottom: icon, word, and an orange dash under the one open (the Android phone's). */
+@Composable
+private fun Tabs(current: Tab, onPick: (Tab) -> Unit) = Column(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xF20E0E10))) {
+    Box(Modifier.fillMaxWidth().height(1.dp).background(androidx.compose.ui.graphics.Color(0x14FFFFFF)))
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+        androidx.compose.foundation.layout.WindowInsetsSides.Bottom + androidx.compose.foundation.layout.WindowInsetsSides.Horizontal))) {
+        Tab.entries.forEach { t ->
+            val on = t == current
+            Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable { onPick(t) }.padding(vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                androidx.compose.material3.Icon(t.icon, contentDescription = null, tint = if (on) Palette.Text else Palette.TextDim,
+                    modifier = Modifier.padding(vertical = 2.dp).size(24.dp))
+                Text(t.label, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = if (on) Palette.Text else Palette.TextDim)
+                Box(Modifier.padding(top = 3.dp).size(if (on) 16.dp else 0.dp, 3.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Palette.Accent))
+            }
+        }
+    }
 }
 
 @Composable
@@ -292,7 +336,7 @@ internal fun ResumeRow(core: AppCore, p: PlaylistEntity, kind: String, onOpen: (
 }
 
 @Composable
-private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit, back: () -> Unit) {
+private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
     val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) {
         value = listOf(RECENT) + core.library.movieCategories(p.id, false).map { it.category }.filter { !Featured.foreign("", it) }
     }
@@ -304,7 +348,6 @@ private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> U
         value = withContext(Dispatchers.Default) { oneEach(rows, { it.m.name }, { it.m.category }) }
     }
     Column {
-        Header("Films · catégories", back)
         Chips(cats, cat, "chips:mv") { cat = it; memory.values["cat:mv"] = it; memory.forget("grid:mv") }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:mv:$cat", ready = movies != null), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(movies.orEmpty(), key = { it.m.id }) { m -> Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } }
@@ -313,7 +356,7 @@ private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> U
 }
 
 @Composable
-private fun SeriesCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit, back: () -> Unit) {
+private fun SeriesCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
     val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) {
         value = listOf(RECENT) + core.library.seriesCategories(p.id, false).map { it.category }.filter { !Featured.foreign("", it) }
     }
@@ -324,7 +367,6 @@ private fun SeriesCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> 
         value = withContext(Dispatchers.Default) { oneEach(rows, { it.s.name }, { it.s.category }) }
     }
     Column {
-        Header("Séries · catégories", back)
         Chips(cats, cat, "chips:se") { cat = it; memory.values["cat:se"] = it; memory.forget("grid:se") }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:se:$cat", ready = series != null), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(series.orEmpty(), key = { it.s.id }) { s -> Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } }
@@ -338,52 +380,105 @@ internal fun minutes(ms: Long) = (ms / 60_000).let { if (it >= 60) "${it / 60} h
 
 /** Plays through [Playback] (languages, the subscription's other screens); [playlistId] null for a downloaded file. */
 internal suspend fun play(core: AppCore, player: VideoPlayer, spec: StreamSpec, title: String, subtitle: String?, startMs: Long,
-                          playlistId: Long? = null, variants: List<PlayVariant> = emptyList(), source: PlaySource? = null,
-                          onFinish: (Long, Long) -> Unit) {
+                          playlistId: Long? = null, variants: List<PlayVariant> = emptyList(), onFinish: (Long, Long) -> Unit) {
     val request = PlayRequest(spec.url, spec.userAgent, spec.referer, title, subtitle, startMs, spec.live, onFinish)
     request.variants = variants
-    request.source = source
     Playback.start(core, player, request, playlistId)
 }
 
-internal const val MY_CHANNELS = "★ Mes chaînes"
-
 // ---- Live -------------------------------------------------------------------------------------------------------
 
+/**
+ * The Android phone's Direct: the groups as pills ("Groupes ▾" lists them all), then the channels of the one chosen,
+ * with what is on, a filter and the order; a channel plays, its ⋮ adds it to Mes chaînes or opens its programmes.
+ */
 @Composable
-private fun LiveHome(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
+private fun LiveHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open: (Route) -> Unit) {
+    val memory = LocalScroll.current
     val groups by produceState(emptyList<com.lumentv.data.repo.GroupInfo>(), p.id, p.lastRefresh) { value = core.library.groups(p.id, false) }
-    LazyColumn(state = rememberList("live", ready = groups.isNotEmpty())) {
-        item { Header("TV") }
-        item {
-            Row(Modifier.fillMaxWidth().clickable { open(Route.Group(MY_CHANNELS)) }.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                Text(MY_CHANNELS, modifier = Modifier.weight(1f), color = Palette.Gold, fontWeight = FontWeight.SemiBold)
+    var group by remember(p.id) { mutableStateOf(memory.values["live:group"] as? String ?: Groups.ALL) }
+    var filter by remember { mutableStateOf("") }
+    var picker by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf<ChannelRow?>(null) }
+    val settings by core.settings.flow.collectAsState(null)
+    val sort = settings?.sort ?: "provider"
+    val changes by core.library.changes.collectAsState()
+    val channels by produceState<List<ChannelRow>?>(null, p.id, group, sort, changes) { value = core.library.channels(p.id, group, false, sort) }
+    val shown = remember(channels, filter) {
+        val f = com.lumentv.core.normalize(filter)
+        channels?.let { all -> if (f.isEmpty()) all else all.filter { it.ch.nameNorm.contains(f) || it.ch.number.toString().startsWith(f) } }
+    }
+    val scope = rememberCoroutineScope()
+    fun pick(g: String) { group = g; memory.values["live:group"] = g; filter = "" }
+    val pills = listOf(Groups.FAVORITES to "★ Mes chaînes", Groups.ALL to "Toutes") + groups.map { it.name to it.name }
+    Column(Modifier.fillMaxSize()) {
+        LazyRow(state = rememberList("live:pills"), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item(key = "picker") { PhoneChip("Groupes  ▾") { picker = true } }
+            items(pills, key = { it.first }) { (name, label) -> PhoneChip(label, selected = name == group) { pick(name) } }
+        }
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(when (group) { Groups.ALL -> "Chaînes"; Groups.FAVORITES -> "Favoris"; else -> group }, fontSize = 22.sp, color = Palette.Text,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (group != Groups.FAVORITES) PhoneChip(when (sort) { "az" -> "A → Z"; "za" -> "Z → A"; else -> "Ordre" }) {
+                core.scope.launch { core.settings.set(Keys.sort, when (sort) { "provider" -> "az"; "az" -> "za"; else -> "provider" }) }
             }
         }
-        items(groups, key = { it.name }) { g ->
-            Row(Modifier.fillMaxWidth().clickable { open(Route.Group(g.name)) }.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                Text(g.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${g.count}", color = Palette.TextDim)
+        OutlinedTextField(filter, { filter = it }, placeholder = { Text("Rechercher dans cette liste", color = Palette.TextDim) }, singleLine = true,
+            leadingIcon = { Text("🔍") }, shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp))
+        val list = shown
+        when {
+            list == null -> Centered { CircularProgressIndicator() }
+            list.isEmpty() -> Text(when {
+                filter.isNotBlank() -> "Rien ne correspond à « $filter » dans cette liste."
+                group == Groups.FAVORITES -> "Pas encore de favoris : touchez ⋮ à droite d'une chaîne, puis « Ajouter aux favoris »."
+                else -> "Ce groupe est vide ou toutes ses chaînes sont masquées."
+            }, color = Palette.TextDim, modifier = Modifier.padding(16.dp))
+            else -> LazyColumn(state = rememberList("live:$group", ready = channels != null), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(list, key = { it.ch.id }) { c -> ChannelCard(core, c, onClick = { scope.launch { playChannel(core, player, c, null) } }, onMore = { menu = c }) }
             }
         }
+    }
+    if (picker) Options("Groupes", null, pills.map { (name, label) ->
+        Option(label + (groups.firstOrNull { it.name == name }?.let { "  ·  ${it.count}" } ?: ""), checked = name == group) { pick(name) }
+    }) { picker = false }
+    menu?.let { c ->
+        Options(c.ch.name, null, listOf(
+            Option("Lire") { scope.launch { playChannel(core, player, c, null) } },
+            Option(if (c.isFavorite) "Retirer des favoris" else "Ajouter aux favoris") {
+                scope.launch { core.library.toggleFavorite(c.ch.playlistId, com.lumentv.data.db.PrefKind.CHANNEL, c.ch.uid); core.library.bump() }
+            },
+            Option("Voir le programme") { open(Route.GuideChannel(c)) },
+        )) { menu = null }
     }
 }
 
+/** A channel as the Android phone shows it: number, logo, name (★, Rattrapage), what is on and its progress, ⋮. */
 @Composable
-private fun ChannelsPage(core: AppCore, p: PlaylistEntity, group: String, player: VideoPlayer, back: () -> Unit) {
-    val settings by core.settings.flow.collectAsState(null)
-    val channels by produceState(emptyList<ChannelRow>(), p.id, group) {
-        value = if (group == MY_CHANNELS) core.library.favoriteChannelsAll().filter { it.ch.playlistId == p.id }
-        else core.library.channels(p.id, group, false, settings?.sort ?: "provider")
-    }
-    val scope = rememberCoroutineScope()
-    LazyColumn(state = rememberList("ch:$group", ready = channels.isNotEmpty())) {
-        item { Header(group, back) }
-        if (group == MY_CHANNELS && channels.isEmpty()) item {
-            Text("Ajoute des chaînes avec ☆ dans leurs groupes.", color = Palette.TextDim, modifier = Modifier.padding(16.dp))
+private fun ChannelCard(core: AppCore, c: ChannelRow, onClick: () -> Unit, onMore: () -> Unit) {
+    val now by produceState<com.lumentv.data.db.ProgramEntity?>(null, c.ch.id) { value = runCatching { core.epg.nowNext(c).now }.getOrNull() }
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Palette.Panel).clickable(onClick = onClick)
+        .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(c.ch.number.toString(), fontSize = 14.sp, color = Palette.Text, modifier = Modifier.width(34.dp))
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(Palette.PanelHigh), contentAlignment = Alignment.Center) {
+            AsyncImage(c.ch.logo, null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(4.dp))
         }
-        items(channels, key = { it.ch.id }) { c ->
-            ChannelLine(core, c, { scope.launch { playChannel(core, player, c, null) } }) { FavoriteStar(core, c) }
+        Column(Modifier.weight(1f).padding(start = 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(c.ch.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (c.isFavorite) Text("  ★", fontSize = 14.sp, color = Palette.Gold)
+                if (c.ch.catchupDays > 0) Text("Rattrapage", fontSize = 11.sp, color = Palette.Text, modifier = Modifier.padding(start = 8.dp)
+                    .clip(RoundedCornerShape(4.dp)).background(Palette.PanelHigh).padding(horizontal = 6.dp, vertical = 2.dp))
+            }
+            now?.let { n ->
+                Text(n.title, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val t = nowMillis()
+                if (n.stop > n.start) ProgressLine(((t - n.start).toFloat() / (n.stop - n.start)).coerceIn(0f, 1f), Modifier.fillMaxWidth(0.6f).padding(top = 4.dp))
+            }
+        }
+        Box(Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).clickable(onClick = onMore), contentAlignment = Alignment.Center) {
+            Text("⋮", fontSize = 22.sp, color = Palette.TextDim)
         }
     }
 }

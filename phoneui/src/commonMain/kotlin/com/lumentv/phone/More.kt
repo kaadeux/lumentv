@@ -82,32 +82,27 @@ internal fun dayLabel(t: Long): String {
 // ---- "Plus": the destinations that are not tabs ------------------------------------------------------------------
 
 @Composable
-internal fun MoreHome(open: (Route) -> Unit) = MoreList(open, LocalPlatformEntries.current)
-
-@Composable
-private fun MoreList(open: (Route) -> Unit, extra: List<PlatformEntry>) = LazyColumn(state = rememberList("more"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-    item { Text("Plus", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 6.dp)) }
-    item { Entry("★", "Favoris", "Films, séries et chaînes de Ma liste") { open(Route.Favorites) } }
-    item { Entry("▦", "Guide TV", "Ce qui passe, ce qui vient, le rattrapage") { open(Route.Guide) } }
+internal fun MoreHome(open: (Route) -> Unit) = LazyColumn(state = rememberList("more"),
+    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    item { Entry("▦", "Guide TV", "Les programmes de toutes les chaînes, et le rattrapage") { open(Route.Guide) } }
+    item { Entry("★", "Favoris", "Vos chaînes, films et séries préférés") { open(Route.Favorites) } }
     item { Entry("⚽", "Sport", "Les matchs et les chaînes qui les diffusent") { open(Route.Sports) } }
-    item { Entry("⬇", "Téléchargements", "Films et épisodes à voir sans réseau") { open(Route.Downloads) } }
-    item { Entry("⚙", "Réglages", "Profil en ligne, liste, lecture") { open(Route.Settings) } }
-    extra.forEach { e -> item { Entry(e.icon, e.title, e.subtitle, e.onClick) } }
+    item { Entry("⬇", "Téléchargés", "Films et épisodes sur ce téléphone") { open(Route.Downloads) } }
+    item { Entry("⚙", "Paramètres", "Profil en ligne, liste, lecture") { open(Route.Settings) } }
 }
 
+/** A row of "Plus" as on the Android phone: the icon in orange, the name and what it holds. */
 @Composable
 private fun Entry(icon: String, title: String, subtitle: String, onClick: () -> Unit) = Row(
-    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Panel).clickable(onClick = onClick).padding(16.dp),
+    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.Panel).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
     verticalAlignment = Alignment.CenterVertically,
 ) {
-    Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(Palette.AccentSoft), contentAlignment = Alignment.Center) {
-        Text(icon, fontSize = 20.sp, color = Palette.Accent)
-    }
-    Column(Modifier.weight(1f).padding(start = 14.dp)) {
-        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+    Text(icon, fontSize = 24.sp, color = Palette.Accent, modifier = Modifier.width(28.dp))
+    Column(Modifier.weight(1f).padding(start = 16.dp)) {
+        Text(title, fontWeight = FontWeight.Medium, fontSize = 17.sp, color = Palette.Text)
         Text(subtitle, color = Palette.TextDim, fontSize = 13.sp)
     }
-    Text("›", fontSize = 24.sp, color = Palette.TextDim)
+    Text("›", fontSize = 22.sp, color = Palette.TextDim)
 }
 
 /** A channel's line: logo, name, what is on (and its progress). */
@@ -144,14 +139,13 @@ internal fun FavoriteStar(core: AppCore, c: ChannelRow) {
 // ---- Favourites -------------------------------------------------------------------------------------------------
 
 @Composable
-internal fun FavoritesPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open: (Route) -> Unit, back: () -> Unit) {
+internal fun FavoritesPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open: (Route) -> Unit) {
     val changes by core.library.changes.collectAsState()
     val movies by produceState(emptyList<MovieRow>(), changes) { value = core.library.favoriteMovies().filter { it.m.playlistId == p.id } }
     val series by produceState(emptyList<SeriesRow>(), changes) { value = core.library.favoriteSeries().filter { it.s.playlistId == p.id } }
     val channels by produceState(emptyList<ChannelRow>(), changes) { value = core.library.favoriteChannelsAll().filter { it.ch.playlistId == p.id } }
     val scope = rememberCoroutineScope()
     LazyColumn(state = rememberList("favorites", ready = movies.isNotEmpty() || series.isNotEmpty() || channels.isNotEmpty()), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("Favoris", back) }
         if (movies.isEmpty() && series.isEmpty() && channels.isEmpty()) item {
             Text("Rien encore. Ajoute un film ou une série avec « + Ma liste » sur sa page, une chaîne avec ☆.",
                 color = Palette.TextDim, modifier = Modifier.padding(16.dp))
@@ -190,7 +184,7 @@ private const val FAVORITES = "★ Mes chaînes"
 
 /** The channels of a group (or Ma liste) with what is on; a channel opens its programmes. */
 @Composable
-internal fun GuidePage(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit, back: () -> Unit) {
+internal fun GuidePage(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
     val groups by produceState(emptyList<String>(), p.id) { value = listOf(FAVORITES) + core.library.groups(p.id, false).map { it.name } }
     val memory = LocalScroll.current
     var group by remember(p.id) { mutableStateOf(memory.values["guide"] as? String ?: FAVORITES) }
@@ -200,7 +194,6 @@ internal fun GuidePage(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit, 
         else core.library.channels(p.id, group, false, settings?.sort ?: "provider")
     }
     Column {
-        Header("Guide TV", back)
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(groups) { g -> FilterChip(selected = g == group, onClick = { group = g; memory.values["guide"] = g; memory.forget("guide:list") }, label = { Text(g, maxLines = 1) }) }
         }
@@ -218,7 +211,7 @@ internal fun GuidePage(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit, 
 
 /** A channel's programmes, day by day: the one on now plays live, a past one plays from the catch-up when the channel has it. */
 @Composable
-internal fun GuideChannelPage(core: AppCore, c: ChannelRow, player: VideoPlayer, back: () -> Unit) {
+internal fun GuideChannelPage(core: AppCore, c: ChannelRow, player: VideoPlayer) {
     val settings by core.settings.flow.collectAsState(null)
     val now = remember { nowMillis() }
     val catchup by produceState(false, c.ch.id) { value = core.resolver.canCatchup(c.ch) }
@@ -232,7 +225,7 @@ internal fun GuideChannelPage(core: AppCore, c: ChannelRow, player: VideoPlayer,
     val state = rememberLazyListState()
     LaunchedEffect(firstLive) { if (firstLive > 0) state.scrollToItem(firstLive + 1) }
     LazyColumn(state = state, contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.weight(1f)) { Header(c.ch.name, back) }; FavoriteStar(core, c) } }
+        item { Row(Modifier.fillMaxWidth().padding(end = 8.dp), horizontalArrangement = Arrangement.End) { FavoriteStar(core, c) } }
         when {
             list == null -> item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
             list.isEmpty() -> item { Text("Pas de programme pour cette chaîne dans le guide.", color = Palette.TextDim, modifier = Modifier.padding(16.dp)) }
@@ -246,9 +239,7 @@ internal fun GuideChannelPage(core: AppCore, c: ChannelRow, player: VideoPlayer,
                         scope.launch {
                             if (live) playChannel(core, player, c, pr.title)
                             else core.resolver.catchup(c.ch, pr)?.let { spec ->
-                                play(core, player, spec, pr.title, c.ch.name + " · " + dayLabel(pr.start) + " " + hm(pr.start), 0, c.ch.playlistId,
-                                    source = PlaySource("catchup", c.ch.playlistId, c.ch.uid, channelId = c.ch.id, programStart = pr.start,
-                                        programStop = pr.stop, programTitle = pr.title)) { _, _ -> }
+                                play(core, player, spec, pr.title, c.ch.name + " · " + dayLabel(pr.start) + " " + hm(pr.start), 0, c.ch.playlistId) { _, _ -> }
                             }
                         }
                     }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
@@ -271,7 +262,7 @@ internal fun GuideChannelPage(core: AppCore, c: ChannelRow, player: VideoPlayer,
 
 /** The games of the chosen sports (official calendar) and the channels of the playlist that show them, as on the TV. */
 @Composable
-internal fun SportsPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer, back: () -> Unit) {
+internal fun SportsPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
     val settings by core.settings.flow.collectAsState(null)
     val s = settings
     val prefs = s?.let { SportPrefs.of(it) }
@@ -283,7 +274,6 @@ internal fun SportsPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer, b
     }
     val scope = rememberCoroutineScope()
     LazyColumn(state = rememberList("sport", ready = games != null), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("Sport", back) }
         item {
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(SportsFunnel.sports, key = { it.id }) { sp ->
@@ -396,13 +386,12 @@ private fun size(bytes: Long): String = when {
 
 /** Films and episodes kept on the iPhone: progress, play, cancel, try again, delete. */
 @Composable
-internal fun DownloadsPage(core: AppCore, player: VideoPlayer, back: () -> Unit) {
+internal fun DownloadsPage(core: AppCore, player: VideoPlayer) {
     val downloads = LocalDownloads.current ?: return
     val list by remember { downloads.observe() }.collectAsState(null)
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf<com.lumentv.data.db.TransferEntity?>(null) }
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("Téléchargements", back) }
         val l = list
         if (l != null && l.isEmpty()) item {
             Text("Aucun téléchargement. Sur la page d'un film, « ⬇ Télécharger » ; pour un épisode, son menu ⋮. Les fichiers se lisent ensuite sans réseau.",
@@ -415,8 +404,7 @@ internal fun DownloadsPage(core: AppCore, player: VideoPlayer, back: () -> Unit)
                     val key = com.lumentv.data.repo.LibraryRepository.key(if (t.refKind == "mv") com.lumentv.data.db.HistoryKind.MOVIE else com.lumentv.data.db.HistoryKind.EPISODE, t.playlistId, t.refUid)
                     val h = core.library.history(key)
                     val from = h?.takeIf { it.durationMs > 0 && it.positionMs < it.durationMs * 0.95 }?.positionMs ?: 0
-                    play(core, player, com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + t.filePath, null, null, false), Featured.shortTitle(t.title), t.subtitle, from,
-                        source = PlaySource("file", transferId = t.id)) { pos, dur ->
+                    play(core, player, com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + t.filePath, null, null, false), Featured.shortTitle(t.title), t.subtitle, from) { pos, dur ->
                         core.scope.launch {
                             core.library.record(com.lumentv.data.db.HistoryEntity(key, if (t.refKind == "mv") com.lumentv.data.db.HistoryKind.MOVIE else com.lumentv.data.db.HistoryKind.EPISODE,
                                 t.playlistId, t.refUid, t.title, t.subtitle, null, t.seriesUid, nowMillis(), if (dur > 0 && pos > dur * 0.95) dur else pos, dur))

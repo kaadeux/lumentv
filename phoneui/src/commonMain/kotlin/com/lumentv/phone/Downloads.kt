@@ -29,15 +29,11 @@ interface FileDownloader {
  * Films and episodes kept on the device to watch without network, as on the TV and the phone (Téléchargés): the list
  * lives in the shared database (table transfers); the platform downloads and reports back here.
  */
-class DownloadManager(
-    private val core: AppCore,
-    /** The platform's downloader picks the file's place itself (Android's TransferService, its own folder or a USB drive). */
-    private val platformPaths: Boolean = false,
-) {
+class DownloadManager(private val core: AppCore) {
     var downloader: FileDownloader? = null
 
     init {
-        // The queue goes on whatever ends a download (the platform may write the table itself, as on Android).
+        // The queue goes on whatever ends a download (done, failed, cancelled or deleted).
         core.scope.launch {
             observe().map { l -> l.none { it.status == TransferStatus.RUNNING } && l.any { it.status == TransferStatus.SCHEDULED } }
                 .distinctUntilChanged().collect { if (it) next() }
@@ -77,8 +73,8 @@ class DownloadManager(
                 db.transfers().update(t.copy(status = TransferStatus.FAILED, error = "Le titre n'est plus dans la liste."))
                 return@withLock
             }
-            val name = t.filePath ?: if (platformPaths) "" else fileName(t, s.url)
-            db.transfers().update(t.copy(status = TransferStatus.RUNNING, filePath = name.ifEmpty { t.filePath }, error = null))
+            val name = t.filePath ?: fileName(t, s.url)
+            db.transfers().update(t.copy(status = TransferStatus.RUNNING, filePath = name, error = null))
             downloader?.start(t.id, s.url, s.userAgent, name)
         }
         // A failed start (title gone): try the one after.

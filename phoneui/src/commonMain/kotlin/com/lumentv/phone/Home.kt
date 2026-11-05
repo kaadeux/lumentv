@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,11 +21,9 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,7 +41,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -116,7 +112,7 @@ internal fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
     }
     HomeList(core, "Films", heroes, shelves, onCategories = { open(Route.Categories(false)) },
         resume = { ResumeRow(core, p, HistoryKind.MOVIE) { h -> scope.launch { core.library.movieByUid(p.id, h.uid)?.let { open(Route.Movie(it)) } } } },
-        row = { items -> items(items, key = { it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } } } })
+        row = { items -> items(items, key = { it.m.id }) { m -> Box(Modifier.width(104.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } } } })
 }
 
 @Composable
@@ -143,7 +139,7 @@ internal fun SeriesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
     }
     HomeList(core, "Séries", heroes, shelves, onCategories = { open(Route.Categories(true)) },
         resume = { ResumeRow(core, p, HistoryKind.EPISODE) { h -> scope.launch { h.parentUid?.let { core.library.seriesByUid(p.id, it) }?.let { open(Route.Series(it)) } } } },
-        row = { items -> items(items, key = { it.s.id }) { s -> Box(Modifier.width(110.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } } } })
+        row = { items -> items(items, key = { it.s.id }) { s -> Box(Modifier.width(104.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } } } })
 }
 
 /** Plays a film from the banner: where it was left, else from the start; the position is kept on closing. */
@@ -152,8 +148,7 @@ private fun playMovie(core: AppCore, player: VideoPlayer, scope: kotlinx.corouti
     val key = LibraryRepository.key(HistoryKind.MOVIE, m.playlistId, m.uid)
     val h = core.library.history(key)
     val from = h?.takeIf { it.durationMs > 0 && it.positionMs in 60_000 until (it.durationMs * 0.95).toLong() }?.positionMs ?: 0
-    play(core, player, core.resolver.movie(m), Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, from, m.playlistId,
-        source = PlaySource("movie", m.playlistId, m.uid)) { pos, dur ->
+    play(core, player, core.resolver.movie(m), Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, from, m.playlistId) { pos, dur ->
         scope.launch {
             val done = dur > 0 && pos > dur * 0.95
             core.library.record(HistoryEntity(key, HistoryKind.MOVIE, m.playlistId, m.uid, m.name, null, m.poster, null, nowMillis(), if (done) dur else pos, dur))
@@ -165,25 +160,27 @@ private fun playMovie(core: AppCore, player: VideoPlayer, scope: kotlinx.corouti
 private fun <T> HomeList(
     core: AppCore, title: String, heroes: List<Hero>, shelves: List<Shelf<T>>?, onCategories: () -> Unit,
     resume: @Composable () -> Unit, row: androidx.compose.foundation.lazy.LazyListScope.(List<T>) -> Unit,
-) = LazyColumn(state = rememberList("home:$title", ready = shelves != null)) {
-    item {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Text("Catégories ›", color = Palette.Accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onCategories).padding(8.dp))
-        }
-    }
+) = LazyColumn(state = rememberList("home:$title", ready = shelves != null), contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)) {
     if (shelves == null) item { Box(Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
     if (heroes.isNotEmpty()) item { Banner(core, heroes) }
+    // The Android phone's shortcuts under the banner.
+    item(key = "actions") {
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item { PhoneChip("Catégories  ▾", onClick = onCategories) }
+            item { PhoneChip(if (title == "Séries") "Toutes les séries" else "Tous les films", onClick = onCategories) }
+        }
+    }
     item { resume() }
     shelves.orEmpty().forEach { s ->
         item(key = "t:" + s.title) {
-            Text(s.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp))
+            Text(s.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 16.dp, top = 14.dp))
         }
         item(key = "r:" + s.title) {
-            LazyRow(state = rememberList("row:$title:${s.title}"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) { row(s.items) }
+            LazyRow(state = rememberList("row:$title:${s.title}"), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) { row(s.items) }
         }
     }
-    item { Spacer(Modifier.height(24.dp)) }
 }
 
 /** The banner: the first titles of the top row, one after the other every 6 s, with TMDB's logo and the buttons. */
@@ -214,9 +211,9 @@ private fun Banner(core: AppCore, heroes: List<Hero>) {
             val logo by produceState(core.logos.cached(h.series, h.tmdb, h.title, h.year), h.key) {
                 value = withContext(IoDispatcher) { runCatching { core.logos.info(h.series, h.tmdb, h.title, h.year) }.getOrNull() }
             }
-            Box(Modifier.fillMaxWidth().aspectRatio(4f / 5f).clip(RoundedCornerShape(20.dp)).background(Palette.Panel).clickable(onClick = h.open)) {
+            Box(Modifier.fillMaxWidth().aspectRatio(4f / 5f).clip(RoundedCornerShape(18.dp)).background(Palette.Panel).clickable(onClick = h.open)) {
                 AsyncImage(logo?.poster ?: h.image, h.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Palette.Background.copy(alpha = 0.95f))))
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.35f to Color.Transparent, 1f to Palette.Background)))
                 Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     val l = logo?.logo
                     if (l != null) AsyncImage(l, h.title, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth(0.75f).height(70.dp))
@@ -224,8 +221,8 @@ private fun Banner(core: AppCore, heroes: List<Hero>) {
                     val meta = listOfNotNull(logo?.rating?.let { "★ " + com.lumentv.core.oneDecimal(it) }, h.meta).joinToString("  ·  ")
                     if (meta.isNotEmpty()) Text(meta, color = Palette.Text.copy(alpha = 0.85f), fontSize = 14.sp, maxLines = 1, modifier = Modifier.padding(top = 8.dp))
                     Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (h.play != null) Button(onClick = h.play, modifier = Modifier.weight(1f)) { Text("▶  Lecture") }
-                        OutlinedButton(onClick = h.open, modifier = Modifier.weight(1f)) { Text(if (h.series) "Épisodes" else "ⓘ  Infos") }
+                        if (h.play != null) PhoneButton("▶  Lecture", primary = true, modifier = Modifier.weight(1f), onClick = h.play)
+                        PhoneButton(if (h.series) "▶  Épisodes" else "ⓘ  Infos", primary = h.play == null, modifier = Modifier.weight(1f), onClick = h.open)
                     }
                 }
             }
@@ -235,7 +232,7 @@ private fun Banner(core: AppCore, heroes: List<Hero>) {
                 val on = i == pager.currentPage
                 val width by animateDpAsState(if (on) 22.dp else 6.dp, label = "dot")
                 Box(Modifier.size(width, 6.dp).clip(CircleShape).background(Palette.TextDim.copy(alpha = 0.5f))
-                    .then(if (on) Modifier.drawBehind { drawRect(Palette.Accent, size = size.copy(width = size.width * progress.value)) } else Modifier))
+                    .then(if (on) Modifier.drawBehind { drawRect(Palette.Text, size = size.copy(width = size.width * progress.value)) } else Modifier))
             }
         }
     }
@@ -253,7 +250,7 @@ private fun day(t: Long): String = Instant.fromEpochMilliseconds(t).toLocalDateT
 
 /** The online profile (favourites, history, resume, ratings shared with the TV, the phone and the PC) and the list. */
 @Composable
-internal fun SettingsPage(core: AppCore, p: PlaylistEntity, back: () -> Unit) {
+internal fun SettingsPage(core: AppCore, p: PlaylistEntity) {
     val settings by core.settings.flow.collectAsState(null)
     val state by core.profile.state.collectAsState()
     val busy by core.playlists.busy.collectAsState()
@@ -263,7 +260,6 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, back: () -> Unit) {
     var signing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LazyColumn(state = rememberList("settings"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Header("Réglages", back) }
         item {
             Section("Profil en ligne") {
                 when {

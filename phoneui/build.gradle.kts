@@ -26,13 +26,13 @@ kotlin {
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material3)
+            // The Android phone's icons (tabs, title bar).
+            implementation("org.jetbrains.compose.material:material-icons-core:1.7.3")
             implementation(compose.ui)
             implementation("io.coil-kt.coil3:coil-compose:3.0.4")
         }
         androidMain.dependencies {
             implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.4")
-            // The system's back gesture (PlatformBackHandler).
-            implementation("androidx.activity:activity-compose:1.9.3")
         }
         iosMain.dependencies {
             implementation("io.coil-kt.coil3:coil-network-ktor3:3.0.4")

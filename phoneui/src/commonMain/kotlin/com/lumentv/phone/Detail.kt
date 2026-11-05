@@ -96,7 +96,7 @@ private fun clockOf(ms: Long): String {
 // ---- A film ------------------------------------------------------------------------------------------------------
 
 @Composable
-internal fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer, back: () -> Unit) {
+internal fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer) {
     val history by core.library.observeHistory(300).collectAsState(emptyList())
     val changes by core.library.changes.collectAsState()
     val ratings by core.library.observeRatings().collectAsState(emptyList())
@@ -129,9 +129,7 @@ internal fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer, back: 
         val spec = dl?.takeIf { it.status == TransferStatus.DONE && it.filePath != null }
             ?.let { com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + it.filePath, null, null, false) } ?: core.resolver.movie(m)
         val fromFile = spec.url.startsWith(DownloadManager.SCHEME)
-        val source = if (fromFile) PlaySource("file", transferId = dl!!.id) else PlaySource("movie", m.playlistId, m.uid)
-        play(core, player, spec, Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, fromMs, m.playlistId.takeIf { !fromFile },
-            source = source) { pos, dur ->
+        play(core, player, spec, Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, fromMs, m.playlistId.takeIf { !fromFile }) { pos, dur ->
             core.scope.launch {
                 val done = dur > 0 && pos > dur * 0.95
                 core.library.record(HistoryEntity(key, HistoryKind.MOVIE, m.playlistId, m.uid, m.name, null, m.poster, null, nowMillis(), if (done) dur else pos, dur))
@@ -141,7 +139,7 @@ internal fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer, back: 
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp)) {
         item(key = "top") {
-            DetailTop(info?.backdrop ?: m.poster, m.name, t?.logo, back)
+            DetailTop(info?.backdrop ?: m.poster, m.name, t?.logo)
             Meta(listOfNotNull(ratingText(t, m.rating), year?.toString(), info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }))
             info?.genre?.takeIf { it.isNotBlank() }?.let {
                 Text(it.split(',').take(3).joinToString(" • ") { g -> g.trim() }, fontSize = 13.sp, color = Palette.TextDim,
@@ -207,7 +205,7 @@ private fun nextEpisode(eps: List<EpisodeEntity>?, progress: Map<String, History
     }
 
 @Composable
-internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player: VideoPlayer, back: () -> Unit) {
+internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player: VideoPlayer) {
     val changes by core.library.changes.collectAsState()
     val series by produceState(row, row.s.uid, changes) { value = core.library.seriesByUid(row.s.playlistId, row.s.uid) ?: row }
     val s = series.s
@@ -266,8 +264,6 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
                 onNext = after?.let { n -> { start(n, 0) } },
                 autoNext = core.settings.current().autoNext,
             )
-            request.source = if (downloaded != null) PlaySource("file", transferId = downloaded.id)
-                else PlaySource("episode", e.playlistId, e.uid, seriesUid = s.uid)
             Playback.loadSkips(core, request, s.tmdb, e.season, e.episode)
             Playback.start(core, player, request, e.playlistId.takeIf { file == null })
         }
@@ -289,7 +285,7 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp)) {
         item(key = "top") {
-            DetailTop(s.backdrop ?: s.cover, s.name, t?.logo, back)
+            DetailTop(s.backdrop ?: s.cover, s.name, t?.logo)
             Meta(listOfNotNull(ratingText(t, s.rating), s.year?.take(4),
                 if (seasons.isNotEmpty()) "${seasons.size} saison" + (if (seasons.size > 1) "s" else "") else null))
         }
@@ -381,14 +377,11 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
 
 /** The top of a page: the title's picture fading into the page, its logo (or name) over the bottom of it. */
 @Composable
-private fun DetailTop(image: String?, title: String, logo: String?, back: () -> Unit) {
+private fun DetailTop(image: String?, title: String, logo: String?) {
     Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).clip(RoundedCornerShape(16.dp))) {
         Backdrop(image, Modifier.fillMaxSize(), fade = 0.25f)
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
             Logo(title, logo, 72.dp, 26)
-        }
-        Box(Modifier.padding(10.dp).size(38.dp).clip(CircleShape).background(Color(0x66000000)).clickable(onClick = back), contentAlignment = Alignment.Center) {
-            Text("‹", fontSize = 26.sp, color = Color.White, modifier = Modifier.padding(bottom = 3.dp))
         }
     }
 }
@@ -449,7 +442,7 @@ private fun DownloadAction(t: TransferEntity?, onClick: () -> Unit) = when (t?.s
 
 /** A glassy pill: seasons. */
 @Composable
-private fun PhoneChip(label: String, selected: Boolean = false, onClick: () -> Unit) {
+internal fun PhoneChip(label: String, selected: Boolean = false, onClick: () -> Unit) {
     val shape = RoundedCornerShape(20.dp)
     Box(Modifier.height(36.dp).clip(shape).background(if (selected) Color(0xE6F2F2F2) else Color(0x26FFFFFF))
         .border(1.dp, if (selected) Color.Transparent else Color(0x1FFFFFFF), shape).clickable(onClick = onClick)
@@ -495,11 +488,11 @@ internal fun ProgressLine(fraction: Float, modifier: Modifier = Modifier) {
     }
 }
 
-private class Option(val label: String, val checked: Boolean = false, val onClick: () -> Unit)
+internal class Option(val label: String, val checked: Boolean = false, val onClick: () -> Unit)
 
 /** A short menu (versions of a film, an episode's actions). */
 @Composable
-private fun Options(title: String, subtitle: String?, options: List<Option>, onDismiss: () -> Unit) = AlertDialog(
+internal fun Options(title: String, subtitle: String?, options: List<Option>, onDismiss: () -> Unit) = AlertDialog(
     onDismissRequest = onDismiss, containerColor = Palette.Panel,
     title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
     text = {
