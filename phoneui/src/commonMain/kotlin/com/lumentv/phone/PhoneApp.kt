@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.lumentv.AppCore
+import com.lumentv.core.Featured
 import com.lumentv.core.SecretBox
 import com.lumentv.core.nowMillis
 import com.lumentv.data.db.ChannelRow
@@ -152,7 +153,8 @@ private fun FirstLoad(core: AppCore, p: PlaylistEntity) {
     LaunchedEffect(p.id, attempt) {
         error = null
         val r = core.playlists.refresh(p.id)
-        if (r.ok) core.epg.refresh(p.id) else error = r.message
+        // The guide next, in the app's scope: this screen goes away as soon as the list is in.
+        if (r.ok) core.scope.launch { core.epg.refresh(p.id) } else error = r.message
     }
     Centered {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -232,18 +234,25 @@ private fun Poster(url: String?, title: String, progress: Float? = null, onClick
 
 private const val RECENT = "Ajoutés récemment"
 
+/**
+ * As on the TV, the phone and the PC (Featured): one poster per title, the copies of a film ("4K MULTI", "FHD VF",
+ * "VOSTFR"…) behind it, and the Arabic copies and categories left out.
+ */
+private fun <T> oneEach(list: List<T>, name: (T) -> String, category: (T) -> String): List<T> =
+    list.filter { !Featured.foreign(name(it), category(it)) }.distinctBy { Featured.baseTitle(name(it)) }
+
 /** "Reprendre la lecture": films and episodes started and not finished. */
 @Composable
 private fun ResumeRow(core: AppCore, p: PlaylistEntity, kind: String, onOpen: (HistoryEntity) -> Unit) {
     val history by core.library.observeHistory(200).collectAsState(emptyList())
     val items = history.filter { it.playlistId == p.id && it.kind == kind && it.durationMs > 0 && it.positionMs < it.durationMs * 0.95 && it.positionMs > 60_000 }
-        .distinctBy { it.parentUid ?: it.uid }.take(20)
+        .distinctBy { it.parentUid ?: Featured.baseTitle(it.title) }.take(20)
     if (items.isEmpty()) return
     Text("Reprendre la lecture", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp))
     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(items) { h ->
             Box(Modifier.width(110.dp)) {
-                Poster(h.image, h.subtitle?.let { "${h.title} · $it" } ?: h.title, h.positionMs.toFloat() / h.durationMs) { onOpen(h) }
+                Poster(h.image, Featured.shortTitle(h.title) + (h.subtitle?.substringBefore(" · ")?.let { " · $it" } ?: ""), h.positionMs.toFloat() / h.durationMs) { onOpen(h) }
             }
         }
     }
@@ -251,10 +260,12 @@ private fun ResumeRow(core: AppCore, p: PlaylistEntity, kind: String, onOpen: (H
 
 @Composable
 private fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open: (Route) -> Unit) {
-    val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) { value = listOf(RECENT) + core.library.movieCategories(p.id, false).map { it.category } }
+    val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) {
+        value = listOf(RECENT) + core.library.movieCategories(p.id, false).map { it.category }.filter { !Featured.foreign("", it) }
+    }
     var cat by remember(p.id) { mutableStateOf(RECENT) }
     val movies by produceState(emptyList<MovieRow>(), p.id, cat, p.lastRefresh) {
-        value = if (cat == RECENT) core.library.recentMovies(p.id) else core.library.movies(p.id, cat)
+        value = oneEach(if (cat == RECENT) core.library.recentMovies(p.id) else core.library.movies(p.id, cat), { it.m.name }, { it.m.category })
     }
     val scope = rememberCoroutineScope()
     Column {
@@ -262,17 +273,19 @@ private fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, op
         ResumeRow(core, p, HistoryKind.MOVIE) { h -> scope.launch { core.library.movieByUid(p.id, h.uid)?.let { open(Route.Movie(it)) } } }
         Chips(cats, cat) { cat = it }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(movies, key = { it.m.id }) { m -> Poster(m.m.poster, m.m.name) { open(Route.Movie(m)) } }
+            items(movies, key = { it.m.id }) { m -> Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } }
         }
     }
 }
 
 @Composable
 private fun SeriesHome(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
-    val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) { value = listOf(RECENT) + core.library.seriesCategories(p.id, false).map { it.category } }
+    val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) {
+        value = listOf(RECENT) + core.library.seriesCategories(p.id, false).map { it.category }.filter { !Featured.foreign("", it) }
+    }
     var cat by remember(p.id) { mutableStateOf(RECENT) }
     val series by produceState(emptyList<SeriesRow>(), p.id, cat, p.lastRefresh) {
-        value = if (cat == RECENT) core.library.recentSeries(p.id) else core.library.series(p.id, cat)
+        value = oneEach(if (cat == RECENT) core.library.recentSeries(p.id) else core.library.series(p.id, cat), { it.s.name }, { it.s.category })
     }
     val scope = rememberCoroutineScope()
     Column {
@@ -280,7 +293,7 @@ private fun SeriesHome(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) 
         ResumeRow(core, p, HistoryKind.EPISODE) { h -> scope.launch { h.parentUid?.let { core.library.seriesByUid(p.id, it) }?.let { open(Route.Series(it)) } } }
         Chips(cats, cat) { cat = it }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(series, key = { it.s.id }) { s -> Poster(s.s.cover, s.s.name) { open(Route.Series(s)) } }
+            items(series, key = { it.s.id }) { s -> Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } }
         }
     }
 }
@@ -294,15 +307,22 @@ private fun play(core: AppCore, player: VideoPlayer, spec: StreamSpec, title: St
 
 @Composable
 private fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer, back: () -> Unit) {
-    val m = row.m
-    val key = LibraryRepository.key(HistoryKind.MOVIE, m.playlistId, m.uid)
     val history by core.library.observeHistory(300).collectAsState(emptyList())
+    // The copies of the film (4K MULTI, FHD VF, VOSTFR…), without the Arabic ones; the one watched last first chosen.
+    val versions by produceState(listOf(row), row.m.id) {
+        value = core.library.versions(row.m).filter { !Featured.foreign(it.m.name, it.m.category) }.ifEmpty { listOf(row) }
+    }
+    var picked by remember(row.m.id) { mutableStateOf<String?>(null) }
+    val watched = versions.mapNotNull { v -> history.firstOrNull { it.key == LibraryRepository.key(HistoryKind.MOVIE, v.m.playlistId, v.m.uid) } }
+        .maxByOrNull { it.watchedAt }
+    val m = (versions.firstOrNull { it.m.uid == (picked ?: watched?.uid) } ?: row).m
+    val key = LibraryRepository.key(HistoryKind.MOVIE, m.playlistId, m.uid)
     val h = history.firstOrNull { it.key == key }
     val info by produceState(core.artwork.cached(m), m.id) { value = core.artwork.movie(m) }
     val scope = rememberCoroutineScope()
     fun start(fromMs: Long) = scope.launch {
         val spec = core.resolver.movie(m)
-        play(core, player, spec, m.name, null, fromMs) { pos, dur ->
+        play(core, player, spec, Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, fromMs) { pos, dur ->
             scope.launch {
                 val done = dur > 0 && pos > dur * 0.95
                 core.library.record(HistoryEntity(key, HistoryKind.MOVIE, m.playlistId, m.uid, m.name, null, m.poster, null,
@@ -311,10 +331,10 @@ private fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer, back: (
         }
     }
     LazyColumn {
-        item { Header(m.name, back) }
+        item { Header(Featured.shortTitle(m.name), back) }
         item {
             Row(Modifier.padding(horizontal = 16.dp)) {
-                Box(Modifier.width(120.dp)) { Poster(m.poster, m.name) {} }
+                Box(Modifier.width(120.dp)) { Poster(m.poster, Featured.shortTitle(m.name)) {} }
                 Column(Modifier.padding(start = 16.dp)) {
                     listOfNotNull(m.year, m.rating?.takeIf { it != "0" }?.let { "★ $it" }, info?.durationSecs?.takeIf { it > 0 }?.let { minutes(it * 1000L) })
                         .joinToString(" · ").takeIf { it.isNotEmpty() }?.let { Text(it, color = Palette.TextDim) }
@@ -325,6 +345,15 @@ private fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer, back: (
                         Button(onClick = { start(resume.positionMs) }) { Text("▶ Reprendre (reste ${minutes(resume.durationMs - resume.positionMs)})") }
                         OutlinedButton(onClick = { start(0) }) { Text("Depuis le début") }
                     } else Button(onClick = { start(0) }) { Text("▶ Lire") }
+                }
+            }
+        }
+        if (versions.size > 1) item {
+            Text("Version", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 6.dp))
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(versions, key = { it.m.uid }) { v ->
+                    FilterChip(selected = v.m.uid == m.uid, onClick = { picked = v.m.uid },
+                        label = { Text(Featured.versionLabel(v.m.name) + (Featured.rating(v.m.rating)?.let { "  ★ $it" } ?: ""), maxLines = 1) })
                 }
             }
         }
@@ -362,10 +391,10 @@ private fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player:
         }
     }
     LazyColumn {
-        item { Header(s.name, back) }
+        item { Header(Featured.shortTitle(s.name), back) }
         item {
             Row(Modifier.padding(horizontal = 16.dp)) {
-                Box(Modifier.width(120.dp)) { Poster(s.cover, s.name) {} }
+                Box(Modifier.width(120.dp)) { Poster(s.cover, Featured.shortTitle(s.name)) {} }
                 Column(Modifier.padding(start = 16.dp)) {
                     listOfNotNull(s.year, s.rating?.takeIf { it != "0" }?.let { "★ $it" }).joinToString(" · ").takeIf { it.isNotEmpty() }
                         ?.let { Text(it, color = Palette.TextDim) }

@@ -29,11 +29,13 @@ struct LumenTVApp: App {
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
     /// The player turns sideways.
-    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask { .allButUpsideDown }
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        Orientation.landscapeOnly ? .landscape : .allButUpsideDown
+    }
 }
 
 /// The Kotlin app as a SwiftUI view.
 struct ComposeHost: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UIViewController { MainKt.MainViewController(player: KSVideoPlayer.shared) }
+    func makeUIViewController(context: Context) -> UIViewController { MainKt.MainViewController(player: LumenPlayer.shared) }
     func updateUIViewController(_ controller: UIViewController, context: Context) {}
 }

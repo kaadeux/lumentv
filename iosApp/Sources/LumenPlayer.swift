@@ -4,8 +4,8 @@ import SwiftUI
 import UIKit
 
 /// The shared app's player on the iPhone (VideoPlayer in :phoneui): KSPlayer full screen over the app.
-final class KSVideoPlayer: NSObject, VideoPlayer {
-    static let shared = KSVideoPlayer()
+final class LumenPlayer: NSObject, VideoPlayer {
+    static let shared = LumenPlayer()
 
     func play(request: PlayRequest) {
         DispatchQueue.main.async {
