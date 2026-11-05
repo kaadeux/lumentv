@@ -55,12 +55,12 @@ jobs:
           LUMEN_TMDB_KEY: ${{ secrets.LUMEN_TMDB_KEY }}
           LUMEN_SYNC_URL: ${{ secrets.LUMEN_SYNC_URL }}
         run: |
-          set -o pipefail
           xcodebuild -project LumenTV.xcodeproj -scheme LumenTV -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             -clonedSourcePackagesDirPath build/SourcePackages \
             LUMEN_TMDB_KEY="$LUMEN_TMDB_KEY" LUMEN_SYNC_URL="$LUMEN_SYNC_URL" \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -n 200
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > build.log 2>&1             || { grep -E "error:" -A4 build.log | head -120; exit 1; }
+          tail -n 20 build.log
 
       - name: IPA
         working-directory: iosApp
