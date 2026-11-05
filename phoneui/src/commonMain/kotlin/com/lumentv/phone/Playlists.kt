@@ -24,6 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -171,16 +173,18 @@ internal fun PlaylistsSection(core: AppCore, active: PlaylistEntity, open: (Rout
     var deleting by remember { mutableStateOf<PlaylistEntity?>(null) }
     Section("Mes listes") {
         list.forEach { p ->
-            Row(Modifier.fillMaxWidth().clickable { menu = p }.padding(vertical = 4.dp)) {
+            Row(Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).background(Palette.PanelHigh)
+                .clickable { menu = p }.padding(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(p.name, fontWeight = if (p.id == active.id) FontWeight.Bold else FontWeight.Normal)
+                    Text(p.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     Text(listOfNotNull(typeLabel(p.type), if (p.id in busy) "actualisation…" else null,
                         p.lastError?.takeIf { it.isNotBlank() }?.let { "erreur" }).joinToString(" · "),
                         color = Palette.TextDim, fontSize = 13.sp)
                     if (p.inClear()) Text("⚠️  Identifiants non chiffrés", color = Palette.Danger, fontSize = 13.sp)
                     else Text("🔒  Identifiants chiffrés", color = Palette.TextDim, fontSize = 13.sp)
                 }
-                if (p.id == active.id) Text("✓ Active", color = Palette.Accent, fontSize = 14.sp)
+                if (p.id == active.id) Text("Active", color = Palette.Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).background(Palette.AccentSoft).padding(horizontal = 8.dp, vertical = 3.dp))
                 else Text("⋮", color = Palette.TextDim, fontSize = 18.sp)
             }
         }

@@ -259,7 +259,7 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
     var error by remember { mutableStateOf<String?>(null) }
     var signing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LazyColumn(state = rememberList("settings"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(state = rememberList("settings"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         item {
             Section("Profil en ligne") {
                 when {
@@ -270,16 +270,17 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
                         ExactField(name, { name = it }, "Nom du profil")
                         ExactField(pass, { pass = it }, "Phrase secrète", secret = true)
                         error?.let { Text(it, color = Palette.Danger) }
-                        Button(enabled = !signing && name.isNotBlank() && pass.isNotBlank(), onClick = {
+                        PhoneButton(if (signing) "Connexion…" else "Se connecter", primary = true, modifier = Modifier.fillMaxWidth()) {
+                            if (signing || name.isBlank() || pass.isBlank()) return@PhoneButton
                             signing = true; error = null
                             scope.launch {
                                 core.profile.signIn(name.trim(), pass).onFailure { error = it.message ?: "Connexion impossible." }
                                 signing = false
                             }
-                        }, modifier = Modifier.fillMaxWidth()) { Text(if (signing) "Connexion…" else "Se connecter") }
+                        }
                     }
                     else -> {
-                        Text("Profil « ${state.name} »", fontWeight = FontWeight.SemiBold)
+                        Text(state.name.orEmpty(), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                         Text(when {
                             state.syncing -> "Synchronisation…"
                             state.error != null -> state.error!!
@@ -287,8 +288,8 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
                             else -> "Pas encore synchronisé"
                         }, color = if (state.error != null) Palette.Danger else Palette.TextDim)
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(onClick = { scope.launch { core.profile.syncNow() } }) { Text("Synchroniser") }
-                            OutlinedButton(onClick = { core.profile.signOut() }) { Text("Se déconnecter") }
+                            PhoneButton("Synchroniser", primary = true, modifier = Modifier.weight(1f)) { scope.launch { core.profile.syncNow() } }
+                            PhoneButton("Se déconnecter", modifier = Modifier.weight(1f)) { core.profile.signOut() }
                         }
                     }
                 }
@@ -296,21 +297,23 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
         }
         item {
             Section("Liste active") {
-                Text(p.name, fontWeight = FontWeight.SemiBold)
-                Text(listOf("${p.channelCount} chaînes", "${p.movieCount} films", "${p.seriesCount} séries").joinToString(" · "), color = Palette.TextDim, fontSize = 14.sp)
+                Text(p.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Stat("${p.channelCount}", "chaînes", Modifier.weight(1f))
+                    Stat("${p.movieCount}", "films", Modifier.weight(1f))
+                    Stat("${p.seriesCount}", "séries", Modifier.weight(1f))
+                }
                 if (p.lastRefresh > 0) Text("Actualisée le " + day(p.lastRefresh), color = Palette.TextDim, fontSize = 14.sp)
                 p.accountInfo?.let { Text(it, color = Palette.TextDim, fontSize = 14.sp) }
                 Text("Rechargement automatique", color = Palette.TextDim, fontSize = 14.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(0 to "Jamais", 12 to "12 h", 24 to "24 h", 48 to "48 h").forEach { (h, label) ->
-                        androidx.compose.material3.FilterChip(selected = p.refreshHours == h, label = { Text(label) }, onClick = {
-                            core.scope.launch { core.playlists.save(p.copy(refreshHours = h)) }
-                        })
+                        PhoneChip(label, selected = p.refreshHours == h) { core.scope.launch { core.playlists.save(p.copy(refreshHours = h)) } }
                     }
                 }
-                Button(enabled = p.id !in busy, onClick = {
-                    core.scope.launch { if (core.playlists.refresh(p.id).ok) core.epg.refresh(p.id) }
-                }) { Text(if (p.id in busy) "Actualisation…" else "Recharger la liste") }
+                PhoneButton(if (p.id in busy) "Actualisation…" else "Recharger la liste", modifier = Modifier.fillMaxWidth()) {
+                    if (p.id !in busy) core.scope.launch { if (core.playlists.refresh(p.id).ok) core.epg.refresh(p.id) }
+                }
             }
         }
         item { PlaylistsSection(core, p, open) }
@@ -319,8 +322,8 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
             // What the internet provider can still see (as on the TV): encrypted names, HTTPS where the server allows it.
             val (title, detail) = remember { com.lumentv.core.HttpsUpgrade.summary() }
             Section("Confidentialité vis-à-vis du FAI") {
-                Text(title, fontWeight = FontWeight.SemiBold)
-                Text(detail, color = Palette.TextDim, fontSize = 14.sp)
+                Text((if (title == "Partielle") "⚠️  " else "🛡️  ") + title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                detail.split(" · ").forEach { Text("•  $it", color = Palette.TextDim, fontSize = 14.sp) }
                 Text("Le moteur vidéo FFmpeg (MKV, direct en TS) peut encore demander le nom du serveur au DNS de la box.",
                     color = Palette.TextDim, fontSize = 13.sp)
             }
@@ -336,9 +339,9 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
                 Text("Langue audio", color = Palette.TextDim, fontSize = 14.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("fr" to "Français", "en" to "Anglais").forEach { (code, label) ->
-                        androidx.compose.material3.FilterChip(selected = (settings?.audioLang?.ifBlank { "fr" } ?: "fr") == code, label = { Text(label) }, onClick = {
+                        PhoneChip(label, selected = (settings?.audioLang?.ifBlank { "fr" } ?: "fr") == code) {
                             core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.audioLang, code) }
-                        })
+                        }
                     }
                 }
                 Text("Sous-titres", color = Palette.TextDim, fontSize = 14.sp)
@@ -346,12 +349,12 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
                     val on = settings?.subtitlesOn ?: false
                     val lang = settings?.subtitleLang?.ifBlank { "fr" } ?: "fr"
                     listOf(Triple(false, "fr", "Forcés seuls"), Triple(true, "fr", "Français"), Triple(true, "en", "Anglais")).forEach { (wantOn, code, label) ->
-                        androidx.compose.material3.FilterChip(selected = on == wantOn && (!wantOn || lang == code), label = { Text(label) }, onClick = {
+                        PhoneChip(label, selected = on == wantOn && (!wantOn || lang == code)) {
                             core.scope.launch {
                                 core.settings.set(com.lumentv.data.settings.Keys.subsOn, wantOn)
                                 if (wantOn) core.settings.set(com.lumentv.data.settings.Keys.subLang, code)
                             }
-                        })
+                        }
                     }
                 }
             }
@@ -361,12 +364,12 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
                 Text("Jours de programmes gardés", color = Palette.TextDim, fontSize = 14.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(1, 3, 7).forEach { d ->
-                        androidx.compose.material3.FilterChip(selected = settings?.epgDays == d, label = { Text("$d jour" + if (d > 1) "s" else "") }, onClick = {
+                        PhoneChip("$d jour" + if (d > 1) "s" else "", selected = settings?.epgDays == d) {
                             core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.epgDays, d) }
-                        })
+                        }
                     }
                 }
-                OutlinedButton(onClick = { core.scope.launch { core.epg.refresh(p.id) } }) { Text("Recharger le guide") }
+                PhoneButton("Recharger le guide", modifier = Modifier.fillMaxWidth()) { core.scope.launch { core.epg.refresh(p.id) } }
             }
         }
         item {
@@ -377,9 +380,9 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
             Section("Stockage") {
                 Text("Cache des images et de TMDB : " + (bytes?.let { "${it / 1_000_000} Mo" } ?: "…"), color = Palette.TextDim, fontSize = 14.sp)
                 Text("Les téléchargements, la liste et le guide ne sont pas touchés.", color = Palette.TextDim, fontSize = 12.sp)
-                OutlinedButton(onClick = {
+                PhoneButton("Vider le cache", modifier = Modifier.fillMaxWidth()) {
                     core.scope.launch { withContext(IoDispatcher) { clearCaches(context) }; refresh++ }
-                }) { Text("Vider le cache") }
+                }
             }
         }
         item { Text("Lumen TV pour iPhone", color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
@@ -396,10 +399,25 @@ internal fun Toggle(title: String, subtitle: String, on: Boolean, onChange: (Boo
 }
 
 @Composable
-internal fun Section(title: String, content: @Composable () -> Unit) = Column(
-    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(16.dp),
-    verticalArrangement = Arrangement.spacedBy(10.dp),
+internal fun Section(title: String, content: @Composable () -> Unit) = Column(Modifier.fillMaxWidth()) {
+    Text(title.uppercase(), color = Palette.TextDim, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.8.sp,
+        modifier = Modifier.padding(start = 6.dp, bottom = 8.dp))
+    SectionCard(content)
+}
+
+/** A big number and what it counts, side by side with the others. */
+@Composable
+private fun Stat(value: String, label: String, modifier: Modifier) = Column(
+    modifier.clip(RoundedCornerShape(12.dp)).background(Palette.PanelHigh).padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally,
 ) {
-    Text(title, color = Palette.Accent, fontWeight = FontWeight.SemiBold)
+    Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+    Text(label, color = Palette.TextDim, fontSize = 12.sp)
+}
+
+@Composable
+private fun SectionCard(content: @Composable () -> Unit) = Column(
+    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(16.dp),
+    verticalArrangement = Arrangement.spacedBy(12.dp),
+) {
     content()
 }

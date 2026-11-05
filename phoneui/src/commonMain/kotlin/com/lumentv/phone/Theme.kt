@@ -26,5 +26,6 @@ fun LumenTheme(content: @Composable () -> Unit) = MaterialTheme(
         surfaceContainer = Palette.Panel, secondaryContainer = Palette.AccentSoft, onSecondaryContainer = Palette.Text,
         error = Palette.Danger,
     ),
-    content = content,
-)
+) {
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Palette.Text, content = content)
+}
