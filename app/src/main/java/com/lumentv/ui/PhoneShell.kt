@@ -67,17 +67,18 @@ fun PhoneShell(vm: MainViewModel, firstLaunch: Boolean, screen: @Composable (Scr
     val hasLive = p == null || p.channelCount > 0
     val hasGuide = p != null && p.channelCount > 0 && p.lastEpgRefresh > 0
 
+    // The iPhone's order: Films, Séries, TV, Recherche, then Plus.
     val tabs = buildList {
-        if (hasLive) add(Dest(Screen.Live, "Direct", Icons.Filled.Home))
         if (p != null && p.movieCount > 0) add(Dest(Screen.Movies, "Films", Icons.Filled.PlayArrow))
         if (p != null && p.seriesCount > 0) add(Dest(Screen.Series, "Séries", Icons.Filled.List))
-        if (hasGuide) add(Dest(Screen.Sports, "Sport", LumenIcons.Sports))
+        if (hasLive) add(Dest(Screen.Live, "TV", Icons.Filled.Home))
+        if (p != null) add(Dest(Screen.Search, "Recherche", Icons.Filled.Search))
         add(Dest(Screen.More, "Plus", Icons.Filled.Menu))
     }
     val more = buildList {
         if (hasGuide) add(Dest(Screen.Guide, "Guide TV", Icons.Filled.DateRange, "Les programmes de toutes les chaînes, et le rattrapage"))
+        if (hasGuide) add(Dest(Screen.Sports, "Sport", LumenIcons.Sports, "Les matchs à venir et en direct, sur vos chaînes"))
         if (p != null) add(Dest(Screen.Favorites, "Favoris", Icons.Filled.Star, "Vos chaînes, films et séries préférés"))
-        if (p != null) add(Dest(Screen.Search, "Recherche", Icons.Filled.Search, "Chaînes, films, séries et programmes"))
         if (p != null) add(Dest(Screen.History, "Historique", Icons.Filled.Refresh, "Reprendre là où vous en étiez"))
         if (p != null) add(Dest(Screen.Recordings, "Téléchargés", LumenIcons.Download, "Films, épisodes et enregistrements sur ce téléphone"))
         add(Dest(Screen.Settings, "Paramètres", Icons.Filled.Settings, "Playlists, profil, lecture, contrôle parental"))
@@ -102,7 +103,7 @@ fun PhoneShell(vm: MainViewModel, firstLaunch: Boolean, screen: @Composable (Scr
     val current = vm.current
     val sub = vm.stack.size > 1
     val title = when (current) {
-        Screen.Live -> "Direct"; Screen.Movies -> "Films"; Screen.Series -> "Séries"; Screen.Sports -> "Sport"
+        Screen.Live -> "TV"; Screen.Movies -> "Films"; Screen.Series -> "Séries"; Screen.Sports -> "Sport"
         Screen.More -> "Plus"; Screen.Guide -> "Guide TV"; Screen.Favorites -> "Favoris"; Screen.Search -> "Recherche"
         Screen.History -> "Historique"; Screen.Recordings -> "Téléchargés"; Screen.Settings -> "Paramètres"
         is Screen.MovieDetail -> "Film"; is Screen.SeriesDetail -> "Série"
