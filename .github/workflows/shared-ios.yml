@@ -2,10 +2,8 @@
 # Mac (Kotlin/Native for iOS only builds on macOS). The TV / phone / PC builds stay on the developer's PC.
 name: Shared code on iOS
 
+# By hand only, before an iPhone build that changes the shared code: macOS minutes are counted about ten times.
 on:
-  push:
-    branches: [dev, main, ios-poc]
-    paths: ["shared/**", "appcore/**", "build.gradle.kts", "settings.gradle.kts", "gradle/**", ".github/workflows/shared-ios.yml"]
   workflow_dispatch:
 
 jobs:

@@ -2,10 +2,9 @@
 # (iosApp/, XcodeGen) with KSPlayer into an unsigned IPA, signed later on the iPhone by SideStore.
 name: iPhone app
 
+# Started by hand only (Actions tab, or the API): a macOS run counts about ten times its length in the plan's free
+# minutes, so the iPhone app is built once per version to publish, not at every push.
 on:
-  push:
-    branches: [dev, main]
-    paths: ["shared/**", "appcore/**", "phoneui/**", "iosApp/**", "build.gradle.kts", "settings.gradle.kts", "gradle/**", ".github/workflows/ios-app.yml"]
   workflow_dispatch:
 
 jobs:
