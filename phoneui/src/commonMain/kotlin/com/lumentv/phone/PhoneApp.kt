@@ -388,7 +388,10 @@ internal fun minutes(ms: Long) = (ms / 60_000).let { if (it >= 60) "${it / 60} h
 /** Plays through [Playback] (languages, the subscription's other screens); [playlistId] null for a downloaded file. */
 internal suspend fun play(core: AppCore, player: VideoPlayer, spec: StreamSpec, title: String, subtitle: String?, startMs: Long,
                           playlistId: Long? = null, variants: List<PlayVariant> = emptyList(), onFinish: (Long, Long) -> Unit) {
-    val request = PlayRequest(spec.url, spec.userAgent, spec.referer, title, subtitle, startMs, spec.live, onFinish)
+    // Over HTTPS when the provider's server answers there: the internet provider no longer reads what is played.
+    val url = com.lumentv.core.HttpsUpgrade.stream(spec.url)
+    val request = PlayRequest(url, spec.userAgent, spec.referer, title, subtitle, startMs, spec.live, onFinish)
+    if (url != spec.url) request.fallbackUrl = spec.url
     request.variants = variants
     Playback.start(core, player, request, playlistId)
 }

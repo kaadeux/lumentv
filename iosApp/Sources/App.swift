@@ -1,6 +1,7 @@
 import AVFoundation
 import KSPlayer
 import LumenKit
+import Network
 import SwiftUI
 
 /// The iPhone app: the shared Kotlin app (LumenKit, Compose Multiplatform) full screen; KSPlayer plays.
@@ -17,6 +18,11 @@ struct LumenTVApp: App {
         // KSPlayer would set the ProMotion screen to the video's rate (25 to 50 Hz for a 25 fps film): iOS then picks
         // 30, 40 or 60 Hz and repeats one frame in five or so, a steady stutter. At 120 Hz every rate plays evenly.
         KSOptions.preferredFrame = false
+        // Names looked up over HTTPS at Cloudflare, not at the internet provider's DNS (as on the TV and the PC):
+        // every URLSession and Network connection of the app, AVPlayer's included.
+        NWParameters.PrivacyContext.default.requireEncryptedNameResolution(true, fallbackResolver: .https(
+            URL(string: "https://cloudflare-dns.com/dns-query")!,
+            serverAddresses: ["1.1.1.1", "1.0.0.1", "2606:4700:4700::1111"].map { NWEndpoint.hostPort(host: NWEndpoint.Host($0), port: 443) }))
         // TMDB's answers (lists, logos, ratings): 20 MB on disk at most, as on the TV and the PC; images have their own
         // 60 MB cache (Coil, shared app).
         URLCache.shared = URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 20 * 1024 * 1024)

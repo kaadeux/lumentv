@@ -38,6 +38,8 @@ class PlayRequest(
 
     /** Live: the same channel in lower qualities (FHD → HD → SD), tried in turn when the picture keeps stopping. */
     var variants: List<PlayVariant> = emptyList()
+    /** The plain HTTP address when [url] is its HTTPS twin (the server answered there): tried if HTTPS fails. */
+    var fallbackUrl: String? = null
 
     internal var onClosed: (() -> Unit)? = null
 

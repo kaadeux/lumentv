@@ -43,7 +43,9 @@ object IosApp {
         val device = userDefaults("device")
         val id = device.string("id") ?: NSUUID().UUIDString.also { device.put("id", it) }
         // Xtream lists of 30 000 titles take time: 2 minutes before giving up.
-        val http = AppleHttp(120_000)
+        // The provider's server over HTTPS when it answers there (names: Cloudflare, Swift side).
+        com.lumentv.core.HttpsUpgrade.init(com.lumentv.core.TextFile("$docs/https_hosts.txt"))
+        val http = com.lumentv.core.HttpsUpgrade.wrap(AppleHttp(120_000))
         val settings = settingsStore("$docs/settings.preferences_pb").also { it.keepWarm(scope) }
         AppCore(createAppDatabase("$docs/lumen.db"), settings, Platform(
             http = http, tmdbHttp = AppleHttp(15_000), fixtureHttp = AppleHttp(15_000),

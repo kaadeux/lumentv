@@ -79,6 +79,8 @@ struct PlayerScreen: View {
     @State private var stalls: [Date] = []
     @State private var bufferingSince: Date?
     @State private var variant = 0
+    /// The plain HTTP address was tried after the HTTPS one failed.
+    @State private var triedPlain = false
     @State private var notice: String?
     /// The recap / intro / credits being played, to skip.
     @State private var skip: PlaySkip?
@@ -135,7 +137,8 @@ struct PlayerScreen: View {
                 loading = state == .preparing || state == .buffering || state == .initialized
                 if state == .readyToPlay { layer.player.contentMode = fit.mode; pickSubtitles() }
                 if state == .error {
-                    // A live channel that fails tries its lower quality before giving up.
+                    // Its HTTPS address first refused: plain HTTP, as before. Then a live channel tries its lower quality.
+                    if plainAgain() { return }
                     if request.live && variant < request.variants.count { stepDown() } else { failed = true; controls = true }
                 }
                 if state == .bufferFinished { played = true; bufferingSince = nil; scheduleHide() }
@@ -148,7 +151,7 @@ struct PlayerScreen: View {
             }
             .onFinish { _, error in
                 if error == nil, !request.live { close(finished: true, step: request.hasNext && request.autoNext ? .next : .none) }
-                else if error != nil { failed = true; controls = true }
+                else if error != nil, !plainAgain() { failed = true; controls = true }
             }
             .modifier(Ratio(ratio: fit.ratio))
     }
@@ -317,6 +320,15 @@ struct PlayerScreen: View {
         let ms = Int64(player.timemodel.currentTime) * 1000
         let current = request.skips.first { $0.startMs <= ms && ms < $0.endMs - 1000 }
         if current?.label != skip?.label || current?.startMs != skip?.startMs { skip = current }
+    }
+
+    /// The server took the API over HTTPS but not this stream: its plain HTTP address, once.
+    private func plainAgain() -> Bool {
+        guard !triedPlain, variant == 0, let plain = request.fallbackUrl, let next = URL(string: plain) else { return false }
+        triedPlain = true
+        failed = false
+        url = next
+        return true
     }
 
     /// The same channel one quality lower (the next of the request's variants), with a word on screen.

@@ -316,6 +316,16 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
         item { PlaylistsSection(core, p, open) }
         item { ParentalSection(core) }
         item {
+            // What the internet provider can still see (as on the TV): encrypted names, HTTPS where the server allows it.
+            val (title, detail) = remember { com.lumentv.core.HttpsUpgrade.summary() }
+            Section("Confidentialité vis-à-vis du FAI") {
+                Text(title, fontWeight = FontWeight.SemiBold)
+                Text(detail, color = Palette.TextDim, fontSize = 14.sp)
+                Text("Le moteur vidéo FFmpeg (MKV, direct en TS) peut encore demander le nom du serveur au DNS de la box.",
+                    color = Palette.TextDim, fontSize = 13.sp)
+            }
+        }
+        item {
             Section("Lecture") {
                 Toggle("Épisode suivant automatique", "À la fin d'un épisode, le suivant se lance.", settings?.autoNext ?: true) { on ->
                     core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.autoNext, on) }
