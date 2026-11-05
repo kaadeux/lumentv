@@ -1,0 +1,77 @@
+# The iPhone app (phase 3): the shared Kotlin app built into LumenKit.framework (Gradle), then the Swift shell
+# (iosApp/, XcodeGen) with KSPlayer into an unsigned IPA, signed later on the iPhone by SideStore.
+name: iPhone app
+
+on:
+  push:
+    branches: [dev, main]
+    paths: ["shared/**", "appcore/**", "phoneui/**", "iosApp/**", "build.gradle.kts", "settings.gradle.kts", "gradle/**", ".github/workflows/ios-app.yml"]
+  workflow_dispatch:
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Gradle and Kotlin/Native caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: kmp-app-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Kotlin framework (LumenKit)
+        run: chmod +x gradlew && ./gradlew --no-daemon :phoneui:linkReleaseFrameworkIosArm64
+
+      - name: Project (XcodeGen)
+        working-directory: iosApp
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Swift packages (KSPlayer, FFmpegKit)
+        uses: actions/cache@v4
+        with:
+          path: iosApp/build/SourcePackages
+          key: spm-${{ hashFiles('iosApp/project.yml') }}
+
+      - name: Build
+        working-directory: iosApp
+        env:
+          LUMEN_TMDB_KEY: ${{ secrets.LUMEN_TMDB_KEY }}
+          LUMEN_SYNC_URL: ${{ secrets.LUMEN_SYNC_URL }}
+        run: |
+          set -o pipefail
+          xcodebuild -project LumenTV.xcodeproj -scheme LumenTV -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            LUMEN_TMDB_KEY="$LUMEN_TMDB_KEY" LUMEN_SYNC_URL="$LUMEN_SYNC_URL" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -n 200
+
+      - name: IPA
+        working-directory: iosApp
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/LumenTV.app Payload/
+          zip -qry LumenTV.ipa Payload
+          ls -la LumenTV.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LumenTV-ipa
+          path: iosApp/LumenTV.ipa
+          retention-days: 14

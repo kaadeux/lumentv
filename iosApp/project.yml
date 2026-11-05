@@ -1,0 +1,53 @@
+# The iPhone app (phase 3): a small Swift shell around the shared Kotlin app (framework LumenKit, built from
+# :phoneui) and KSPlayer for playback (validated in phase 0). Generated with XcodeGen on GitHub Actions (ios-app.yml).
+name: LumenTV
+options:
+  bundleIdPrefix: com.lumentv
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  KSPlayer:
+    # The revision another-iptv-player ships: still built from source (later revisions are a closed binary
+    # needing Xcode 26). Depends on FFmpegKit 6.x.
+    url: https://github.com/kingslay/KSPlayer.git
+    revision: 92c18fae716f63a080541c4bcc77247ade181426
+targets:
+  LumenTV:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    dependencies:
+      - package: KSPlayer
+      # Built by Gradle before Xcode runs: ./gradlew :phoneui:linkReleaseFrameworkIosArm64
+      - framework: ../phoneui/build/bin/iosArm64/releaseFramework/LumenKit.framework
+        embed: true
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: Lumen TV
+        CFBundleShortVersionString: "0.3.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIBackgroundModes: [audio]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        # Compose Multiplatform draws at 120 Hz on ProMotion screens only with this key.
+        CADisableMinimumFrameDurationOnPhone: true
+        # IPTV servers and posters are plain http: iOS blocks that unless allowed.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Lecture AirPlay vers un appareil du réseau local.
+        # Filled at build time from the repository's secrets (empty: no TMDB rows, no online profile).
+        LumenTmdbKey: $(LUMEN_TMDB_KEY)
+        LumenSyncUrl: $(LUMEN_SYNC_URL)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lumentv.ios
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        ENABLE_BITCODE: "NO"
+        FRAMEWORK_SEARCH_PATHS: ["$(inherited)", "$(PROJECT_DIR)/../phoneui/build/bin/iosArm64/releaseFramework"]
+        LUMEN_TMDB_KEY: ""
+        LUMEN_SYNC_URL: ""

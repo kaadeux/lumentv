@@ -48,42 +48,48 @@ class AppGraph(app: Application) {
     /** Shorter read timeout for live streams, so a dead server is noticed quickly and retried. */
     val streamHttp: OkHttpClient = http.newBuilder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
 
-    val playlists = PlaylistRepository(db, http.asHttp()) { settings.current().defaultUserAgent }
-    // XMLTV: Android's pull parser, without namespaces, in the encoding the guide declares.
-    val epg = EpgRepository(db, playlists, { settings.current().epgDays }, xmlPullReaders(encoding = null) {
-        android.util.Xml.newPullParser().apply { setFeature(org.xmlpull.v1.XmlPullParser.FEATURE_PROCESS_NAMESPACES, false) }
-    })
-    val library = LibraryRepository(db)
-    val resolver = StreamResolver(playlists)
-    val artwork = com.lumentv.data.repo.Artwork(playlists)
     /** TMDB's requests: with their disk cache and retries (TmdbHttp), shared by the logos. */
     val tmdbHttp = com.lumentv.data.TmdbHttp.client(http, app.cacheDir)
-    val tmdb = com.lumentv.data.Tmdb(tmdbHttp.asHttp(), com.lumentv.BuildConfig.TMDB_KEY)
-    /** Logos and ratings through the same client, so they share TMDB's disk cache. */
-    val logos = com.lumentv.data.TitleLogos(tmdbHttp.asHttp(), com.lumentv.BuildConfig.TMDB_KEY)
-    /** The whole library, light, in memory: search and TMDB matching. */
-    val index = com.lumentv.data.repo.LibraryIndex(db)
-    val discover = com.lumentv.data.repo.Discover(db, tmdb, index)
+
+    /** Everything but the screens, shared with the iPhone (AppCore in :appcore). */
+    val core = com.lumentv.AppCore(db, settings, com.lumentv.Platform(
+        http = http.asHttp(),
+        tmdbHttp = tmdbHttp.asHttp(),
+        fixtureHttp = http.newBuilder().addInterceptor(com.lumentv.core.RetryInterceptor()).build().asHttp(),
+        // XMLTV: Android's pull parser, without namespaces, in the encoding the guide declares.
+        xmlReader = xmlPullReaders(encoding = null) {
+            android.util.Xml.newPullParser().apply { setFeature(org.xmlpull.v1.XmlPullParser.FEATURE_PROCESS_NAMESPACES, false) }
+        },
+        utf8XmlReader = xmlPullReaders { android.util.Xml.newPullParser() },
+        cacheDir = app.cacheDir.path,
+        filesDir = app.filesDir.path,
+        profilePrefs = com.lumentv.core.sharedPrefs(app, "profile"),
+        deviceId = app.getSharedPreferences("device", android.content.Context.MODE_PRIVATE).let { p ->
+            p.getString("id", null) ?: java.util.UUID.randomUUID().toString().also { p.edit().putString("id", it).apply() }
+        },
+        deviceName = android.provider.Settings.Global.getString(app.contentResolver, "device_name") ?: android.os.Build.MODEL,
+        tmdbKey = BuildConfig.TMDB_KEY,
+        syncUrl = BuildConfig.SYNC_URL,
+    ), appScope)
+    val playlists = core.playlists
+    val epg = core.epg
+    val library = core.library
+    val resolver = core.resolver
+    val artwork = core.artwork
+    val tmdb = core.tmdb
+    val logos = core.logos
+    val index = core.index
+    val discover = core.discover
+    val frenchGuide = core.frenchGuide
+    val sports = core.sports
+    val presence = core.presence
+    val introDb = core.introDb
+    val profile = core.profile
     val backup = BackupManager(app, db, settings)
     val updater = com.lumentv.update.Updater(app, http)
     val transfers = com.lumentv.transfer.TransferRepository(app, db)
     /** Channel shown in the in-app mini-player, null when it is closed. */
     val miniPlayer = kotlinx.coroutines.flow.MutableStateFlow<Long?>(null)
-    /** Which French channel shows each game, days ahead (xmltvfr.fr, sports channels only, twice a day at most). */
-    val frenchGuide = com.lumentv.data.sports.FrenchTvGuide(http.asHttp(), com.lumentv.core.TextFile(java.io.File(app.cacheDir, "sports_tv.json").path),
-        com.lumentv.core.xmlPullReaders { android.util.Xml.newPullParser() })
-    val sports = com.lumentv.data.sports.SportsRepository(db, settings, epg, library, com.lumentv.data.sports.fixtureClient(http), frenchGuide)
-    /** Tells the other Lumen TV devices of the same subscription that this one is playing. */
-    val presence = com.lumentv.data.xtream.Presence(http.asHttp(), com.lumentv.BuildConfig.SYNC_URL,
-        app.getSharedPreferences("device", android.content.Context.MODE_PRIVATE).let { p ->
-            p.getString("id", null) ?: java.util.UUID.randomUUID().toString().also { p.edit().putString("id", it).apply() }
-        },
-        android.provider.Settings.Global.getString(app.contentResolver, "device_name") ?: android.os.Build.MODEL)
-    val introDb = com.lumentv.data.IntroDb(http.asHttp())
-    val profile = com.lumentv.sync.ProfileManager(
-        com.lumentv.core.sharedPrefs(app, "profile"), com.lumentv.core.TextFile(java.io.File(app.filesDir, "profile_synced.bin").path),
-        BuildConfig.SYNC_URL, db, settings, playlists, epg, library, http.asHttp(), appScope,
-    )
 }
 
 class LumenApp : Application(), ImageLoaderFactory {
