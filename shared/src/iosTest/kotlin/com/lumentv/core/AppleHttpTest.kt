@@ -21,10 +21,12 @@ class AppleHttpTest {
         http.execute(HttpRequest("https://lumentv-sync.lumentv-sync.workers.dev/nope")).use { assertEquals(404, it.code) }
     }
 
-    @Test fun introDbThroughAppleNetwork() = runBlocking {
+    @Test fun introDbThroughAppleNetwork() {
+        runBlocking {
         // The same episode as the JVM IntroDbTest (TMDB 124364, S3 E4): an intro and credits in the databases.
         val seg = IntroDb(http).segments("124364", 3, 4)
         assertNotNull(seg?.intro)
         assertNotNull(seg?.credits)
+        }
     }
 }
