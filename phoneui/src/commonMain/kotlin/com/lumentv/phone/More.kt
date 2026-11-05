@@ -185,13 +185,19 @@ private const val FAVORITES = "★ Mes chaînes"
 /** The channels of a group (or Ma liste) with what is on; a channel opens its programmes. */
 @Composable
 internal fun GuidePage(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
-    val groups by produceState(emptyList<String>(), p.id) { value = listOf(FAVORITES) + core.library.groups(p.id, false).map { it.name } }
+    // Locked groups stay out of the guide until their PIN is given (in the TV tab).
+    val groups by produceState(emptyList<String>(), p.id) {
+        value = listOf(FAVORITES) + core.library.groups(p.id, false).filter { !it.locked || Parental.isUnlocked(p.id, it.name) }.map { it.name }
+    }
     val memory = LocalScroll.current
     var group by remember(p.id) { mutableStateOf(memory.values["guide"] as? String ?: FAVORITES) }
     val settings by core.settings.flow.collectAsState(null)
     val channels by produceState<List<ChannelRow>?>(null, p.id, group) {
         value = if (group == FAVORITES) core.library.favoriteChannelsAll().filter { it.ch.playlistId == p.id }
-        else core.library.channels(p.id, group, false, settings?.sort ?: "provider")
+        else {
+            val locked = core.library.lockedGroups(p.id).filterTo(HashSet()) { !Parental.isUnlocked(p.id, it) }
+            core.library.channels(p.id, group, false, settings?.sort ?: "provider").filter { it.ch.groupName !in locked }
+        }
     }
     Column {
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

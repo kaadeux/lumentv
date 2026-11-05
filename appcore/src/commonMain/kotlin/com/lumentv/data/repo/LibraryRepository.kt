@@ -130,6 +130,9 @@ class LibraryRepository(private val db: AppDatabase) {
     suspend fun favoriteSeries() = withContext(IoDispatcher) { db.vod().favoriteSeries() }
     suspend fun favoriteChannelsAll() = withContext(IoDispatcher) { db.channels().favoritesAll() }
 
+    /** The uids of [kind] hidden in a playlist (categories, groups, channels). */
+    suspend fun hiddenOf(pid: Long, kind: String): Set<String> = withContext(IoDispatcher) { hiddenSet(pid, kind) }
+
     private suspend fun hiddenSet(pid: Long, kind: String) =
         db.prefs().allOf(pid, kind).filter { it.hidden }.mapTo(HashSet()) { it.uid }
 

@@ -222,6 +222,7 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
         }
         Tabs(tab) { t -> tab = t; stack.clear(); memory.clear() }
     }
+    PinHost(core)
     // Another device of the subscription is playing: the TV's warning, then play anyway or not.
     val pending by Playback.pending.collectAsState()
     pending?.let { w ->
@@ -276,12 +277,21 @@ private fun Tabs(current: Tab, onPick: (Tab) -> Unit) = Column(Modifier.fillMaxW
 }
 
 @Composable
-private fun Chips(names: List<String>, selected: String?, key: String = "chips", onPick: (String) -> Unit) = LazyRow(
+private fun Chips(names: List<String>, selected: String?, key: String = "chips", hidden: Set<String> = emptySet(), onMore: (() -> Unit)? = null,
+                  onPick: (String) -> Unit) = LazyRow(
     state = rememberList(key),
     contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
 ) {
-    items(names) { n -> FilterChip(selected = n == selected, onClick = { onPick(n) }, label = { Text(n, maxLines = 1) }) }
+    if (onMore != null) item { FilterChip(selected = false, onClick = onMore, label = { Text("⋮") }) }
+    items(names) { n -> FilterChip(selected = n == selected, onClick = { onPick(n) }, label = { Text(n + if (n in hidden) " · masquée" else "", maxLines = 1) }) }
 }
+
+/** The ⋮ of a film or series category: hide it (it leaves the lists and the homes) or show it again. */
+@Composable
+private fun CategoryMenu(core: AppCore, p: PlaylistEntity, kind: String, cat: String, hidden: Boolean, onHidden: () -> Unit, onDismiss: () -> Unit) =
+    Options(cat, null, listOf(Option(if (hidden) "Afficher la catégorie" else "Masquer la catégorie") {
+        core.scope.launch { core.library.setHidden(p.id, kind, cat, !hidden); if (!hidden) onHidden() }
+    }), onDismiss)
 
 @Composable
 internal fun Poster(url: String?, title: String, progress: Float? = null, onClick: () -> Unit) = Column(Modifier.clickable(onClick = onClick)) {
@@ -321,9 +331,14 @@ internal fun ResumeRow(core: AppCore, p: PlaylistEntity, kind: String, onOpen: (
 
 @Composable
 private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
-    val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) {
-        value = listOf(RECENT) + core.library.movieCategories(p.id, false).map { it.category }.filter { !Featured.foreign("", it) }
+    val settings by core.settings.flow.collectAsState(null)
+    val showHidden = settings?.showHidden ?: false
+    val changes by core.library.changes.collectAsState()
+    val cats by produceState(emptyList<String>(), p.id, p.lastRefresh, showHidden, changes) {
+        value = listOf(RECENT) + core.library.movieCategories(p.id, showHidden).map { it.category }.filter { !Featured.foreign("", it) }
     }
+    val hidden by produceState(emptySet<String>(), p.id, changes) { value = core.library.hiddenOf(p.id, com.lumentv.data.db.PrefKind.MOVIE_CATEGORY) }
+    var catMenu by remember { mutableStateOf(false) }
     val memory = LocalScroll.current
     var cat by remember(p.id) { mutableStateOf(memory.values["cat:mv"] as? String ?: RECENT) }
     val movies by produceState<List<MovieRow>?>(null, p.id, cat, p.lastRefresh) {
@@ -332,7 +347,8 @@ private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> U
         value = withContext(Dispatchers.Default) { oneEach(rows, { it.m.name }, { it.m.category }) }
     }
     Column {
-        Chips(cats, cat, "chips:mv") { cat = it; memory.values["cat:mv"] = it; memory.forget("grid:mv") }
+        Chips(cats, cat, "chips:mv", hidden, onMore = if (cat != RECENT) ({ catMenu = true }) else null) { cat = it; memory.values["cat:mv"] = it; memory.forget("grid:mv") }
+        if (catMenu) CategoryMenu(core, p, com.lumentv.data.db.PrefKind.MOVIE_CATEGORY, cat, cat in hidden, onHidden = { if (!showHidden) cat = RECENT }) { catMenu = false }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:mv:$cat", ready = movies != null), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(movies.orEmpty(), key = { it.m.id }) { m -> Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } }
         }
@@ -341,9 +357,14 @@ private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> U
 
 @Composable
 private fun SeriesCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
-    val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) {
-        value = listOf(RECENT) + core.library.seriesCategories(p.id, false).map { it.category }.filter { !Featured.foreign("", it) }
+    val settings by core.settings.flow.collectAsState(null)
+    val showHidden = settings?.showHidden ?: false
+    val changes by core.library.changes.collectAsState()
+    val cats by produceState(emptyList<String>(), p.id, p.lastRefresh, showHidden, changes) {
+        value = listOf(RECENT) + core.library.seriesCategories(p.id, showHidden).map { it.category }.filter { !Featured.foreign("", it) }
     }
+    val hidden by produceState(emptySet<String>(), p.id, changes) { value = core.library.hiddenOf(p.id, com.lumentv.data.db.PrefKind.SERIES_CATEGORY) }
+    var catMenu by remember { mutableStateOf(false) }
     val memory = LocalScroll.current
     var cat by remember(p.id) { mutableStateOf(memory.values["cat:se"] as? String ?: RECENT) }
     val series by produceState<List<SeriesRow>?>(null, p.id, cat, p.lastRefresh) {
@@ -351,7 +372,8 @@ private fun SeriesCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> 
         value = withContext(Dispatchers.Default) { oneEach(rows, { it.s.name }, { it.s.category }) }
     }
     Column {
-        Chips(cats, cat, "chips:se") { cat = it; memory.values["cat:se"] = it; memory.forget("grid:se") }
+        Chips(cats, cat, "chips:se", hidden, onMore = if (cat != RECENT) ({ catMenu = true }) else null) { cat = it; memory.values["cat:se"] = it; memory.forget("grid:se") }
+        if (catMenu) CategoryMenu(core, p, com.lumentv.data.db.PrefKind.SERIES_CATEGORY, cat, cat in hidden, onHidden = { if (!showHidden) cat = RECENT }) { catMenu = false }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:se:$cat", ready = series != null), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(series.orEmpty(), key = { it.s.id }) { s -> Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } }
         }
@@ -379,22 +401,33 @@ internal suspend fun play(core: AppCore, player: VideoPlayer, spec: StreamSpec, 
 @Composable
 private fun LiveHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open: (Route) -> Unit) {
     val memory = LocalScroll.current
-    val groups by produceState(emptyList<com.lumentv.data.repo.GroupInfo>(), p.id, p.lastRefresh) { value = core.library.groups(p.id, false) }
+    val settings by core.settings.flow.collectAsState(null)
+    val sort = settings?.sort ?: "provider"
+    val showHidden = settings?.showHidden ?: false
+    val changes by core.library.changes.collectAsState()
+    val groups by produceState(emptyList<com.lumentv.data.repo.GroupInfo>(), p.id, p.lastRefresh, changes, showHidden) { value = core.library.groups(p.id, showHidden) }
     var group by remember(p.id) { mutableStateOf(memory.values["live:group"] as? String ?: Groups.ALL) }
     var filter by remember { mutableStateOf("") }
     var picker by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf<ChannelRow?>(null) }
-    val settings by core.settings.flow.collectAsState(null)
-    val sort = settings?.sort ?: "provider"
-    val changes by core.library.changes.collectAsState()
-    val channels by produceState<List<ChannelRow>?>(null, p.id, group, sort, changes) { value = core.library.channels(p.id, group, false, sort) }
+    var groupMenu by remember { mutableStateOf(false) }
+    val info = groups.firstOrNull { it.name == group }
+    // A locked group shows nothing until the PIN is given.
+    val locked = info?.locked == true && !Parental.isUnlocked(p.id, group)
+    val channels by produceState<List<ChannelRow>?>(null, p.id, group, sort, changes, showHidden, locked) {
+        value = if (locked) emptyList() else core.library.channels(p.id, group, showHidden, sort)
+    }
     val shown = remember(channels, filter) {
         val f = com.lumentv.core.normalize(filter)
         channels?.let { all -> if (f.isEmpty()) all else all.filter { it.ch.nameNorm.contains(f) || it.ch.number.toString().startsWith(f) } }
     }
     val scope = rememberCoroutineScope()
-    fun pick(g: String) { group = g; memory.values["live:group"] = g; filter = "" }
-    val pills = listOf(Groups.FAVORITES to "★ Mes chaînes", Groups.ALL to "Toutes") + groups.map { it.name to it.name }
+    fun pick(g: String) {
+        group = g; memory.values["live:group"] = g; filter = ""
+        if (groups.firstOrNull { it.name == g }?.locked == true) scope.launch { Parental.unlockGroup(core, p.id, g) }
+    }
+    val pills = listOf(Groups.FAVORITES to "★ Mes chaînes", Groups.ALL to "Toutes") +
+        groups.map { it.name to it.name + (if (it.locked) "  🔒" else "") + (if (it.hidden) " · masqué" else "") }
     Column(Modifier.fillMaxSize()) {
         LazyRow(state = rememberList("live:pills"), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item(key = "picker") { PhoneChip("Groupes  ▾") { picker = true } }
@@ -403,6 +436,7 @@ private fun LiveHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(when (group) { Groups.ALL -> "Chaînes"; Groups.FAVORITES -> "Favoris"; else -> group }, fontSize = 22.sp, color = Palette.Text,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (info != null) Box(Modifier.padding(end = 8.dp)) { PhoneChip("⋮") { groupMenu = true } }
             if (group != Groups.FAVORITES) PhoneChip(when (sort) { "az" -> "A → Z"; "za" -> "Z → A"; else -> "Ordre" }) {
                 core.scope.launch { core.settings.set(Keys.sort, when (sort) { "provider" -> "az"; "az" -> "za"; else -> "provider" }) }
             }
@@ -413,6 +447,11 @@ private fun LiveHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open
         val list = shown
         when {
             list == null -> Centered { CircularProgressIndicator() }
+            locked -> Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("🔒  Groupe verrouillé", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("Saisis le code PIN pour afficher ces chaînes.", color = Palette.TextDim, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
+                PhoneButton("Saisir le code PIN", primary = true, modifier = Modifier.fillMaxWidth(0.7f)) { scope.launch { Parental.unlockGroup(core, p.id, group) } }
+            }
             list.isEmpty() -> Text(when {
                 filter.isNotBlank() -> "Rien ne correspond à « $filter » dans cette liste."
                 group == Groups.FAVORITES -> "Pas encore de favoris : touchez ⋮ à droite d'une chaîne, puis « Ajouter aux favoris »."
@@ -434,7 +473,29 @@ private fun LiveHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open
                 scope.launch { core.library.toggleFavorite(c.ch.playlistId, com.lumentv.data.db.PrefKind.CHANNEL, c.ch.uid); core.library.bump() }
             },
             Option("Voir le programme") { open(Route.GuideChannel(c)) },
+            Option(if (c.isHidden) "Afficher la chaîne" else "Masquer la chaîne") {
+                scope.launch { core.library.setHidden(c.ch.playlistId, com.lumentv.data.db.PrefKind.CHANNEL, c.ch.uid, !c.isHidden) }
+            },
         )) { menu = null }
+    }
+    if (groupMenu) info?.let { g ->
+        Options(g.name, "${g.count} chaînes", listOf(
+            Option(if (g.hidden) "Afficher le groupe" else "Masquer le groupe") {
+                scope.launch {
+                    core.library.setHidden(p.id, com.lumentv.data.db.PrefKind.GROUP, g.name, !g.hidden)
+                    if (!g.hidden && !showHidden) pick(Groups.ALL)
+                }
+            },
+            Option(if (g.locked) "Retirer le verrou parental" else "Verrouiller par code PIN") {
+                scope.launch {
+                    when {
+                        g.locked -> if (Parental.check(core, "Retirer le verrou de « ${g.name} »")) core.library.setLocked(p.id, g.name, false)
+                        core.settings.current().pinHash.isEmpty() -> Parental.notice = "Définis d'abord un code PIN dans Plus › Paramètres › Contrôle parental."
+                        else -> { core.library.setLocked(p.id, g.name, true); Parental.relock(p.id, g.name) }
+                    }
+                }
+            },
+        )) { groupMenu = false }
     }
 }
 
@@ -452,6 +513,7 @@ private fun ChannelCard(core: AppCore, c: ChannelRow, onClick: () -> Unit, onMor
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(c.ch.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (c.isFavorite) Text("  ★", fontSize = 14.sp, color = Palette.Gold)
+                if (c.isHidden) Text("  masquée", fontSize = 12.sp, color = Palette.TextDim)
                 if (c.ch.catchupDays > 0) Text("Rattrapage", fontSize = 11.sp, color = Palette.Text, modifier = Modifier.padding(start = 8.dp)
                     .clip(RoundedCornerShape(4.dp)).background(Palette.PanelHigh).padding(horizontal = 6.dp, vertical = 2.dp))
             }

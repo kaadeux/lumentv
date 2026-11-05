@@ -314,6 +314,7 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
             }
         }
         item { PlaylistsSection(core, p, open) }
+        item { ParentalSection(core) }
         item {
             Section("Lecture") {
                 Toggle("Épisode suivant automatique", "À la fin d'un épisode, le suivant se lance.", settings?.autoNext ?: true) { on ->
