@@ -1,5 +1,6 @@
 package com.lumentv.data.repo
 
+import com.lumentv.core.IoDispatcher
 import com.lumentv.core.SmartSearch
 import com.lumentv.data.db.AppDatabase
 import com.lumentv.data.db.ChannelLite
@@ -26,9 +27,9 @@ class LibraryIndex(private val db: AppDatabase) {
         val stamp = db.playlists().get(pid)?.lastRefresh ?: 0
         built[pid]?.let { (s, i) -> if (s == stamp) return@withLock i }
         val i = withContext(Dispatchers.Default) {
-            val movies = withContext(Dispatchers.IO) { db.vod().movieIndex(pid) }
-            val series = withContext(Dispatchers.IO) { db.vod().seriesIndex(pid) }
-            val channels = withContext(Dispatchers.IO) { db.channels().channelIndex(pid) }
+            val movies = withContext(IoDispatcher) { db.vod().movieIndex(pid) }
+            val series = withContext(IoDispatcher) { db.vod().seriesIndex(pid) }
+            val channels = withContext(IoDispatcher) { db.channels().channelIndex(pid) }
             Index(movies, series, channels.map { SmartSearch.Entry(it, it.name) })
         }
         built[pid] = stamp to i

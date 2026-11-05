@@ -82,3 +82,18 @@ actual fun gunzip(body: HttpBody): HttpBody = object : HttpBody {
         body.close()
     }
 }
+
+actual fun openFile(path: String): HttpBody {
+    val f = platform.posix.fopen(path, "rb") ?: throw IOException("Fichier introuvable : $path")
+    return object : HttpBody {
+        private var open = true
+        override fun read(buffer: ByteArray): Int {
+            if (!open || buffer.isEmpty()) return if (open) 0 else -1
+            val n = buffer.usePinned { platform.posix.fread(it.addressOf(0), 1.convert(), buffer.size.convert(), f).toInt() }
+            return if (n <= 0) -1 else n
+        }
+        override fun close() { if (open) { open = false; platform.posix.fclose(f) } }
+    }
+}
+
+actual fun HttpBody.lineReader(): () -> String? = Utf8Lines(this)::next

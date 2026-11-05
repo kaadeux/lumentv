@@ -73,10 +73,10 @@ class AppleHttp(private val defaultTimeoutMs: Long = 30_000) : Http {
     }
 }
 
-internal fun ByteArray.toNSData(): NSData =
+fun ByteArray.toNSData(): NSData =
     if (isEmpty()) NSData() else usePinned { NSData.dataWithBytes(it.addressOf(0), size.toULong()) }
 
-internal fun NSData.toByteArray(): ByteArray {
+fun NSData.toByteArray(): ByteArray {
     val n = length.toInt()
     val out = ByteArray(n)
     if (n > 0) out.usePinned { memcpy(it.addressOf(0), bytes, length) }

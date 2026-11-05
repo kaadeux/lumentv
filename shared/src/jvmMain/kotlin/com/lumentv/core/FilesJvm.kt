@@ -14,6 +14,13 @@ actual fun gunzip(body: HttpBody): HttpBody {
     return StreamBody(stream) { stream.close(); body.close() }
 }
 
-/** The XML reader factory for the shared guides: the platform's XmlPullParser (Android's, or kxml2 on the PC). */
-fun xmlPullReaders(newParser: () -> org.xmlpull.v1.XmlPullParser): (HttpBody) -> XmlReader =
-    { body -> newParser().apply { setInput(body.inputStream(), "UTF-8") }.asXmlReader() }
+/**
+ * The XML reader factory for the shared guides: the platform's XmlPullParser (Android's, or kxml2 on the PC).
+ * [encoding] null: the one the file declares (<?xml encoding="ISO-8859-1"?>), UTF-8 otherwise.
+ */
+fun xmlPullReaders(encoding: String? = "UTF-8", newParser: () -> org.xmlpull.v1.XmlPullParser): (HttpBody) -> XmlReader =
+    { body -> newParser().apply { setInput(body.inputStream(), encoding) }.asXmlReader() }
+
+actual fun openFile(path: String): HttpBody = java.io.File(path).inputStream().let { StreamBody(it) }
+
+actual fun HttpBody.lineReader(): () -> String? = inputStream().bufferedReader(Charsets.UTF_8)::readLine

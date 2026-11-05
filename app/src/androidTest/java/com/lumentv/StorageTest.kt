@@ -12,6 +12,7 @@ import com.lumentv.data.db.PrefKind
 import com.lumentv.data.repo.Groups
 import com.lumentv.data.repo.LibraryRepository
 import com.lumentv.data.repo.M3uImport
+import com.lumentv.data.repo.build
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After

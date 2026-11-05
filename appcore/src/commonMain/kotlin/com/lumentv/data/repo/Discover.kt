@@ -1,5 +1,7 @@
 package com.lumentv.data.repo
 
+import com.lumentv.core.nowMillis
+import com.lumentv.core.IoDispatcher
 import com.lumentv.core.Resume
 import com.lumentv.data.Tmdb
 import com.lumentv.data.db.AppDatabase
@@ -58,15 +60,15 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
         val input = DiscoverInput(series, index.of(pid), recent,
             ratings.filter { it.playlistId == pid && it.kind == kind }.map { Rated(it.uid, it.stars, it.ratedAt) }, watched, hidden) { link(series, pid, it) }
         emitAll(engine.rows(input))
-    }.flowOn(kotlinx.coroutines.Dispatchers.IO)
+    }.flowOn(IoDispatcher)
 
     /** The TMDB id of a playlist title: the provider's when it gives one, else a search by title and year; kept in the database. */
     private suspend fun link(series: Boolean, pid: Long, v: VodLite): String? {
         val key = (if (series) "se" else "mv") + ":$pid:${v.uid}"
-        db.ratings().link(key)?.let { if (it.tmdbId != null || System.currentTimeMillis() - it.checkedAt < 7 * 86_400_000L) return it.tmdbId }
+        db.ratings().link(key)?.let { if (it.tmdbId != null || nowMillis() - it.checkedAt < 7 * 86_400_000L) return it.tmdbId }
         val provided = if (series) db.vod().seriesByUid(pid, v.uid)?.s?.tmdb else null
         val id = provided ?: tmdb.idOf(series, com.lumentv.core.Featured.shortTitle(v.name), com.lumentv.core.Featured.yearOf(v.year, v.name))
-        db.ratings().saveLink(TmdbLinkEntity(key, id, System.currentTimeMillis()))
+        db.ratings().saveLink(TmdbLinkEntity(key, id, nowMillis()))
         return id
     }
 }

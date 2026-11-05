@@ -1,6 +1,7 @@
 package com.lumentv
 
 import com.lumentv.core.asHttp
+import com.lumentv.core.xmlPullReaders
 import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
@@ -46,8 +47,11 @@ class AppGraph(app: Application) {
     /** Shorter read timeout for live streams, so a dead server is noticed quickly and retried. */
     val streamHttp: OkHttpClient = http.newBuilder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
 
-    val playlists = PlaylistRepository(db, http) { settings.current().defaultUserAgent }
-    val epg = EpgRepository(db, playlists) { settings.current().epgDays }
+    val playlists = PlaylistRepository(db, http.asHttp()) { settings.current().defaultUserAgent }
+    // XMLTV: Android's pull parser, without namespaces, in the encoding the guide declares.
+    val epg = EpgRepository(db, playlists, { settings.current().epgDays }, xmlPullReaders(encoding = null) {
+        android.util.Xml.newPullParser().apply { setFeature(org.xmlpull.v1.XmlPullParser.FEATURE_PROCESS_NAMESPACES, false) }
+    })
     val library = LibraryRepository(db)
     val resolver = StreamResolver(playlists)
     val artwork = com.lumentv.data.repo.Artwork(playlists)

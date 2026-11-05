@@ -14,13 +14,13 @@ import javax.crypto.spec.GCMParameterSpec
  * Android Keystore. Values are stored as "k1:<base64(iv + ciphertext)>". If the Keystore is broken on a
  * device, the value is kept as "p:<text>" so the app still works; the database itself stays private to the app.
  */
-object SecretBox {
+actual object SecretBox {
     private const val ALIAS = "lumen_secrets_v1"
     private const val TRANSFORM = "AES/GCM/NoPadding"
 
     @Volatile private var cachedKey: SecretKey? = null
 
-    fun encrypt(plain: String): String {
+    actual fun encrypt(plain: String): String {
         if (plain.isEmpty()) return ""
         return try {
             val cipher = Cipher.getInstance(TRANSFORM)
@@ -32,7 +32,7 @@ object SecretBox {
         }
     }
 
-    fun decrypt(stored: String): String {
+    actual fun decrypt(stored: String): String {
         if (stored.isEmpty()) return ""
         if (stored.startsWith("p:")) return stored.substring(2)
         if (!stored.startsWith("k1:")) return stored

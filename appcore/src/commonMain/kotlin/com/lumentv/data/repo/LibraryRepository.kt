@@ -1,5 +1,7 @@
 package com.lumentv.data.repo
 
+import com.lumentv.core.nowMillis
+import com.lumentv.core.IoDispatcher
 import kotlinx.coroutines.async
 import com.lumentv.core.normalize
 import com.lumentv.data.db.AppDatabase
@@ -12,7 +14,6 @@ import com.lumentv.data.db.PrefEntity
 import com.lumentv.data.db.PrefKind
 import com.lumentv.data.db.ProgramEntity
 import com.lumentv.data.db.SeriesRow
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -52,7 +53,7 @@ class LibraryRepository(private val db: AppDatabase) {
 
     // ---- Live -----------------------------------------------------------------------------------------------
 
-    suspend fun groups(pid: Long, includeHidden: Boolean): List<GroupInfo> = withContext(Dispatchers.IO) {
+    suspend fun groups(pid: Long, includeHidden: Boolean): List<GroupInfo> = withContext(IoDispatcher) {
         val prefs = db.prefs().allOf(pid, PrefKind.GROUP).associateBy { it.uid }
         db.channels().groups(pid).map {
             val p = prefs[it.groupName]
@@ -60,7 +61,7 @@ class LibraryRepository(private val db: AppDatabase) {
         }.filter { includeHidden || !it.hidden }
     }
 
-    suspend fun channels(pid: Long, group: String, includeHidden: Boolean, sort: String): List<ChannelRow> = withContext(Dispatchers.IO) {
+    suspend fun channels(pid: Long, group: String, includeHidden: Boolean, sort: String): List<ChannelRow> = withContext(IoDispatcher) {
         val rows = when (group) {
             Groups.FAVORITES -> db.channels().favorites(pid)
             Groups.ALL -> {
@@ -74,37 +75,37 @@ class LibraryRepository(private val db: AppDatabase) {
         if (group == Groups.FAVORITES) visible else sortChannels(visible, sort)
     }
 
-    suspend fun channel(id: Long) = withContext(Dispatchers.IO) { db.channels().get(id) }
-    suspend fun channelByUid(pid: Long, uid: String) = withContext(Dispatchers.IO) { db.channels().byUid(pid, uid) }
+    suspend fun channel(id: Long) = withContext(IoDispatcher) { db.channels().get(id) }
+    suspend fun channelByUid(pid: Long, uid: String) = withContext(IoDispatcher) { db.channels().byUid(pid, uid) }
 
     suspend fun lockedGroups(pid: Long): Set<String> =
         db.prefs().allOf(pid, PrefKind.GROUP).filter { it.locked }.mapTo(HashSet()) { it.uid }
 
     // ---- Movies & series -----------------------------------------------------------------------------------
 
-    suspend fun movieCategories(pid: Long, includeHidden: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun movieCategories(pid: Long, includeHidden: Boolean) = withContext(IoDispatcher) {
         val hidden = hiddenSet(pid, PrefKind.MOVIE_CATEGORY)
         db.vod().movieCategories(pid).filter { includeHidden || it.category !in hidden }
     }
-    suspend fun movies(pid: Long, category: String?) = withContext(Dispatchers.IO) { db.vod().movies(pid, category) }
-    suspend fun recentMovies(pid: Long) = withContext(Dispatchers.IO) { db.vod().recentMovies(pid, 60) }
-    suspend fun movie(id: Long) = withContext(Dispatchers.IO) { db.vod().movie(id) }
-    suspend fun movieByUid(pid: Long, uid: String) = withContext(Dispatchers.IO) { db.vod().movieByUid(pid, uid) }
+    suspend fun movies(pid: Long, category: String?) = withContext(IoDispatcher) { db.vod().movies(pid, category) }
+    suspend fun recentMovies(pid: Long) = withContext(IoDispatcher) { db.vod().recentMovies(pid, 60) }
+    suspend fun movie(id: Long) = withContext(IoDispatcher) { db.vod().movie(id) }
+    suspend fun movieByUid(pid: Long, uid: String) = withContext(IoDispatcher) { db.vod().movieByUid(pid, uid) }
 
-    suspend fun seriesCategories(pid: Long, includeHidden: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun seriesCategories(pid: Long, includeHidden: Boolean) = withContext(IoDispatcher) {
         val hidden = hiddenSet(pid, PrefKind.SERIES_CATEGORY)
         db.vod().seriesCategories(pid).filter { includeHidden || it.category !in hidden }
     }
-    suspend fun series(pid: Long, category: String?) = withContext(Dispatchers.IO) { db.vod().series(pid, category) }
+    suspend fun series(pid: Long, category: String?) = withContext(IoDispatcher) { db.vod().series(pid, category) }
     /** Channels of a playlist whose name contains [q] (normalised), hidden ones included: the copies of a channel. */
-    suspend fun channelsNamed(pid: Long, q: String) = withContext(Dispatchers.IO) { db.channels().search(q, 60).filter { it.ch.playlistId == pid } }
-    suspend fun recentSeries(pid: Long) = withContext(Dispatchers.IO) { db.vod().recentSeries(pid, 120) }
+    suspend fun channelsNamed(pid: Long, q: String) = withContext(IoDispatcher) { db.channels().search(q, 60).filter { it.ch.playlistId == pid } }
+    suspend fun recentSeries(pid: Long) = withContext(IoDispatcher) { db.vod().recentSeries(pid, 120) }
 
     /**
      * The other copies of a film in the playlist ("4K MULTI", "FHD VF", "VOSTFR"…): same title once the quality and
      * language marks are taken off. The film itself is included.
      */
-    suspend fun versions(m: com.lumentv.data.db.MovieEntity): List<MovieRow> = withContext(Dispatchers.IO) {
+    suspend fun versions(m: com.lumentv.data.db.MovieEntity): List<MovieRow> = withContext(IoDispatcher) {
         val base = com.lumentv.core.Featured.baseTitle(m.name)
         if (base.length < 2) return@withContext emptyList()
         db.vod().searchMovies(base, 80).filter { it.m.playlistId == m.playlistId && com.lumentv.core.Featured.baseTitle(it.m.name) == base }
@@ -112,29 +113,29 @@ class LibraryRepository(private val db: AppDatabase) {
     }
 
     /** A category's films or series for a row of the Films / Séries home: one per title, newest first. */
-    suspend fun categoryMovies(pid: Long, category: String) = withContext(Dispatchers.IO) {
+    suspend fun categoryMovies(pid: Long, category: String) = withContext(IoDispatcher) {
         com.lumentv.core.Featured.clean(db.vod().movies(pid, category).sortedByDescending { it.m.addedAt }, { it.m.name }, { it.m.category })
     }
-    suspend fun categorySeries(pid: Long, category: String) = withContext(Dispatchers.IO) {
+    suspend fun categorySeries(pid: Long, category: String) = withContext(IoDispatcher) {
         com.lumentv.core.Featured.clean(db.vod().series(pid, category).sortedByDescending { it.s.updatedAt }, { it.s.name }, { it.s.category })
     }
 
     /** A row of the Films / Séries home ("Tendances du moment", a category…). */
     class Shelf<T>(val title: String, val items: List<T>)
 
-    suspend fun seriesByUid(pid: Long, uid: String) = withContext(Dispatchers.IO) { db.vod().seriesByUid(pid, uid) }
-    suspend fun storedEpisodes(pid: Long, seriesUid: String) = withContext(Dispatchers.IO) { db.vod().episodes(pid, seriesUid) }
+    suspend fun seriesByUid(pid: Long, uid: String) = withContext(IoDispatcher) { db.vod().seriesByUid(pid, uid) }
+    suspend fun storedEpisodes(pid: Long, seriesUid: String) = withContext(IoDispatcher) { db.vod().episodes(pid, seriesUid) }
 
-    suspend fun favoriteMovies() = withContext(Dispatchers.IO) { db.vod().favoriteMovies() }
-    suspend fun favoriteSeries() = withContext(Dispatchers.IO) { db.vod().favoriteSeries() }
-    suspend fun favoriteChannelsAll() = withContext(Dispatchers.IO) { db.channels().favoritesAll() }
+    suspend fun favoriteMovies() = withContext(IoDispatcher) { db.vod().favoriteMovies() }
+    suspend fun favoriteSeries() = withContext(IoDispatcher) { db.vod().favoriteSeries() }
+    suspend fun favoriteChannelsAll() = withContext(IoDispatcher) { db.channels().favoritesAll() }
 
     private suspend fun hiddenSet(pid: Long, kind: String) =
         db.prefs().allOf(pid, kind).filter { it.hidden }.mapTo(HashSet()) { it.uid }
 
     // ---- Prefs ---------------------------------------------------------------------------------------------
 
-    suspend fun toggleFavorite(pid: Long, kind: String, uid: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun toggleFavorite(pid: Long, kind: String, uid: String): Boolean = withContext(IoDispatcher) {
         val cur = db.prefs().get(pid, kind, uid) ?: PrefEntity(pid, kind, uid)
         val fav = !cur.favorite
         db.prefs().upsert(cur.copy(favorite = fav, favOrder = if (fav) db.prefs().maxFavOrder() + 1 else 0))
@@ -142,26 +143,26 @@ class LibraryRepository(private val db: AppDatabase) {
         fav
     }
 
-    suspend fun setHidden(pid: Long, kind: String, uid: String, hidden: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun setHidden(pid: Long, kind: String, uid: String, hidden: Boolean) = withContext(IoDispatcher) {
         val cur = db.prefs().get(pid, kind, uid) ?: PrefEntity(pid, kind, uid)
         db.prefs().upsert(cur.copy(hidden = hidden))
         _changes.value++
     }
 
-    suspend fun setLocked(pid: Long, group: String, locked: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun setLocked(pid: Long, group: String, locked: Boolean) = withContext(IoDispatcher) {
         val cur = db.prefs().get(pid, PrefKind.GROUP, group) ?: PrefEntity(pid, PrefKind.GROUP, group)
         db.prefs().upsert(cur.copy(locked = locked))
         _changes.value++
     }
 
-    suspend fun setEpgOverride(pid: Long, uid: String, epgKey: String?) = withContext(Dispatchers.IO) {
+    suspend fun setEpgOverride(pid: Long, uid: String, epgKey: String?) = withContext(IoDispatcher) {
         val cur = db.prefs().get(pid, PrefKind.CHANNEL, uid) ?: PrefEntity(pid, PrefKind.CHANNEL, uid)
         db.prefs().upsert(cur.copy(epgOverride = epgKey?.lowercase()))
         _changes.value++
     }
 
     /** Moves a favourite channel one place up (-1) or down (+1) in the favourites list. */
-    suspend fun moveFavorite(pid: Long, uid: String, delta: Int) = withContext(Dispatchers.IO) {
+    suspend fun moveFavorite(pid: Long, uid: String, delta: Int) = withContext(IoDispatcher) {
         val favs = db.channels().favorites(pid)
         val i = favs.indexOfFirst { it.ch.uid == uid }
         val j = i + delta
@@ -179,23 +180,23 @@ class LibraryRepository(private val db: AppDatabase) {
 
     fun observeHistory(limit: Int = 100) = db.history().observeRecent(limit)
 
-    suspend fun history(key: String) = withContext(Dispatchers.IO) { db.history().get(key) }
-    suspend fun episodeHistory(pid: Long, seriesUid: String) = withContext(Dispatchers.IO) { db.history().episodesOf(pid, seriesUid) }
-    suspend fun recentChannels(limit: Int) = withContext(Dispatchers.IO) { db.history().recentOf(HistoryKind.CHANNEL, limit) }
+    suspend fun history(key: String) = withContext(IoDispatcher) { db.history().get(key) }
+    suspend fun episodeHistory(pid: Long, seriesUid: String) = withContext(IoDispatcher) { db.history().episodesOf(pid, seriesUid) }
+    suspend fun recentChannels(limit: Int) = withContext(IoDispatcher) { db.history().recentOf(HistoryKind.CHANNEL, limit) }
 
-    suspend fun record(h: HistoryEntity) = withContext(Dispatchers.IO) { db.history().upsert(h) }
-    suspend fun deleteHistory(key: String) = withContext(Dispatchers.IO) { db.history().delete(key) }
-    suspend fun clearHistory() = withContext(Dispatchers.IO) { db.history().clear() }
+    suspend fun record(h: HistoryEntity) = withContext(IoDispatcher) { db.history().upsert(h) }
+    suspend fun deleteHistory(key: String) = withContext(IoDispatcher) { db.history().delete(key) }
+    suspend fun clearHistory() = withContext(IoDispatcher) { db.history().clear() }
 
     // ---- Personal ratings ------------------------------------------------------------------------------------
 
     fun observeRatings() = db.ratings().observeAll()
 
     /** 1 to 5 stars, or 0 to remove the rating. [kind]: mv (film) or se (series). */
-    suspend fun rate(kind: String, pid: Long, uid: String, stars: Int, title: String, image: String?) = withContext(Dispatchers.IO) {
+    suspend fun rate(kind: String, pid: Long, uid: String, stars: Int, title: String, image: String?) = withContext(IoDispatcher) {
         val key = key(kind, pid, uid)
         if (stars <= 0) db.ratings().delete(key)
-        else db.ratings().upsert(com.lumentv.data.db.RatingEntity(key, kind, pid, uid, stars.coerceIn(1, 5), System.currentTimeMillis(), title, image))
+        else db.ratings().upsert(com.lumentv.data.db.RatingEntity(key, kind, pid, uid, stars.coerceIn(1, 5), nowMillis(), title, image))
     }
 
     // ---- Search ----------------------------------------------------------------------------------------------
@@ -205,7 +206,7 @@ class LibraryRepository(private val db: AppDatabase) {
      * plus the films and series TMDB finds under another title (French or original) that the playlist has; then
      * episodes and programmes as before (by words). [pid] is the active playlist.
      */
-    suspend fun search(query: String, epg: EpgRepository, pid: Long?, index: LibraryIndex, tmdb: com.lumentv.data.Tmdb): SearchResults = withContext(Dispatchers.IO) {
+    suspend fun search(query: String, epg: EpgRepository, pid: Long?, index: LibraryIndex, tmdb: com.lumentv.data.Tmdb): SearchResults = withContext(IoDispatcher) {
         val q = normalize(query)
         if (q.length < 2) return@withContext SearchResults()
         val sq = com.lumentv.core.SmartSearch.Query(query)
@@ -220,14 +221,14 @@ class LibraryRepository(private val db: AppDatabase) {
         val movieIds = found?.movies?.map { it.id }
         val seriesIds = found?.series?.map { it.id }
         val channelIds = idx?.let { com.lumentv.core.SmartSearch.search(sq, it.channels, SEARCH_LIMIT) }?.map { it.id }
-        val programs = db.epg().search(q, System.currentTimeMillis(), SEARCH_LIMIT)
+        val programs = db.epg().search(q, nowMillis(), SEARCH_LIMIT)
         val byPlaylist = HashMap<Long, Map<String, ChannelRow>>()
         val progPairs = programs.map { p ->
             val map = byPlaylist.getOrPut(p.playlistId) {
                 val m = epg.matcher(p.playlistId)
                 val out = HashMap<String, ChannelRow>()
                 db.channels().inGroup(p.playlistId, null).forEach { c ->
-                    m.keyFor(c.epgOverride, c.ch.epgId, c.ch.name)?.let { out.putIfAbsent(it, c) }
+                    m.keyFor(c.epgOverride, c.ch.epgId, c.ch.name)?.let { if (it !in out) out[it] = c }
                 }
                 out
             }

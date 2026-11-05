@@ -1,8 +1,10 @@
 package com.lumentv.data.repo
 
-import com.lumentv.core.asXmlReader
-import android.util.Log
-import android.util.Xml
+import com.lumentv.core.HttpBody
+import com.lumentv.core.IoDispatcher
+import com.lumentv.core.XmlReader
+import com.lumentv.core.logWarn
+import com.lumentv.core.nowMillis
 import com.lumentv.data.db.transaction
 import com.lumentv.core.Redact
 import com.lumentv.core.SecretBox
@@ -19,12 +21,11 @@ import com.lumentv.data.db.ProgramEntity
 import com.lumentv.data.epg.EpgMatcher
 import com.lumentv.data.epg.XmltvParser
 import com.lumentv.data.xtream.XtreamApi
-import kotlinx.coroutines.Dispatchers
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
-import org.xmlpull.v1.XmlPullParser
-import java.util.concurrent.ConcurrentHashMap
 
 data class NowNext(val now: ProgramEntity?, val next: ProgramEntity?)
 
@@ -32,8 +33,10 @@ class EpgRepository(
     private val db: AppDatabase,
     private val playlists: PlaylistRepository,
     private val epgDays: suspend () -> Int,
+    /** Reads XMLTV from a body, with the encoding the file declares (xmlPullReaders(null) on Android). */
+    private val newReader: (HttpBody) -> XmlReader,
 ) {
-    private val matchers = ConcurrentHashMap<Long, EpgMatcher>()
+    private val matchers = Matchers()
     private val _busy = MutableStateFlow<Set<Long>>(emptySet())
     val busy: StateFlow<Set<Long>> = _busy
     private val _version = MutableStateFlow(0)
@@ -48,7 +51,7 @@ class EpgRepository(
         return null
     }
 
-    suspend fun refresh(playlistId: Long): RefreshOutcome = withContext(Dispatchers.IO) {
+    suspend fun refresh(playlistId: Long): RefreshOutcome = withContext(IoDispatcher) {
         val p = db.playlists().get(playlistId) ?: return@withContext RefreshOutcome(false, "Playlist introuvable.")
         val url = epgUrl(p) ?: return@withContext RefreshOutcome(false, "Aucun guide TV (XMLTV) configuré pour cette playlist.")
         _busy.value = _busy.value + playlistId
@@ -58,7 +61,7 @@ class EpgRepository(
             _version.value++
             RefreshOutcome(true, result)
         } catch (t: Throwable) {
-            Log.w(TAG, "epg failed: ${Redact.text(t.toString())}")
+            logWarn(TAG, "epg failed: ${Redact.text(t.toString())}")
             RefreshOutcome(false, userMessage(t))
         } finally {
             _busy.value = _busy.value - playlistId
@@ -69,7 +72,7 @@ class EpgRepository(
         val wantedIds = db.channels().epgIds(p.id).toHashSet()
         db.prefs().allOf(p.id, PrefKind.CHANNEL).mapNotNullTo(wantedIds) { it.epgOverride?.lowercase() }
         val wantedNames = db.channels().names(p.id).mapTo(HashSet()) { channelKeyName(it) }
-        val now = System.currentTimeMillis()
+        val now = nowMillis()
         val maxCatchup = db.channels().inGroup(p.id, null).maxOfOrNull { it.ch.catchupDays } ?: 0
         val from = now - maxOf(1, maxCatchup).coerceAtMost(14) * DAY
         val to = now + epgDays().coerceIn(1, 14) * DAY
@@ -80,11 +83,8 @@ class EpgRepository(
         val programs = ArrayList<ProgramEntity>()
 
         playlists.openSource(url, playlists.userAgentFor(p)).use { stream ->
-            val parser: XmlPullParser = Xml.newPullParser()
-            parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
-            parser.setInput(stream, null)
             XmltvParser.parse(
-                parser.asXmlReader(),
+                newReader(stream),
                 onChannel = { c ->
                     val key = c.id.lowercase()
                     val byName = c.names.any { channelKeyName(it) in wantedNames }
@@ -110,7 +110,7 @@ class EpgRepository(
             db.epg().deleteChannels(p.id)
             epgChannels.distinctBy { it.epgKey to it.nameKey }.chunked(500).forEach { db.epg().insertChannels(it) }
             programs.chunked(1000).forEach { db.epg().insertPrograms(it) }
-            db.playlists().update(db.playlists().get(p.id)!!.copy(lastEpgRefresh = System.currentTimeMillis()))
+            db.playlists().update(db.playlists().get(p.id)!!.copy(lastEpgRefresh = nowMillis()))
         }
         val matched = db.channels().inGroup(p.id, null).count { matcher(p.id).keyFor(it.epgOverride, it.ch.epgId, it.ch.name) != null }
         return "${programs.size} programmes · $matched chaînes associées"
@@ -121,7 +121,7 @@ class EpgRepository(
         val rows = db.epg().channels(playlistId)
         val ids = rows.mapTo(HashSet()) { it.epgKey }
         val names = HashMap<String, String>()
-        rows.forEach { names.putIfAbsent(it.nameKey, it.epgKey) }
+        rows.forEach { if (it.nameKey !in names) names[it.nameKey] = it.epgKey }
         return EpgMatcher(ids, names).also { matchers[playlistId] = it }
     }
 
@@ -129,7 +129,7 @@ class EpgRepository(
 
     suspend fun keyFor(c: ChannelRow): String? = matcher(c.ch.playlistId).keyFor(c.epgOverride, c.ch.epgId, c.ch.name)
 
-    suspend fun nowNext(c: ChannelRow, now: Long = System.currentTimeMillis()): NowNext {
+    suspend fun nowNext(c: ChannelRow, now: Long = nowMillis()): NowNext {
         val key = keyFor(c) ?: return NowNext(null, null)
         val list = db.epg().programs(c.ch.playlistId, key, now - 1, now + 12 * HOUR)
         val cur = list.firstOrNull { it.start <= now && it.stop > now }
@@ -158,12 +158,22 @@ class EpgRepository(
     suspend fun epgChannelChoices(playlistId: Long): List<EpgChannelEntity> =
         db.epg().channels(playlistId).distinctBy { it.epgKey }.sortedBy { it.displayName.lowercase() }
 
-    suspend fun clearAll() = withContext(Dispatchers.IO) {
+    suspend fun clearAll() = withContext(IoDispatcher) {
         db.transaction { db.epg().clearPrograms(); db.epg().clearChannels() }
         matchers.clear(); _version.value++
     }
 
-    suspend fun prune() = db.epg().deleteOlderThan(System.currentTimeMillis() - 15 * DAY)
+    suspend fun prune() = db.epg().deleteOlderThan(nowMillis() - 15 * DAY)
+
+    /** The matchers by playlist, read from several coroutines at once. */
+    private class Matchers {
+        private val lock = SynchronizedObject()
+        private val map = HashMap<Long, EpgMatcher>()
+        operator fun get(id: Long): EpgMatcher? = synchronized(lock) { map[id] }
+        operator fun set(id: Long, m: EpgMatcher) = synchronized(lock) { map[id] = m }
+        fun remove(id: Long) = synchronized(lock) { map.remove(id) }
+        fun clear() = synchronized(lock) { map.clear() }
+    }
 
     companion object {
         private const val TAG = "Epg"

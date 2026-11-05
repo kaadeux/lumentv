@@ -11,7 +11,6 @@ import com.lumentv.data.m3u.M3uParser
 import com.lumentv.data.xtream.XLive
 import com.lumentv.data.xtream.XMovie
 import com.lumentv.data.xtream.XSeries
-import java.io.BufferedReader
 
 const val NO_GROUP = "Sans catégorie"
 
@@ -36,7 +35,7 @@ private class UidSet {
 
 /** Builds database rows from an M3U playlist. Pure: no database, no network, so it is unit tested. */
 object M3uImport {
-    fun build(playlistId: Long, reader: BufferedReader, dedupe: Boolean): ImportResult {
+    fun build(playlistId: Long, readLine: () -> String?, dedupe: Boolean): ImportResult {
         val channels = ArrayList<ChannelEntity>()
         val movies = ArrayList<MovieEntity>()
         val seriesByUid = LinkedHashMap<String, SeriesEntity>()
@@ -48,7 +47,7 @@ object M3uImport {
         var epgUrl: String? = null
         var dupes = 0
 
-        M3uParser.parse(reader::readLine, onHeader = { h -> if (epgUrl == null) epgUrl = h.epgUrl }) { e ->
+        M3uParser.parse(readLine, onHeader = { h -> if (epgUrl == null) epgUrl = h.epgUrl }) { e ->
             if (dedupe && !seenUrls.add(e.url)) { dupes++; return@parse }
             val group = e.group.ifBlank { NO_GROUP }
             val c = M3uClassifier.classify(e)

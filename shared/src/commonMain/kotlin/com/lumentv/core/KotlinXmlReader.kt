@@ -258,3 +258,21 @@ internal class Utf8Chars(private val body: HttpBody) {
         return cp
     }
 }
+
+/** UTF-8 lines of a body ("\n", "\r\n" or "\r"), as BufferedReader.readLine gives them. */
+internal class Utf8Lines(body: HttpBody) {
+    private val chars = Utf8Chars(body)
+
+    fun next(): String? {
+        if (chars.peek() < 0) return null
+        val sb = StringBuilder()
+        while (true) {
+            val c = chars.read()
+            if (c < 0) break
+            if (c == '\n'.code) break
+            if (c == '\r'.code) { if (chars.peek() == '\n'.code) chars.read(); break }
+            sb.append(c.toChar())
+        }
+        return sb.toString()
+    }
+}

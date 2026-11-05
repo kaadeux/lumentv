@@ -6,6 +6,7 @@ import com.lumentv.data.m3u.M3uClassifier
 import com.lumentv.data.m3u.M3uEntry
 import com.lumentv.data.m3u.M3uParser
 import com.lumentv.data.repo.M3uImport
+import com.lumentv.data.repo.build
 import com.lumentv.data.repo.NO_GROUP
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
