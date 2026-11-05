@@ -39,9 +39,6 @@ class TransferRepository(private val context: Context, private val db: AppDataba
         id
     }
 
-    /** A download is starting from the shared screens: its notification needs the permission on Android 13+. */
-    fun askNotifications() { _permissionRequests.tryEmit(Unit) }
-
     suspend fun get(id: Long) = withContext(Dispatchers.IO) { db.transfers().get(id) }
 
     suspend fun cancel(id: Long) = withContext(Dispatchers.IO) {
