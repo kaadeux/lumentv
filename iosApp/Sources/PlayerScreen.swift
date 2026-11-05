@@ -275,7 +275,8 @@ private struct VerticalPill: View {
             .clipShape(RoundedRectangle(cornerRadius: 26))
             .overlay(RoundedRectangle(cornerRadius: 26).stroke(.white.opacity(0.12)))
             .gesture(DragGesture(minimumDistance: 0).onChanged { d in
-                value = min(1, max(0, 1 - d.location.y / g.size.height))
+                let y = Double(d.location.y), h = Double(max(1, g.size.height))
+                value = min(1.0, max(0.0, 1.0 - y / h))
                 onChange(value)
             })
         }
