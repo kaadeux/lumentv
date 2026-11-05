@@ -20,7 +20,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -73,6 +76,8 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
     var results by remember { mutableStateOf(LastSearch.results) }
     var searching by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
     LaunchedEffect(query) {
         LastSearch.query = query
         if (query.trim().length < 2) { results = null; LastSearch.results = null; return@LaunchedEffect }
@@ -90,6 +95,8 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
         item {
             OutlinedTextField(query, { query = it }, placeholder = { Text("Film, série, acteur, chaîne…") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Search),
+                // The keyboard's magnifier closes it: the results show whole.
+                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide(); focus.clearFocus() }),
                 trailingIcon = {
                     if (searching) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     else if (query.isNotEmpty()) Text("✕", modifier = Modifier.clickable { query = "" }.padding(10.dp), color = Palette.TextDim)
@@ -114,11 +121,17 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
                 }
             }
         }
-        if (r != null && r.people.isNotEmpty()) {
-            item { SectionTitle("Acteurs et réalisateurs") }
-            items(r.people.take(8), key = { "p:" + it.key }) { h ->
-                Line(h.title, listOfNotNull(h.movies.size.takeIf { it > 0 }?.let { "$it film" + if (it > 1) "s" else "" },
-                    h.series.size.takeIf { it > 0 }?.let { "$it série" + if (it > 1) "s" else "" }).joinToString(" · "), null) { open(Route.Person(h)) }
+        // An actor or a director: their films and series of the playlist, straight away.
+        r?.people.orEmpty().take(6).forEach { h ->
+            val films = oneEach(h.movies, { it.m.name }, { it.m.category })
+            val shows = oneEach(h.series, { it.s.name }, { it.s.category })
+            if (films.isEmpty() && shows.isEmpty()) return@forEach
+            item(key = "pt:" + h.key) { SectionTitle("Avec ${h.title}") }
+            item(key = "pr:" + h.key) {
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(films, key = { "m" + it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } } }
+                    items(shows, key = { "s" + it.s.id }) { s -> Box(Modifier.width(110.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } } }
+                }
             }
         }
         if (r != null && r.channels.isNotEmpty()) {

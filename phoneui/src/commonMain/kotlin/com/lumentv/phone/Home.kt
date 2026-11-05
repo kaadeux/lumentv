@@ -229,7 +229,8 @@ private fun day(t: Long): String = Instant.fromEpochMilliseconds(t).toLocalDateT
 
 /** The online profile (favourites, history, resume, ratings shared with the TV, the phone and the PC) and the list. */
 @Composable
-internal fun ProfileHome(core: AppCore, p: PlaylistEntity) {
+internal fun SettingsPage(core: AppCore, p: PlaylistEntity, back: () -> Unit) {
+    val settings by core.settings.flow.collectAsState(null)
     val state by core.profile.state.collectAsState()
     val busy by core.playlists.busy.collectAsState()
     var name by remember { mutableStateOf("") }
@@ -238,7 +239,7 @@ internal fun ProfileHome(core: AppCore, p: PlaylistEntity) {
     var signing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("Profil", fontSize = 28.sp, fontWeight = FontWeight.Bold) }
+        item { Header("Réglages", back) }
         item {
             Section("Profil en ligne") {
                 when {
@@ -284,7 +285,37 @@ internal fun ProfileHome(core: AppCore, p: PlaylistEntity) {
                 }) { Text(if (p.id in busy) "Actualisation…" else "Recharger la liste") }
             }
         }
+        item {
+            Section("Lecture") {
+                Toggle("Épisode suivant automatique", "À la fin d'un épisode, le suivant se lance.", settings?.autoNext ?: true) { on ->
+                    core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.autoNext, on) }
+                }
+            }
+        }
+        item {
+            Section("Guide TV") {
+                Text("Jours de programmes gardés", color = Palette.TextDim, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(1, 3, 7).forEach { d ->
+                        androidx.compose.material3.FilterChip(selected = settings?.epgDays == d, label = { Text("$d jour" + if (d > 1) "s" else "") }, onClick = {
+                            core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.epgDays, d) }
+                        })
+                    }
+                }
+                OutlinedButton(onClick = { core.scope.launch { core.epg.refresh(p.id) } }) { Text("Recharger le guide") }
+            }
+        }
+        item { Text("Lumen TV pour iPhone", color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
     }
+}
+
+@Composable
+private fun Toggle(title: String, subtitle: String, on: Boolean, onChange: (Boolean) -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.weight(1f)) {
+        Text(title, fontWeight = FontWeight.SemiBold)
+        Text(subtitle, color = Palette.TextDim, fontSize = 13.sp)
+    }
+    androidx.compose.material3.Switch(checked = on, onCheckedChange = onChange)
 }
 
 @Composable

@@ -79,9 +79,14 @@ internal sealed interface Route {
     data class Group(val name: String) : Route
     data class Categories(val series: Boolean) : Route
     data class Person(val hit: com.lumentv.data.repo.PersonHit) : Route
+    data object Favorites : Route
+    data object Guide : Route
+    data class GuideChannel(val channel: ChannelRow) : Route
+    data object Sports : Route
+    data object Settings : Route
 }
 
-private enum class Tab(val label: String, val icon: String) { MOVIES("Films", "🎬"), SERIES("Séries", "📺"), LIVE("TV", "📡"), SEARCH("Recherche", "🔍"), PROFILE("Profil", "👤") }
+private enum class Tab(val label: String, val icon: String) { MOVIES("Films", "🎬"), SERIES("Séries", "📺"), LIVE("TV", "📡"), SEARCH("Recherche", "🔍"), MORE("Plus", "☰") }
 
 /**
  * The iPhone app (and, step by step, the Android phone's): the account to add first, then Films, Séries and TV over
@@ -196,13 +201,18 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
                 is Route.Series -> SeriesPage(core, p, r.row, player, back)
                 is Route.Group -> ChannelsPage(core, p, r.name, player, back)
                 is Route.Person -> PersonPage(r.hit, open, back)
+                Route.Favorites -> FavoritesPage(core, p, player, open, back)
+                Route.Guide -> GuidePage(core, p, open, back)
+                is Route.GuideChannel -> GuideChannelPage(core, r.channel, player, back)
+                Route.Sports -> SportsPage(core, p, player, back)
+                Route.Settings -> SettingsPage(core, p, back)
                 is Route.Categories -> if (r.series) SeriesCategories(core, p, open, back) else MovieCategories(core, p, open, back)
                 null -> when (tab) {
                     Tab.MOVIES -> MoviesHome(core, p, player, open)
                     Tab.SERIES -> SeriesHome(core, p, player, open)
                     Tab.LIVE -> LiveHome(core, p, open)
                     Tab.SEARCH -> SearchHome(core, p, player, open)
-                    Tab.PROFILE -> ProfileHome(core, p)
+                    Tab.MORE -> MoreHome(open)
                 }
             }
         }
@@ -303,6 +313,8 @@ internal fun minutes(ms: Long) = (ms / 60_000).let { if (it >= 60) "${it / 60} h
 internal fun play(core: AppCore, player: VideoPlayer, spec: StreamSpec, title: String, subtitle: String?, startMs: Long, onFinish: (Long, Long) -> Unit) =
     player.play(PlayRequest(spec.url, spec.userAgent, spec.referer, title, subtitle, startMs, spec.live, onFinish))
 
+internal const val MY_CHANNELS = "★ Mes chaînes"
+
 // ---- Live -------------------------------------------------------------------------------------------------------
 
 @Composable
@@ -310,6 +322,11 @@ private fun LiveHome(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
     val groups by produceState(emptyList<com.lumentv.data.repo.GroupInfo>(), p.id, p.lastRefresh) { value = core.library.groups(p.id, false) }
     LazyColumn {
         item { Header("TV") }
+        item {
+            Row(Modifier.fillMaxWidth().clickable { open(Route.Group(MY_CHANNELS)) }.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                Text(MY_CHANNELS, modifier = Modifier.weight(1f), color = Palette.Gold, fontWeight = FontWeight.SemiBold)
+            }
+        }
         items(groups, key = { it.name }) { g ->
             Row(Modifier.fillMaxWidth().clickable { open(Route.Group(g.name)) }.padding(horizontal = 16.dp, vertical = 14.dp)) {
                 Text(g.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -322,28 +339,18 @@ private fun LiveHome(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
 @Composable
 private fun ChannelsPage(core: AppCore, p: PlaylistEntity, group: String, player: VideoPlayer, back: () -> Unit) {
     val settings by core.settings.flow.collectAsState(null)
-    val channels by produceState(emptyList<ChannelRow>(), p.id, group) { value = core.library.channels(p.id, group, false, settings?.sort ?: "provider") }
+    val channels by produceState(emptyList<ChannelRow>(), p.id, group) {
+        value = if (group == MY_CHANNELS) core.library.favoriteChannelsAll().filter { it.ch.playlistId == p.id }
+        else core.library.channels(p.id, group, false, settings?.sort ?: "provider")
+    }
     val scope = rememberCoroutineScope()
     LazyColumn {
         item { Header(group, back) }
+        if (group == MY_CHANNELS && channels.isEmpty()) item {
+            Text("Ajoute des chaînes avec ☆ dans leurs groupes.", color = Palette.TextDim, modifier = Modifier.padding(16.dp))
+        }
         items(channels, key = { it.ch.id }) { c ->
-            val now by produceState<String?>(null, c.ch.id) { value = runCatching { core.epg.nowNext(c).now?.title }.getOrNull() }
-            Row(Modifier.fillMaxWidth().clickable {
-                scope.launch {
-                    val spec = core.resolver.channel(c.ch)
-                    core.library.record(HistoryEntity(LibraryRepository.key(HistoryKind.CHANNEL, c.ch.playlistId, c.ch.uid), HistoryKind.CHANNEL,
-                        c.ch.playlistId, c.ch.uid, c.ch.name, c.ch.groupName, c.ch.logo, watchedAt = nowMillis()))
-                    play(core, player, spec, c.ch.name, now, 0) { _, _ -> }
-                }
-            }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(Palette.PanelHigh), contentAlignment = Alignment.Center) {
-                    AsyncImage(c.ch.logo, null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(4.dp))
-                }
-                Column(Modifier.padding(start = 12.dp)) {
-                    Text(c.ch.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                    now?.let { Text(it, color = Palette.TextDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                }
-            }
+            ChannelLine(core, c, { scope.launch { playChannel(core, player, c, null) } }) { FavoriteStar(core, c) }
         }
     }
 }
