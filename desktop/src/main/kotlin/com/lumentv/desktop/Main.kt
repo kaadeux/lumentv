@@ -120,7 +120,7 @@ fun Shell(state: AppState) {
             when {
                 section == Section.Settings -> SettingsScreen(state)
                 section == Section.Downloads -> DownloadsScreen(state)
-                state.active == null -> Empty("Aucune playlist", "Ajoutez votre compte Xtream ou votre playlist M3U dans Paramètres, ou connectez votre profil en ligne.")
+                state.active == null -> Empty("Aucune playlist", "Ajoutez votre compte Xtream ou votre playlist M3U dans Paramètres.")
                 state.catalog == null && state.loading -> Empty("Chargement de la playlist…", "La première fois, cela peut prendre une minute.")
                 state.catalog == null -> Empty("Playlist indisponible", state.loadError ?: "")
                 // Each section keeps its scroll positions while another one is shown.

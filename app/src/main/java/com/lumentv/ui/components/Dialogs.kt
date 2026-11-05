@@ -190,29 +190,3 @@ fun PinDialog(title: String, onPin: (String) -> Unit, onDismiss: () -> Unit, err
         LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     }
 }
-
-/** Opens or creates the online profile: a name and a passphrase (at least 10 characters). */
-@Composable
-fun ProfileDialog(busy: Boolean, error: String?, onSubmit: (String, String) -> Unit, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = { if (!busy) onDismiss() }) {
-        var name by remember { mutableStateOf("") }
-        var pass by remember { mutableStateOf("") }
-        val focus = remember { FocusRequester() }
-        Column(Modifier.panelWidth(560.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Profil en ligne", style = MaterialTheme.typography.titleLarge, color = Palette.Text)
-            Text("Le même nom et la même phrase secrète sur la TV et le PC partagent playlists, favoris, historique et réglages. " +
-                "Tout est chiffré sur l'appareil : sans la phrase secrète, personne ne peut lire le profil, pas même le serveur. " +
-                "Une phrase oubliée ne peut pas être récupérée.", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
-            TvTextField("Nom du profil", name, { name = it }, Modifier.fillMaxWidth().focusRequester(focus), placeholder = "Par exemple : famille-martin",
-                keyboardType = KeyboardType.Text)
-            TvTextField("Phrase secrète (10 caractères minimum)", pass, { pass = it }, Modifier.fillMaxWidth(), password = true,
-                keyboardType = KeyboardType.Password)
-            if (error != null) Text(error, color = Palette.Danger, style = MaterialTheme.typography.bodyMedium)
-            // The main button spans the width, so Down from the fields always lands on it; Back cancels.
-            TvButton(if (busy) "Connexion…" else "Se connecter / créer le profil", { if (!busy) onSubmit(name, pass) }, Modifier.fillMaxWidth(), primary = true)
-            Text("Retour : annuler", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-        }
-        LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-    }
-}

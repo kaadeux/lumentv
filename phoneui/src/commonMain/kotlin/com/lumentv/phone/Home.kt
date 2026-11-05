@@ -264,6 +264,7 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity?, open: (Route) -> Un
             Section("Profil en ligne") {
                 when {
                     !core.profile.enabled -> Text("Le profil en ligne n'est pas encore activé dans cette version de l'app.", color = Palette.TextDim)
+                    state.name == null && p == null -> Text(com.lumentv.core.ProfileGate.NEEDS_LIST, color = Palette.TextDim, fontSize = 14.sp)
                     state.name == null -> {
                         Text("Le même profil que sur la TV : favoris, historique, reprise et notes suivent d'un appareil à l'autre. Chiffré sur l'iPhone avant l'envoi.",
                             color = Palette.TextDim, fontSize = 14.sp)

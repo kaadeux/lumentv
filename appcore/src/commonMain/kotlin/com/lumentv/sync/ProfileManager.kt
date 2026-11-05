@@ -73,6 +73,7 @@ class ProfileManager(
 
     /** Opens (or creates, when the name is new) the profile, then merges this TV's data into it. */
     suspend fun signIn(name: String, passphrase: String): Result<Unit> = runCatching {
+        check(db.playlists().all().isNotEmpty()) { com.lumentv.core.ProfileGate.NEEDS_LIST }
         val keys = withContext(Dispatchers.Default) { ProfileKeys.derive(name, passphrase) }
         sync.pull(keys) // checks the passphrase before anything is stored
         prefs.put("keys", SecretBox.encrypt(json.encodeToString(

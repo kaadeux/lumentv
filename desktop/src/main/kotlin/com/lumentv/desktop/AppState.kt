@@ -226,6 +226,7 @@ class AppState(private val scope: CoroutineScope) {
     // ---- Online profile ------------------------------------------------------------------------------------
 
     suspend fun signIn(name: String, passphrase: String): Result<Unit> = runCatching {
+        check(playlists.isNotEmpty()) { com.lumentv.core.ProfileGate.NEEDS_LIST }
         val keys = withContext(Dispatchers.Default) { ProfileKeys.derive(name, passphrase) }
         val remote = sync.pull(keys)
         Store.saveKeys(Store.StoredKeys(keys.name, keys.id, keys.token, Base64.getEncoder().encodeToString(keys.encKey)))

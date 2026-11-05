@@ -29,6 +29,14 @@ data class Privacy(val title: String, val lines: List<String>) {
     }
 }
 
+/**
+ * The online profile brings the user's lists, logins included: a device joins one only once it has a list of its own,
+ * so that a profile's name and passphrase alone never hand its streams to a new device.
+ */
+object ProfileGate {
+    const val NEEDS_LIST = "Ajoute d'abord ta liste (M3U ou Xtream) : le profil en ligne ne s'ouvre qu'ensuite, pour que personne ne récupère les listes d'un profil sur un appareil vide."
+}
+
 /** The stored form of a secret (SecretBox): "p:" means the device's key store refused and it is kept in clear. */
 object Secrets {
     fun inClear(vararg stored: String) = stored.any { it.startsWith("p:") }

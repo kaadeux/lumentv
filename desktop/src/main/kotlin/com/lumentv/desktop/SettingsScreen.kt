@@ -74,7 +74,9 @@ fun SettingsScreen(state: AppState) {
         if (state.syncEnabled) item {
             SettingsSection("Profil en ligne") {
                 val name = state.profileName
-                if (name == null) {
+                if (name == null && state.playlists.isEmpty()) {
+                    Text(com.lumentv.core.ProfileGate.NEEDS_LIST, color = Pal.dim, fontSize = 14.sp)
+                } else if (name == null) {
                     Text("Le même profil que sur la TV : playlists, favoris, historique et réglages se retrouvent ici, chiffrés de bout en bout.",
                         color = Pal.dim, fontSize = 14.sp)
                     KitButton("Se connecter", primary = true, modifier = Modifier.fillMaxWidth()) { login = true }
@@ -108,7 +110,7 @@ fun SettingsScreen(state: AppState) {
 
         item {
             SettingsSection("Mes listes") {
-                if (state.playlists.isEmpty()) Text("Aucune liste sur ce PC : ajoute ta playlist M3U ou ton compte Xtream, ou connecte ton profil.", color = Pal.dim, fontSize = 14.sp)
+                if (state.playlists.isEmpty()) Text("Aucune liste sur ce PC : ajoute ta playlist M3U ou ton compte Xtream.", color = Pal.dim, fontSize = 14.sp)
                 state.playlists.forEach { (key, p) ->
                     val isActive = key == state.activeKeyOrFirst
                     ListTile(p.name, if (p.type == "xtream") "Compte Xtream" else "Playlist M3U", isActive, onClick = { menu = key }) {
