@@ -25,8 +25,8 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: Lumen TV
-        CFBundleShortVersionString: "0.13.0"
-        CFBundleVersion: "18"
+        CFBundleShortVersionString: "0.13.1"
+        CFBundleVersion: "19"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
@@ -39,6 +39,8 @@ targets:
         # Filled at build time from the repository's secrets (empty: no TMDB rows, no online profile).
         LumenTmdbKey: $(LUMEN_TMDB_KEY)
         LumenSyncUrl: $(LUMEN_SYNC_URL)
+        # SHA-256 of the family access code (empty: no gate).
+        LumenAccessHash: $(LUMEN_ACCESS_HASH)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lumentv.ios
@@ -51,3 +53,4 @@ targets:
         FRAMEWORK_SEARCH_PATHS: ["$(inherited)", "$(PROJECT_DIR)/../phoneui/build/bin/iosArm64/releaseFramework"]
         LUMEN_TMDB_KEY: ""
         LUMEN_SYNC_URL: ""
+        LUMEN_ACCESS_HASH: ""

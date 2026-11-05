@@ -53,11 +53,15 @@ jobs:
         env:
           LUMEN_TMDB_KEY: ${{ secrets.LUMEN_TMDB_KEY }}
           LUMEN_SYNC_URL: ${{ secrets.LUMEN_SYNC_URL }}
+          LUMEN_ACCESS_CODE: ${{ secrets.LUMEN_ACCESS_CODE }}
         run: |
+          # Only the hash of the family code goes into the app, as on Android (no secret: no gate).
+          LUMEN_ACCESS_HASH=""
+          if [ -n "$LUMEN_ACCESS_CODE" ]; then LUMEN_ACCESS_HASH=$(printf 'lumen-access:%s' "$(echo "$LUMEN_ACCESS_CODE" | tr -d '[:space:]')" | shasum -a 256 | cut -d' ' -f1); fi
           xcodebuild -project LumenTV.xcodeproj -scheme LumenTV -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             -clonedSourcePackagesDirPath build/SourcePackages \
-            LUMEN_TMDB_KEY="$LUMEN_TMDB_KEY" LUMEN_SYNC_URL="$LUMEN_SYNC_URL" \
+            LUMEN_TMDB_KEY="$LUMEN_TMDB_KEY" LUMEN_SYNC_URL="$LUMEN_SYNC_URL" LUMEN_ACCESS_HASH="$LUMEN_ACCESS_HASH" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > build.log 2>&1             || { grep -E "error:" -A4 build.log | head -120; exit 1; }
           tail -n 20 build.log
 

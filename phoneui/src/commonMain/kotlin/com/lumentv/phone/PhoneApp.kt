@@ -117,13 +117,14 @@ private fun titleOf(r: Route): String = when (r) {
  * the shared database. Playback goes to the platform's [player].
  */
 @Composable
-fun LumenPhoneApp(core: AppCore, player: VideoPlayer) = LumenTheme {
+fun LumenPhoneApp(core: AppCore, player: VideoPlayer, access: AccessGate? = null) = LumenTheme {
     val playlists by core.playlists.observe().collectAsState(null)
     val settings by core.settings.flow.collectAsState(null)
     val list = playlists
     val s = settings
     Box(Modifier.fillMaxSize().background(Palette.Background)) {
         when {
+            access != null && !access.unlocked -> AccessScreen(access)
             list == null || s == null -> Centered { CircularProgressIndicator() }
             list.isEmpty() -> SetupScreen(core)
             else -> {

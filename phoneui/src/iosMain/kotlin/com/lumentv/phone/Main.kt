@@ -56,6 +56,8 @@ object IosApp {
     }
     /** Films and episodes kept on the iPhone; the Swift app downloads (background URLSession) and reports here. */
     val downloads: DownloadManager by lazy { DownloadManager(core) }
+    /** The family access code (none when the app was built without one). */
+    val access: AccessGate by lazy { AccessGate(plist("LumenAccessHash"), userDefaults("access")) }
 }
 
 @Composable
@@ -73,7 +75,7 @@ fun MainViewController(player: VideoPlayer, downloader: FileDownloader): UIViewC
     return ComposeUIViewController {
         Images()
         androidx.compose.runtime.CompositionLocalProvider(LocalDownloads provides IosApp.downloads) {
-            LumenPhoneApp(IosApp.core, player)
+            LumenPhoneApp(IosApp.core, player, IosApp.access)
         }
     }
 }

@@ -1,5 +1,16 @@
 package com.lumentv.phone
 
+import com.lumentv.data.sports.SportsCatalog
+import com.lumentv.data.sports.FixtureClient
+import com.lumentv.data.sports.Fixture
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -270,118 +281,209 @@ internal fun GuideChannelPage(core: AppCore, c: ChannelRow, player: VideoPlayer)
 @Composable
 internal fun SportsPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
     val settings by core.settings.flow.collectAsState(null)
-    val s = settings
-    val prefs = s?.let { SportPrefs.of(it) }
+    val prefs = settings?.let { SportPrefs.of(it) }
+    val funnel = SportsFunnel
+    val sports = prefs?.sports.orEmpty()
+    val days = funnel.days(prefs?.days ?: 7)
+    // Read again every 30 s while a game is live (score, minute), every 5 min otherwise; the list stays meanwhile.
     var games by remember(p.id) { mutableStateOf<List<SportsRepository.Game>?>(null) }
-    LaunchedEffect(p.id, prefs) {
-        if (prefs == null) return@LaunchedEffect
+    LaunchedEffect(p.id, prefs?.sports, prefs?.leagues, days) {
+        val pr = prefs ?: return@LaunchedEffect
         games = null
-        games = runCatching { core.sports.games(p.id, prefs) }.getOrDefault(emptyList())
+        while (true) {
+            games = if (pr.sports.isEmpty()) emptyList() else runCatching { core.sports.games(p.id, pr) }.getOrElse { games ?: emptyList() }
+            kotlinx.coroutines.delay(if (FixtureClient.hasLive(games.orEmpty().map { it.fixture })) FixtureClient.LIVE_REFRESH_MS else 5 * 60_000L)
+        }
     }
     val scope = rememberCoroutineScope()
+    fun save(pr: SportPrefs) { scope.launch { core.settings.setSports(pr) } }
+    val all = games.orEmpty()
+    val clubs = remember(all) { funnel.clubs(all.map { it.fixture }) }
+    val keep = remember(all, prefs?.teams) { funnel.byClubs(all.map { it.fixture }, prefs?.teams.orEmpty()).toSet() }
+    val shown = games?.filter { it.fixture in keep }
+    val leagues = funnel.leaguesOf(sports)
+    var picker by remember { mutableStateOf<String?>(null) }
+    var choose by remember { mutableStateOf<SportsRepository.Game?>(null) }
+    fun watch(g: SportsRepository.Game) {
+        val f = g.fixture
+        when {
+            g.channels.isNotEmpty() && !f.channelsOpen() -> Parental.notice = "${f.label}\n\nLa chaîne s'ouvre ${f.opensNote}."
+            g.channels.isEmpty() -> Parental.notice = g.tv?.let { "Diffusé sur $it : cette chaîne n'est pas dans ta liste." }
+                ?: listOfNotNull(f.usualBroadcaster, "aucune chaîne de ta liste ne l'annonce encore").joinToString(" · ").replaceFirstChar { it.uppercase() }
+            g.channels.size == 1 -> scope.launch { playChannel(core, player, g.channels[0], f.label) }
+            else -> choose = g
+        }
+    }
+
     LazyColumn(state = rememberList("sport", ready = games != null), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(SportsFunnel.sports, key = { it.id }) { sp ->
-                    val on = prefs?.sports?.contains(sp.id) == true
-                    FilterChip(selected = on, label = { Text("${sp.emoji} ${sp.label}") }, onClick = {
-                        val cur = prefs ?: return@FilterChip
-                        scope.launch { core.settings.setSports(cur.copy(sports = if (on) cur.sports - sp.id else cur.sports + sp.id)) }
-                    })
-                }
-            }
-        }
-        // Competitions of the chosen sports (none ticked: all), clubs of the listed games (none: all), the period.
-        if (prefs != null && prefs.sports.isNotEmpty()) {
-            val leagues = SportsFunnel.leaguesOf(prefs.sports)
-            if (leagues.size > 1) item {
-                FilterRow("Compétitions", leagues.map { it.id to it.label }, prefs.leagues,
-                    onClear = { scope.launch { core.settings.setSports(prefs.copy(leagues = emptySet())) } }) { id, on ->
-                    scope.launch { core.settings.setSports(prefs.copy(leagues = if (on) prefs.leagues + id else prefs.leagues - id)) }
-                }
-            }
-            val clubs = games?.let { g -> SportsFunnel.clubs(g.map { it.fixture }) }.orEmpty()
-            if (clubs.size > 1) item {
-                FilterRow("Équipes", clubs.map { it to it }, prefs.teams.toSet(),
-                    onClear = { scope.launch { core.settings.setSports(prefs.copy(teams = emptyList())) } }) { name, on ->
-                    scope.launch { core.settings.setSports(prefs.copy(teams = if (on) prefs.teams + name else prefs.teams - name)) }
-                }
-            }
-            item {
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    item { Text("Période", color = Palette.TextDim, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, end = 4.dp)) }
-                    items(SportsFunnel.DAY_CHOICES) { d ->
-                        FilterChip(selected = SportsFunnel.days(prefs.days) == d, label = { Text("$d jours") }, onClick = {
-                            scope.launch { core.settings.setSports(prefs.copy(days = d)) }
-                        })
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(funnel.sports, key = { it.id }) { sp ->
+                    val on = sp.id in sports
+                    PhoneChip("${sp.emoji}  ${sp.label}", selected = on) {
+                        val cur = prefs ?: return@PhoneChip
+                        save(cur.copy(sports = if (on) cur.sports - sp.id else cur.sports + sp.id))
                     }
                 }
             }
         }
-        val list = games?.let { g ->
-            val keep = SportsFunnel.byClubs(g.map { it.fixture }, prefs?.teams.orEmpty()).toSet()
-            g.filter { it.fixture in keep }
+        // The rest as three menus, as on the Android phone.
+        if (prefs != null && sports.isNotEmpty()) item {
+            val comps = leagues.filter { it.id in prefs.leagues }.map { it.label }
+            val picked = prefs.teams.filter { it in clubs }
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (leagues.size > 1) item { MenuButton("Compétition", funnel.summary(comps, "Toutes", "compétitions"), comps.isNotEmpty()) { picker = "leagues" } }
+                if (clubs.isNotEmpty() || picked.isNotEmpty()) item { MenuButton("Équipe", funnel.summary(picked, "Toutes", "équipes"), picked.isNotEmpty()) { picker = "clubs" } }
+                item { MenuButton("Période", "$days jours", false) { picker = "days" } }
+            }
         }
         when {
-            prefs?.sports?.isEmpty() == true -> item { Text("Choisis un ou plusieurs sports ci-dessus.", color = Palette.TextDim, modifier = Modifier.padding(16.dp)) }
-            list == null -> item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-            list.isEmpty() -> item { Text("Aucun match à venir pour ces sports.", color = Palette.TextDim, modifier = Modifier.padding(16.dp)) }
-            else -> list.forEachIndexed { i, g ->
-                val f = g.fixture
-                if (i == 0 || (!f.live && (list[i - 1].fixture.live || dateOf(list[i - 1].fixture.start) != dateOf(f.start))))
-                    item(key = "d" + f.id) { Title(if (f.live) "En direct" else dayLabel(f.start)) }
-                item(key = "g" + f.id) { GameCard(g) { c -> scope.launch { playChannel(core, player, c, f.label) } } }
+            prefs?.sports?.isEmpty() == true -> item {
+                Empty("Choisis un sport", "Puis, si tu veux, une compétition et une équipe. Le choix est partagé avec la TV et le PC.")
+            }
+            shown == null -> item { Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+            shown.isEmpty() -> item { Empty("Aucun match", "Pas de match en cours ni à venir sur $days jours avec ces filtres.") }
+            else -> shown.groupBy { if (it.fixture.live) "🔴  En direct" else dayLabel(it.fixture.start) }.forEach { (day, gs) ->
+                item(key = "h$day") {
+                    Text(day, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.Text, modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 6.dp))
+                }
+                items(gs, key = { "g" + it.fixture.id }) { g -> GameCard(g) { watch(g) } }
             }
         }
     }
+
+    choose?.let { g ->
+        Options(g.fixture.label, g.fixture.league.label + " · choisis une chaîne", g.channels.map { c ->
+            Option(c.ch.name) { scope.launch { playChannel(core, player, c, g.fixture.label) } }
+        }) { choose = null }
+    }
+    val pr = prefs ?: return
+    when (picker) {
+        "leagues" -> PickDialog("Compétitions", "Aucune cochée : toutes celles de tes sports.",
+            leagues.map { l -> l.id to ((if (sports.size > 1) SportsCatalog.byId(l.sport)?.emoji?.let { "$it  " } else null).orEmpty() + l.label) },
+            pr.leagues, onToggle = { id -> save(pr.copy(leagues = if (id in pr.leagues) pr.leagues - id else pr.leagues + id)) },
+            onClear = { save(pr.copy(leagues = pr.leagues - leagues.map { it.id }.toSet())) }) { picker = null }
+        "clubs" -> PickDialog("Équipes", "Aucune cochée : tous les matchs.", (clubs + pr.teams.filter { it !in clubs }).map { it to it },
+            pr.teams.toSet(), onToggle = { c -> save(pr.copy(teams = if (c in pr.teams) pr.teams - c else pr.teams + c)) },
+            onClear = { save(pr.copy(teams = emptyList())) }) { picker = null }
+        "days" -> Options("Période", null, funnel.DAY_CHOICES.map { n -> Option("$n jours", n == days) { if (n != days) save(pr.copy(days = n)) } }) { picker = null }
+    }
 }
 
-/** A row of chips to tick ([chosen] empty: "Toutes", nothing filtered). */
 @Composable
-private fun FilterRow(title: String, options: List<Pair<String, String>>, chosen: Set<String>, onClear: () -> Unit, onToggle: (String, Boolean) -> Unit) =
-    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { Text(title, color = Palette.TextDim, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, end = 4.dp)) }
-        item { FilterChip(selected = chosen.isEmpty(), label = { Text(if (title == "Équipes") "Tous" else "Toutes") }, onClick = onClear) }
-        items(options, key = { it.first }) { (id, label) ->
-            val on = id in chosen
-            FilterChip(selected = on, label = { Text(label, maxLines = 1) }, onClick = { onToggle(id, !on) })
-        }
-    }
+private fun Empty(title: String, text: String) = Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text)
+    Text(text, color = Palette.TextDim, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
+}
 
+/** A filter as one button: "Compétition · Toutes ▾"; it opens its list. */
 @Composable
-private fun GameCard(g: SportsRepository.Game, onChannel: (ChannelRow) -> Unit) {
-    val f = g.fixture
-    val open = f.channelsOpen()
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(14.dp)) {
-        Text(f.details, color = Palette.TextDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (f.live) f.clock else hm(f.start), color = if (f.live) Palette.Danger else Palette.Text, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.width(64.dp))
-            if (f.home != null && f.away != null) {
-                TeamSide(f.home!!.short ?: f.home!!.name, f.home!!.logo, f.homeScore, Modifier.weight(1f))
-                Text("–", color = Palette.TextDim, modifier = Modifier.padding(horizontal = 6.dp))
-                TeamSide(f.away!!.short ?: f.away!!.name, f.away!!.logo, f.awayScore, Modifier.weight(1f))
-            } else Text(f.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        }
-        when {
-            g.channels.isNotEmpty() && open -> LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(g.channels, key = { it.ch.id }) { c ->
-                    Text("▶ " + c.ch.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                        modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(Palette.AccentSoft).clickable { onChannel(c) }.padding(horizontal = 12.dp, vertical = 7.dp))
+private fun MenuButton(title: String, value: String, active: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(20.dp)
+    Row(Modifier.height(38.dp).clip(shape).background(if (active) Palette.AccentSoft else Color(0x1FFFFFFF))
+        .border(1.dp, if (active) Palette.Accent else Color(0x1FFFFFFF), shape).clickable(onClick = onClick).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text("$title · ", fontSize = 14.sp, color = Palette.TextDim, maxLines = 1)
+        Text(value, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 170.dp))
+        Text("  ▾", fontSize = 14.sp, color = Palette.Accent)
+    }
+}
+
+/** A list to tick several entries in; it stays open until "Terminé". */
+@Composable
+private fun PickDialog(title: String, subtitle: String, items: List<Pair<String, String>>, selected: Set<String>,
+                       onToggle: (String) -> Unit, onClear: () -> Unit, onDismiss: () -> Unit) {
+    val none = items.none { it.first in selected }
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = Palette.Panel,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text(subtitle, color = Palette.TextDim, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    item(key = "\u0000all") { PickRow(if (title == "Équipes") "Tous les matchs" else "Toutes", none, onClear) }
+                    items(items, key = { it.first }) { (id, label) -> PickRow(label, id in selected) { onToggle(id) } }
                 }
             }
-            g.channels.isNotEmpty() -> Text((g.tv ?: g.channels.first().ch.name) + " · " + f.opensNote, color = Palette.TextDim, fontSize = 12.sp)
-            g.tv != null -> Text("Sur ${g.tv}", color = Palette.TextDim, fontSize = 12.sp)
-            else -> f.usualBroadcaster?.let { Text(it, color = Palette.TextDim, fontSize = 12.sp) }
-        }
-    }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Terminé") } },
+    )
 }
 
 @Composable
-private fun TeamSide(name: String, logo: String?, score: String?, modifier: Modifier) = Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-    if (logo != null) AsyncImage(logo, null, contentScale = ContentScale.Fit, modifier = Modifier.size(26.dp))
-    Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 6.dp))
-    score?.let { Text(it, fontWeight = FontWeight.Bold, color = Palette.Accent, modifier = Modifier.padding(start = 4.dp)) }
+private fun PickRow(label: String, on: Boolean, onClick: () -> Unit) =
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 11.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = Palette.Text, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f))
+        Text(if (on) "✓" else "", color = Palette.Accent, fontWeight = FontWeight.Bold)
+    }
+
+/**
+ * A game: competition and stadium, the time (or EN DIRECT and the minute) with its channel, then the two teams face
+ * to face with their crests. The whole card plays (or offers the channels).
+ */
+@Composable
+private fun GameCard(g: SportsRepository.Game, onClick: () -> Unit) {
+    val f = g.fixture
+    val now by produceState(nowMillis()) { while (true) { kotlinx.coroutines.delay(60_000); value = nowMillis() } }
+    val open = g.channels.isNotEmpty() && f.channelsOpen(now)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel)
+        .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp)) {
+        Text(listOfNotNull(f.details, f.venue).joinToString(" · "), color = Palette.TextDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (f.live) {
+                Text("EN DIRECT", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                    modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(Palette.Danger).padding(horizontal = 6.dp, vertical = 2.dp))
+                Text("  " + f.clock, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Palette.Danger, maxLines = 1)
+            } else Text(hm(f.start), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.Text)
+            Spacer(Modifier.width(12.dp))
+            val ch = when {
+                g.channels.isNotEmpty() -> (if (open) "▶  " else "") + g.channels.first().ch.name
+                g.tv != null -> "Sur ${g.tv}"
+                else -> f.usualBroadcaster ?: ""
+            }
+            val after = when {
+                g.channels.isNotEmpty() && !open -> " · dès " + hm(f.start - Fixture.OPEN_BEFORE_MS)
+                g.channels.size > 1 -> "  +${g.channels.size - 1}"
+                else -> null
+            }
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                if (ch.isNotEmpty()) Text(ch, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (open) Palette.Text else Palette.TextDim, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)
+                        .then(if (open) Modifier.clip(RoundedCornerShape(14.dp)).background(Palette.AccentSoft).padding(horizontal = 10.dp, vertical = 5.dp) else Modifier))
+                after?.let { Text(it, fontSize = 13.sp, color = Palette.TextDim, maxLines = 1) }
+            }
+        }
+        val home = f.home
+        val away = f.away
+        if (home != null && away != null) Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            TeamSide(home.short ?: home.name, home.logo, end = true, modifier = Modifier.weight(1f))
+            Text(if (f.live && f.homeScore != null) "${f.homeScore} – ${f.awayScore}" else "vs", fontSize = if (f.live) 20.sp else 14.sp,
+                fontWeight = FontWeight.Bold, color = if (f.live) Palette.Text else Palette.TextDim, modifier = Modifier.padding(horizontal = 12.dp))
+            TeamSide(away.short ?: away.name, away.logo, end = false, modifier = Modifier.weight(1f))
+        } else Text(f.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 10.dp))
+    }
 }
+
+/** A team: its crest next to the "vs", its name outside (on two lines rather than cut). */
+@Composable
+private fun TeamSide(name: String, logo: String?, end: Boolean, modifier: Modifier) =
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = if (end) Arrangement.End else Arrangement.Start) {
+        val text = @Composable {
+            Text(name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                textAlign = if (end) androidx.compose.ui.text.style.TextAlign.End else androidx.compose.ui.text.style.TextAlign.Start,
+                modifier = Modifier.weight(1f, fill = false).padding(horizontal = 8.dp))
+        }
+        if (end) text()
+        Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+            if (logo != null) AsyncImage(logo, null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+            else Text(name.take(1), fontWeight = FontWeight.Bold, color = Palette.TextDim)
+        }
+        if (!end) text()
+    }
 
 // ---- Downloads --------------------------------------------------------------------------------------------------
 
