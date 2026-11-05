@@ -133,7 +133,10 @@ struct PlayerScreen: View {
         .onChange(of: failed) { f in
             guard f else { return }
             why = nil
-            request.explain { text in DispatchQueue.main.async { why = text.isEmpty ? "Le serveur ne répond pas ou le format n'est pas lu." : text } }
+            request.explain { text in
+                DispatchQueue.main.async { why = text.isEmpty ? "Le serveur ne répond pas ou le format n'est pas lu." : text }
+                return KotlinUnit()
+            }
         }
         // The side buttons move the pill too.
         .onReceive(AVAudioSession.sharedInstance().publisher(for: \.outputVolume)) { v in volume = Double(v) }
