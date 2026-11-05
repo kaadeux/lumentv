@@ -1,10 +1,10 @@
 package com.lumentv.data.db
 
-import android.content.Context
 import androidx.room.AutoMigration
+import androidx.room.ConstructedBy
 import androidx.room.Database
-import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.RoomDatabaseConstructor
 
 @Database(
     entities = [
@@ -20,6 +20,9 @@ import androidx.room.RoomDatabase
     // v6 its backdrop picture, v7 the personal ratings and the TMDB links (two new tables).
     autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7)],
 )
+// Shared by the TV / phone (Android's SQLite, file "lumen.db" as before) and the iPhone (bundled SQLite): see
+// createAppDatabase in androidMain and iosMain.
+@ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun playlists(): PlaylistDao
     abstract fun channels(): ChannelDao
@@ -30,11 +33,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun history(): HistoryDao
     abstract fun transfers(): TransferDao
     abstract fun reminders(): ReminderDao
-
-    companion object {
-        fun create(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "lumen.db")
-                .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                .build()
-    }
 }
+
+/** Written by Room's compiler for each platform. */
+@Suppress("NO_ACTUAL_FOR_EXPECT", "EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
+expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
+    override fun initialize(): AppDatabase
+}
+
+/** Runs [block] in one write transaction: everything or nothing. */
+expect suspend fun <R> AppDatabase.transaction(block: suspend () -> R): R

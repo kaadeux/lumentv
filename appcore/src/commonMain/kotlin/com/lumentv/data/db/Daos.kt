@@ -237,7 +237,7 @@ interface EpgDao {
     suspend fun search(q: String, now: Long, limit: Int): List<ProgramEntity>
 
     @androidx.room.RawQuery
-    suspend fun raw(query: androidx.sqlite.db.SupportSQLiteQuery): List<ProgramEntity>
+    suspend fun raw(query: androidx.room.RoomRawQuery): List<ProgramEntity>
 
     @Query("SELECT COUNT(*) FROM programs WHERE playlistId = :pid")
     suspend fun count(pid: Long): Int

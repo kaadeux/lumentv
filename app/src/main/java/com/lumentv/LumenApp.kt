@@ -28,7 +28,7 @@ class AppGraph(app: Application) {
     val appContext: Application = app
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val settings = SettingsStore(app).also { it.keepWarm(appScope) }
-    val db = AppDatabase.create(app)
+    val db = com.lumentv.data.db.createAppDatabase(app)
 
     init { PrivateNet.init(java.io.File(app.filesDir, "https_hosts.txt")) }
 

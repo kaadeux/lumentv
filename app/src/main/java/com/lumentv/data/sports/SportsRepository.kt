@@ -1,7 +1,7 @@
 package com.lumentv.data.sports
 
 import android.util.Log
-import androidx.sqlite.db.SimpleSQLiteQuery
+import androidx.room.RoomRawQuery
 import com.lumentv.core.normalize
 import com.lumentv.data.db.AppDatabase
 import com.lumentv.data.db.ChannelRow
@@ -53,10 +53,12 @@ class SportsRepository(
         if (terms.isEmpty()) return emptyList()
         val where = terms.joinToString(" OR ") { "instr(titleNorm, ?) > 0" }
         // The start index narrows the scan to the window: a programme longer than 6 h is not a match.
-        val args = (listOf<Any>(pid, from - 6 * 3_600_000L, to, from) + terms).toTypedArray()
-        return db.epg().raw(SimpleSQLiteQuery(
-            "SELECT * FROM programs WHERE playlistId = ? AND start > ? AND start < ? AND stop > ? AND ($where) ORDER BY start LIMIT 5000", args,
-        ))
+        return db.epg().raw(RoomRawQuery(
+            "SELECT * FROM programs WHERE playlistId = ? AND start > ? AND start < ? AND stop > ? AND ($where) ORDER BY start LIMIT 5000",
+        ) { st ->
+            listOf(pid, from - 6 * 3_600_000L, to, from).forEachIndexed { i, v -> st.bindLong(i + 1, v) }
+            terms.forEachIndexed { i, t -> st.bindText(i + 5, t) }
+        })
     }
 
     /** A game of the official calendar and the channels of the playlist that show it (possibly none yet). */

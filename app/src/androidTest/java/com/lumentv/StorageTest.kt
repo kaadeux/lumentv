@@ -1,7 +1,7 @@
 package com.lumentv
 
 import androidx.room.Room
-import androidx.room.withTransaction
+import com.lumentv.data.db.transaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.lumentv.core.SecretBox
@@ -39,7 +39,7 @@ class StorageTest {
 
     private suspend fun importText(pid: Long, text: String) {
         val r = M3uImport.build(pid, BufferedReader(StringReader(text)), true)
-        db.withTransaction {
+        db.transaction {
             db.channels().deleteFor(pid)
             db.channels().insertAll(r.channels)
         }
@@ -97,7 +97,7 @@ class StorageTest {
         val r = M3uImport.build(pid, BufferedReader(StringReader(sb.toString())), true)
         val parseMs = System.currentTimeMillis() - t
         t = System.currentTimeMillis()
-        db.withTransaction {
+        db.transaction {
             r.channels.chunked(500).forEach { db.channels().insertAll(it) }
             r.movies.chunked(500).forEach { db.vod().insertMovies(it) }
         }

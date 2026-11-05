@@ -3,7 +3,7 @@ package com.lumentv.data.repo
 import com.lumentv.core.asXmlReader
 import android.util.Log
 import android.util.Xml
-import androidx.room.withTransaction
+import com.lumentv.data.db.transaction
 import com.lumentv.core.Redact
 import com.lumentv.core.SecretBox
 import com.lumentv.core.channelKeyName
@@ -105,7 +105,7 @@ class EpgRepository(
                 },
             )
         }
-        db.withTransaction {
+        db.transaction {
             db.epg().deletePrograms(p.id)
             db.epg().deleteChannels(p.id)
             epgChannels.distinctBy { it.epgKey to it.nameKey }.chunked(500).forEach { db.epg().insertChannels(it) }
@@ -159,7 +159,7 @@ class EpgRepository(
         db.epg().channels(playlistId).distinctBy { it.epgKey }.sortedBy { it.displayName.lowercase() }
 
     suspend fun clearAll() = withContext(Dispatchers.IO) {
-        db.withTransaction { db.epg().clearPrograms(); db.epg().clearChannels() }
+        db.transaction { db.epg().clearPrograms(); db.epg().clearChannels() }
         matchers.clear(); _version.value++
     }
 

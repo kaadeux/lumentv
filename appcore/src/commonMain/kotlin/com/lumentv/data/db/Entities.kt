@@ -39,7 +39,7 @@ data class PlaylistEntity(
     val accountInfo: String? = null,
     /** Xtream server time zone (IANA id), for catch-up URLs. */
     val serverTimeZone: String? = null,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long = com.lumentv.core.nowMillis(),
 )
 
 @Entity(
@@ -232,7 +232,7 @@ data class TransferEntity(
     val bytes: Long = 0,
     val totalBytes: Long = 0,
     val error: String? = null,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long = com.lumentv.core.nowMillis(),
 )
 
 /** "Remind me" on a programme: a dialog or notification shortly before it starts. */
@@ -245,7 +245,7 @@ data class ReminderEntity(
     val title: String,
     val start: Long,
     val stop: Long,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long = com.lumentv.core.nowMillis(),
 )
 
 /** A personal rating, 1 to 5 stars, of a film or a series (kind = mv / se). key = "<kind>:<playlistId>:<uid>". Kept on this device. */

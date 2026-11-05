@@ -2,7 +2,7 @@ package com.lumentv.data.repo
 
 import com.lumentv.core.asHttp
 import android.util.Log
-import androidx.room.withTransaction
+import com.lumentv.data.db.transaction
 import com.lumentv.core.FormatException
 import com.lumentv.core.HttpStatusException
 import com.lumentv.core.Redact
@@ -54,7 +54,7 @@ class PlaylistRepository(
     suspend fun save(p: PlaylistEntity): Long =
         if (p.id == 0L) db.playlists().insert(p) else { db.playlists().update(p); p.id }
 
-    suspend fun delete(id: Long) = db.withTransaction {
+    suspend fun delete(id: Long) = db.transaction {
         db.channels().deleteFor(id)
         db.vod().deleteMovies(id)
         db.vod().deleteSeries(id)
@@ -99,7 +99,7 @@ class PlaylistRepository(
         val result = openSource(source, userAgentFor(p)).use { stream ->
             M3uImport.build(p.id, stream.bufferedReader(Charsets.UTF_8), p.dedupe)
         }
-        db.withTransaction {
+        db.transaction {
             db.channels().deleteFor(p.id)
             db.vod().deleteMovies(p.id)
             db.vod().deleteSeries(p.id)
@@ -135,7 +135,7 @@ class PlaylistRepository(
         val chRows = XtreamImport.channels(p.id, live, liveCats)
         val mvRows = XtreamImport.movies(p.id, movies, vodCats)
         val seRows = XtreamImport.series(p.id, series, seriesCats)
-        db.withTransaction {
+        db.transaction {
             db.channels().deleteFor(p.id)
             db.vod().deleteMovies(p.id)
             db.vod().deleteSeries(p.id)
@@ -163,7 +163,7 @@ class PlaylistRepository(
                 image = it.image, plot = it.plot, durationSecs = it.durationSecs,
             )
         }
-        db.withTransaction {
+        db.transaction {
             db.vod().deleteEpisodesOf(p.id, seriesUid)
             eps.chunked(CHUNK).forEach { db.vod().insertEpisodes(it) }
         }

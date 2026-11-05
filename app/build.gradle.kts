@@ -6,7 +6,6 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
-    id("com.google.devtools.ksp")
 }
 
 android {
@@ -83,10 +82,6 @@ android {
     }
 }
 
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
-}
-
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
@@ -105,14 +100,12 @@ dependencies {
     implementation("androidx.media3:media3-datasource-okhttp:$media3")
     implementation("androidx.media3:media3-ui:$media3")
 
-    val room = "2.6.1"
-    implementation("androidx.room:room-runtime:$room")
-    implementation("androidx.room:room-ktx:$room")
-    ksp("androidx.room:room-compiler:$room")
+    // The database and what it reads (shared with the iPhone): module :appcore.
+    val room = "2.7.2"
+    implementation(project(":appcore"))
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
-    implementation(project(":shared"))
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
