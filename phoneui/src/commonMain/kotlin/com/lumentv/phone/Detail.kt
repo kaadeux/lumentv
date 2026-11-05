@@ -338,6 +338,7 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
                         Text(listOfNotNull(e.durationSecs.takeIf { it > 0 }?.let { duration(it) }, when (d?.status) {
                             TransferStatus.DONE -> "⬇ téléchargé"
                             TransferStatus.RUNNING -> "⬇ " + (if (d.totalBytes > 0) "${d.bytes * 100 / d.totalBytes} %" else "en cours")
+                            TransferStatus.SCHEDULED -> "⬇ en attente"
                             else -> null
                         }).joinToString(" · "), fontSize = 12.sp, color = Palette.TextDim)
                     }
@@ -432,7 +433,8 @@ private fun IconAction(icon: String, label: String, onClick: () -> Unit) {
 @Composable
 private fun DownloadAction(t: TransferEntity?, onClick: () -> Unit) = when (t?.status) {
     TransferStatus.DONE -> IconAction("▶", "Téléchargé", onClick)
-    TransferStatus.RUNNING, TransferStatus.SCHEDULED -> IconAction("⏸", if (t.totalBytes > 0) "${t.bytes * 100 / t.totalBytes} % · annuler" else "Annuler", onClick)
+    TransferStatus.SCHEDULED -> IconAction("⏳", "En attente · annuler", onClick)
+    TransferStatus.RUNNING -> IconAction("⏸", if (t.totalBytes > 0) "${t.bytes * 100 / t.totalBytes} % · annuler" else "Annuler", onClick)
     TransferStatus.FAILED, TransferStatus.CANCELLED -> IconAction("↻", "Réessayer", onClick)
     else -> IconAction("⬇", "Télécharger", onClick)
 }

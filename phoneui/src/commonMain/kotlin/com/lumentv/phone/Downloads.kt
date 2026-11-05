@@ -11,6 +11,7 @@ import com.lumentv.data.db.TransferStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -30,6 +31,8 @@ interface FileDownloader {
 class DownloadManager(private val core: AppCore) {
     var downloader: FileDownloader? = null
     private val db get() = core.db
+    /** One download at a time: the others wait their turn ("En attente"), in the order they were asked. */
+    private val queue = kotlinx.coroutines.sync.Mutex()
 
     fun observe(): Flow<List<TransferEntity>> = db.transfers().observeAll().map { l -> l.filter { it.kind == TransferKind.DOWNLOAD } }
 
@@ -40,32 +43,68 @@ class DownloadManager(private val core: AppCore) {
         download(e.playlistId, "ep", e.uid, e.seriesUid, seriesName, "S${e.season} E${e.episode} · ${e.title}") { core.resolver.episode(e) }
 
     private suspend fun download(pid: Long, kind: String, uid: String, seriesUid: String?, title: String, subtitle: String?,
-                                 spec: suspend () -> com.lumentv.data.repo.StreamSpec): Long = withContext(IoDispatcher) {
+                                 @Suppress("UNUSED_PARAMETER") spec: suspend () -> com.lumentv.data.repo.StreamSpec): Long = withContext(IoDispatcher) {
         db.transfers().downloaded(pid, uid)?.let { return@withContext it.id }
+        // Already asked (waiting or under way): the same line.
+        db.transfers().pending().firstOrNull { it.kind == TransferKind.DOWNLOAD && it.playlistId == pid && it.refUid == uid }?.let { return@withContext it.id }
         val id = db.transfers().insert(TransferEntity(kind = TransferKind.DOWNLOAD, title = title, subtitle = subtitle, playlistId = pid,
-            refKind = kind, refUid = uid, seriesUid = seriesUid, startAt = nowMillis()))
-        val s = spec()
-        val t = db.transfers().get(id)!!
-        val name = fileName(t, s.url)
-        db.transfers().update(t.copy(status = TransferStatus.RUNNING, filePath = name))
-        downloader?.start(id, s.url, s.userAgent, name)
+            refKind = kind, refUid = uid, seriesUid = seriesUid, startAt = nowMillis(), status = TransferStatus.SCHEDULED))
+        next()
         id
     }
+
+    /** Starts the oldest waiting download when none is under way. */
+    suspend fun next(): Unit = withContext(IoDispatcher) {
+        queue.withLock {
+            val pending = db.transfers().pending().filter { it.kind == TransferKind.DOWNLOAD }
+            if (pending.any { it.status == TransferStatus.RUNNING }) return@withLock
+            val t = pending.filter { it.status == TransferStatus.SCHEDULED }.minByOrNull { it.startAt } ?: return@withLock
+            val s = specOf(t)
+            if (s == null) {
+                db.transfers().update(t.copy(status = TransferStatus.FAILED, error = "Le titre n'est plus dans la liste."))
+                return@withLock
+            }
+            val name = t.filePath ?: fileName(t, s.url)
+            db.transfers().update(t.copy(status = TransferStatus.RUNNING, filePath = name, error = null))
+            downloader?.start(t.id, s.url, s.userAgent, name)
+        }
+        // A failed start (title gone): try the one after.
+        if (db.transfers().pending().none { it.kind == TransferKind.DOWNLOAD && it.status == TransferStatus.RUNNING } &&
+            db.transfers().pending().any { it.kind == TransferKind.DOWNLOAD && it.status == TransferStatus.SCHEDULED }) next()
+    }
+
+    private suspend fun specOf(t: TransferEntity): com.lumentv.data.repo.StreamSpec? = when (t.refKind) {
+        "mv" -> core.library.movieByUid(t.playlistId, t.refUid)?.let { core.resolver.movie(it.m) }
+        else -> core.library.storedEpisodes(t.playlistId, t.seriesUid ?: "").firstOrNull { it.uid == t.refUid }?.let { core.resolver.episode(it) }
+    }
+
+    /**
+     * At start: the downloads iOS still runs ([activeIds], from the background session) stay "under way"; the others
+     * marked so were stopped with the app and wait again. Then the queue goes on.
+     */
+    fun resume(activeIds: List<Long>) {
+        core.scope.launch {
+            db.transfers().pending().filter { it.kind == TransferKind.DOWNLOAD && it.status == TransferStatus.RUNNING && it.id !in activeIds }
+                .forEach { db.transfers().update(it.copy(status = TransferStatus.SCHEDULED, bytes = 0)) }
+            next()
+        }
+    }
+
+    /** For Swift: the ids as "12,15". */
+    fun resumeIds(ids: String) = resume(ids.split(',').mapNotNull { it.trim().toLongOrNull() })
 
     suspend fun cancel(id: Long) = withContext(IoDispatcher) {
         val t = db.transfers().get(id) ?: return@withContext
         downloader?.cancel(id)
         if (t.status == TransferStatus.RUNNING || t.status == TransferStatus.SCHEDULED) db.transfers().update(t.copy(status = TransferStatus.CANCELLED))
+        next()
     }
 
+    /** Back in the queue, last. */
     suspend fun retry(id: Long) = withContext(IoDispatcher) {
         val t = db.transfers().get(id) ?: return@withContext
-        db.transfers().update(t.copy(status = TransferStatus.RUNNING, error = null, bytes = 0))
-        val s = when (t.refKind) {
-            "mv" -> core.library.movieByUid(t.playlistId, t.refUid)?.let { core.resolver.movie(it.m) }
-            else -> core.library.storedEpisodes(t.playlistId, t.seriesUid ?: "").firstOrNull { it.uid == t.refUid }?.let { core.resolver.episode(it) }
-        } ?: return@withContext failed(id, "Le titre n'est plus dans la liste.")
-        downloader?.start(id, s.url, s.userAgent, t.filePath ?: fileName(t, s.url))
+        db.transfers().update(t.copy(status = TransferStatus.SCHEDULED, error = null, bytes = 0, startAt = nowMillis()))
+        next()
     }
 
     suspend fun delete(id: Long) = withContext(IoDispatcher) {
@@ -73,6 +112,7 @@ class DownloadManager(private val core: AppCore) {
         downloader?.cancel(id)
         t.filePath?.let { downloader?.remove(it) }
         db.transfers().delete(id)
+        next()
     }
 
     /** The downloaded file of a film or an episode, when there is one. */
@@ -86,10 +126,11 @@ class DownloadManager(private val core: AppCore) {
         core.scope.launch {
             val t = db.transfers().get(id) ?: return@launch
             db.transfers().update(t.copy(status = TransferStatus.DONE, bytes = bytes, totalBytes = maxOf(bytes, t.totalBytes), error = null))
+            next()
         }
     }
 
-    fun onFailed(id: Long, message: String) { core.scope.launch { failed(id, message) } }
+    fun onFailed(id: Long, message: String) { core.scope.launch { failed(id, message); next() } }
 
     private suspend fun failed(id: Long, message: String) {
         val t = db.transfers().get(id) ?: return

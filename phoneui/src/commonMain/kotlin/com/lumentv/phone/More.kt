@@ -161,7 +161,7 @@ internal fun FavoritesPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer
         if (movies.isNotEmpty()) {
             item { Title("Films") }
             item {
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LazyRow(state = rememberList("fav:mv"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(movies, key = { it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } } }
                 }
             }
@@ -169,7 +169,7 @@ internal fun FavoritesPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer
         if (series.isNotEmpty()) {
             item { Title("Séries") }
             item {
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LazyRow(state = rememberList("fav:se"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(series, key = { it.s.id }) { s -> Box(Modifier.width(110.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } } }
                 }
             }
@@ -289,7 +289,37 @@ internal fun SportsPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer, b
                 }
             }
         }
-        val list = games
+        // Competitions of the chosen sports (none ticked: all), clubs of the listed games (none: all), the period.
+        if (prefs != null && prefs.sports.isNotEmpty()) {
+            val leagues = SportsFunnel.leaguesOf(prefs.sports)
+            if (leagues.size > 1) item {
+                FilterRow("Compétitions", leagues.map { it.id to it.label }, prefs.leagues,
+                    onClear = { scope.launch { core.settings.setSports(prefs.copy(leagues = emptySet())) } }) { id, on ->
+                    scope.launch { core.settings.setSports(prefs.copy(leagues = if (on) prefs.leagues + id else prefs.leagues - id)) }
+                }
+            }
+            val clubs = games?.let { g -> SportsFunnel.clubs(g.map { it.fixture }) }.orEmpty()
+            if (clubs.size > 1) item {
+                FilterRow("Équipes", clubs.map { it to it }, prefs.teams.toSet(),
+                    onClear = { scope.launch { core.settings.setSports(prefs.copy(teams = emptyList())) } }) { name, on ->
+                    scope.launch { core.settings.setSports(prefs.copy(teams = if (on) prefs.teams + name else prefs.teams - name)) }
+                }
+            }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item { Text("Période", color = Palette.TextDim, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, end = 4.dp)) }
+                    items(SportsFunnel.DAY_CHOICES) { d ->
+                        FilterChip(selected = SportsFunnel.days(prefs.days) == d, label = { Text("$d jours") }, onClick = {
+                            scope.launch { core.settings.setSports(prefs.copy(days = d)) }
+                        })
+                    }
+                }
+            }
+        }
+        val list = games?.let { g ->
+            val keep = SportsFunnel.byClubs(g.map { it.fixture }, prefs?.teams.orEmpty()).toSet()
+            g.filter { it.fixture in keep }
+        }
         when {
             prefs?.sports?.isEmpty() == true -> item { Text("Choisis un ou plusieurs sports ci-dessus.", color = Palette.TextDim, modifier = Modifier.padding(16.dp)) }
             list == null -> item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
@@ -303,6 +333,18 @@ internal fun SportsPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer, b
         }
     }
 }
+
+/** A row of chips to tick ([chosen] empty: "Toutes", nothing filtered). */
+@Composable
+private fun FilterRow(title: String, options: List<Pair<String, String>>, chosen: Set<String>, onClear: () -> Unit, onToggle: (String, Boolean) -> Unit) =
+    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        item { Text(title, color = Palette.TextDim, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, end = 4.dp)) }
+        item { FilterChip(selected = chosen.isEmpty(), label = { Text(if (title == "Équipes") "Tous" else "Toutes") }, onClick = onClear) }
+        items(options, key = { it.first }) { (id, label) ->
+            val on = id in chosen
+            FilterChip(selected = on, label = { Text(label, maxLines = 1) }, onClick = { onToggle(id, !on) })
+        }
+    }
 
 @Composable
 private fun GameCard(g: SportsRepository.Game, onChannel: (ChannelRow) -> Unit) {
@@ -380,7 +422,8 @@ internal fun DownloadsPage(core: AppCore, player: VideoPlayer, back: () -> Unit)
                     t.subtitle?.let { Text(it, color = Palette.TextDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     val line = when (t.status) {
                         com.lumentv.data.db.TransferStatus.DONE -> "Téléchargé · " + size(t.bytes)
-                        com.lumentv.data.db.TransferStatus.RUNNING, com.lumentv.data.db.TransferStatus.SCHEDULED ->
+                        com.lumentv.data.db.TransferStatus.SCHEDULED -> "En attente"
+                        com.lumentv.data.db.TransferStatus.RUNNING ->
                             if (t.totalBytes > 0) "${t.bytes * 100 / t.totalBytes} % · ${size(t.bytes)} sur ${size(t.totalBytes)}" else "En cours…"
                         com.lumentv.data.db.TransferStatus.CANCELLED -> "Annulé"
                         else -> "Échec" + (t.error?.let { " · $it" } ?: "")

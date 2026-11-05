@@ -80,8 +80,8 @@ struct PlayerScreen: View {
         .statusBarHidden(!controls)
         .persistentSystemOverlays(.hidden)
         .preferredColorScheme(.dark)
-        .onAppear { Orientation.landscape(true); scheduleHide() }
-        .onDisappear { Orientation.landscape(false); UIScreen.main.brightness = CGFloat(brightness) }
+        .onAppear { scheduleHide() }
+        .onDisappear { UIScreen.main.brightness = CGFloat(brightness) }
     }
 
     // ---- The picture ---------------------------------------------------------------------------------------------
@@ -365,14 +365,32 @@ private struct RoundButton: View {
     }
 }
 
-/// Sideways while the player is open; the app's screens stay upright.
+/// Sideways while a player is open; the app's screens stay upright. Counted: at an episode change the next player
+/// opens while the previous one closes, and the screen must not turn upright in between.
 enum Orientation {
-    static var landscapeOnly = false
+    private static var open = 0
+    static var landscapeOnly: Bool { open > 0 }
 
     static func landscape(_ on: Bool) {
-        landscapeOnly = on
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
-        scene.windows.first?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: on ? .landscape : .portrait)) { _ in }
+        open = max(0, open + (on ? 1 : -1))
+        if on { apply() } else {
+            // Upright only once no player is left a moment later (the next episode's may be on its way).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { if open == 0 { apply() } }
+        }
     }
+
+    private static func apply() {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+        var vc = scene.windows.first?.rootViewController
+        while let c = vc { c.setNeedsUpdateOfSupportedInterfaceOrientations(); vc = c.presentedViewController }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: landscapeOnly ? .landscape : .portrait)) { _ in }
+    }
+}
+
+/// The player's screen: iOS shows it sideways from the start, its controls with it.
+final class LandscapeHost<Content: View>: UIHostingController<Content> {
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
+    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .landscapeRight }
+    override var prefersStatusBarHidden: Bool { true }
+    override var prefersHomeIndicatorAutoHidden: Bool { true }
 }

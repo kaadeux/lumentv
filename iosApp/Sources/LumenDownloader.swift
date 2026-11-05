@@ -29,6 +29,15 @@ final class LumenDownloader: NSObject, FileDownloader, URLSessionDownloadDelegat
 
     static func file(_ name: String) -> URL { folder.appendingPathComponent(name) }
 
+    /// At start: tells the shared app which downloads iOS still runs; the others it marked "under way" wait again.
+    func reportActive() {
+        session.getAllTasks { tasks in
+            let ids = tasks.filter { $0.state == .running || $0.state == .suspended }
+                .compactMap { $0.taskDescription.flatMap { d in d.split(separator: "|").first.map(String.init) } }
+            MainKt.downloads().resumeIds(ids: ids.joined(separator: ","))
+        }
+    }
+
     // ---- FileDownloader (called by the shared app) -----------------------------------------------------------
 
     func start(id: Int64, url: String, userAgent: String?, fileName: String) {

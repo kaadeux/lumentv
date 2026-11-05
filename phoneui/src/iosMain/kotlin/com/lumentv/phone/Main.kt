@@ -52,7 +52,7 @@ object IosApp {
             cacheDir = caches, filesDir = docs, profilePrefs = userDefaults("profile"),
             deviceId = id, deviceName = UIDevice.currentDevice.name,
             tmdbKey = plist("LumenTmdbKey"), syncUrl = plist("LumenSyncUrl"),
-        ), scope).also { core -> core.profile.start() }
+        ), scope).also { core -> core.profile.start(); AutoRefresh.start(core) }
     }
     /** Films and episodes kept on the iPhone; the Swift app downloads (background URLSession) and reports here. */
     val downloads: DownloadManager by lazy { DownloadManager(core) }
@@ -84,4 +84,5 @@ fun downloads(): DownloadManager = IosApp.downloads
 /** The Swift app tells the shared app when it comes back to the foreground (profile sync). */
 fun appDidBecomeActive() {
     IosApp.core.scope.launch { IosApp.core.profile.syncNow() }
+    AutoRefresh.checkNow(IosApp.core)
 }

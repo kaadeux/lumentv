@@ -17,6 +17,7 @@ final class LumenPlayer: NSObject, VideoPlayer {
             let screen = PlayerScreen(request: request, url: url) { position, duration, step in
                 // The position is kept first; then the episode before / after opens in a new player.
                 request.finish(positionMs: position, durationMs: duration)
+                Orientation.landscape(false)
                 box.controller?.dismiss(animated: step == .none) {
                     switch step {
                     case .previous: request.previous()
@@ -25,10 +26,12 @@ final class LumenPlayer: NSObject, VideoPlayer {
                     }
                 }
             }
-            let controller = UIHostingController(rootView: screen)
+            let controller = LandscapeHost(rootView: screen)
             controller.modalPresentationStyle = .fullScreen
             controller.view.backgroundColor = .black
             box.controller = controller
+            // Sideways allowed first: iOS refuses a landscape-only screen otherwise.
+            Orientation.landscape(true)
             top.present(controller, animated: true)
         }
     }

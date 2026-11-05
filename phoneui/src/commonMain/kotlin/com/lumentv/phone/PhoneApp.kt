@@ -70,7 +70,9 @@ import com.lumentv.data.repo.LibraryRepository
 import com.lumentv.data.repo.StreamSpec
 import com.lumentv.data.settings.Keys
 import com.lumentv.data.xtream.XtreamApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Where the viewer is, above the bottom tabs. */
 internal sealed interface Route {
@@ -234,7 +236,8 @@ internal fun Header(title: String, back: (() -> Unit)? = null) = Row(
 }
 
 @Composable
-private fun Chips(names: List<String>, selected: String?, onPick: (String) -> Unit) = LazyRow(
+private fun Chips(names: List<String>, selected: String?, key: String = "chips", onPick: (String) -> Unit) = LazyRow(
+    state = rememberList(key),
     contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
 ) {
     items(names) { n -> FilterChip(selected = n == selected, onClick = { onPick(n) }, label = { Text(n, maxLines = 1) }) }
@@ -267,7 +270,7 @@ internal fun ResumeRow(core: AppCore, p: PlaylistEntity, kind: String, onOpen: (
         .distinctBy { it.parentUid ?: Featured.baseTitle(it.title) }.take(20)
     if (items.isEmpty()) return
     Text("Reprendre la lecture", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp))
-    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyRow(state = rememberList("resume:$kind"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(items) { h ->
             Box(Modifier.width(110.dp)) {
                 Poster(h.image, Featured.shortTitle(h.title) + (h.subtitle?.substringBefore(" · ")?.let { " · $it" } ?: ""), h.positionMs.toFloat() / h.durationMs) { onOpen(h) }
@@ -284,11 +287,13 @@ private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> U
     val memory = LocalScroll.current
     var cat by remember(p.id) { mutableStateOf(memory.values["cat:mv"] as? String ?: RECENT) }
     val movies by produceState(emptyList<MovieRow>(), p.id, cat, p.lastRefresh) {
-        value = oneEach(if (cat == RECENT) core.library.recentMovies(p.id) else core.library.movies(p.id, cat), { it.m.name }, { it.m.category })
+        val rows = if (cat == RECENT) core.library.recentMovies(p.id) else core.library.movies(p.id, cat)
+        // Thousands of titles: sorted out off the screen's thread.
+        value = withContext(Dispatchers.Default) { oneEach(rows, { it.m.name }, { it.m.category }) }
     }
     Column {
         Header("Films · catégories", back)
-        Chips(cats, cat) { cat = it; memory.values["cat:mv"] = it; memory.forget("grid:mv") }
+        Chips(cats, cat, "chips:mv") { cat = it; memory.values["cat:mv"] = it; memory.forget("grid:mv") }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:mv"), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(movies, key = { it.m.id }) { m -> Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } }
         }
@@ -303,11 +308,12 @@ private fun SeriesCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> 
     val memory = LocalScroll.current
     var cat by remember(p.id) { mutableStateOf(memory.values["cat:se"] as? String ?: RECENT) }
     val series by produceState(emptyList<SeriesRow>(), p.id, cat, p.lastRefresh) {
-        value = oneEach(if (cat == RECENT) core.library.recentSeries(p.id) else core.library.series(p.id, cat), { it.s.name }, { it.s.category })
+        val rows = if (cat == RECENT) core.library.recentSeries(p.id) else core.library.series(p.id, cat)
+        value = withContext(Dispatchers.Default) { oneEach(rows, { it.s.name }, { it.s.category }) }
     }
     Column {
         Header("Séries · catégories", back)
-        Chips(cats, cat) { cat = it; memory.values["cat:se"] = it; memory.forget("grid:se") }
+        Chips(cats, cat, "chips:se") { cat = it; memory.values["cat:se"] = it; memory.forget("grid:se") }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:se"), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(series, key = { it.s.id }) { s -> Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } }
         }

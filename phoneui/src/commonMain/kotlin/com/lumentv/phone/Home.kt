@@ -94,8 +94,9 @@ internal fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
         val history = core.library.observeHistory(600).first()
         val ratings = core.library.observeRatings().first()
         core.discover.movies(p.id, history, ratings).collect { list ->
-            shelves = list.map { Shelf(it.title, oneEach(it.items, { m -> m.m.name }, { m -> m.m.category })) }.filter { it.items.isNotEmpty() }
-                .also { HomeCache.rows["mv:${p.id}"] = it }
+            shelves = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                list.map { Shelf(it.title, oneEach(it.items, { m -> m.m.name }, { m -> m.m.category })) }.filter { it.items.isNotEmpty() }
+            }.also { HomeCache.rows["mv:${p.id}"] = it }
         }
     }
     val scope = rememberCoroutineScope()
@@ -116,8 +117,9 @@ internal fun SeriesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
         val history = core.library.observeHistory(600).first()
         val ratings = core.library.observeRatings().first()
         core.discover.series(p.id, history, ratings).collect { list ->
-            shelves = list.map { Shelf(it.title, oneEach(it.items, { s -> s.s.name }, { s -> s.s.category })) }.filter { it.items.isNotEmpty() }
-                .also { HomeCache.rows["se:${p.id}"] = it }
+            shelves = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                list.map { Shelf(it.title, oneEach(it.items, { s -> s.s.name }, { s -> s.s.category })) }.filter { it.items.isNotEmpty() }
+            }.also { HomeCache.rows["se:${p.id}"] = it }
         }
     }
     val scope = rememberCoroutineScope()
@@ -163,7 +165,7 @@ private fun <T> HomeList(
             Text(s.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp))
         }
         item(key = "r:" + s.title) {
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) { row(s.items) }
+            LazyRow(state = rememberList("row:$title:${s.title}"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) { row(s.items) }
         }
     }
     item { Spacer(Modifier.height(24.dp)) }
@@ -287,6 +289,14 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, back: () -> Unit) {
                 Text(listOf("${p.channelCount} chaînes", "${p.movieCount} films", "${p.seriesCount} séries").joinToString(" · "), color = Palette.TextDim, fontSize = 14.sp)
                 if (p.lastRefresh > 0) Text("Actualisée le " + day(p.lastRefresh), color = Palette.TextDim, fontSize = 14.sp)
                 p.accountInfo?.let { Text(it, color = Palette.TextDim, fontSize = 14.sp) }
+                Text("Rechargement automatique", color = Palette.TextDim, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0 to "Jamais", 12 to "12 h", 24 to "24 h", 48 to "48 h").forEach { (h, label) ->
+                        androidx.compose.material3.FilterChip(selected = p.refreshHours == h, label = { Text(label) }, onClick = {
+                            core.scope.launch { core.playlists.save(p.copy(refreshHours = h)) }
+                        })
+                    }
+                }
                 Button(enabled = p.id !in busy, onClick = {
                     core.scope.launch { if (core.playlists.refresh(p.id).ok) core.epg.refresh(p.id) }
                 }) { Text(if (p.id in busy) "Actualisation…" else "Recharger la liste") }

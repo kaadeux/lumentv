@@ -17,8 +17,12 @@ struct LumenTVApp: App {
         // KSPlayer would set the ProMotion screen to the video's rate (25 to 50 Hz for a 25 fps film): iOS then picks
         // 30, 40 or 60 Hz and repeats one frame in five or so, a steady stutter. At 120 Hz every rate plays evenly.
         KSOptions.preferredFrame = false
+        // TMDB's answers (lists, logos, ratings): 20 MB on disk at most, as on the TV and the PC; images have their own
+        // 60 MB cache (Coil, shared app).
+        URLCache.shared = URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 20 * 1024 * 1024)
         // Downloads left running when the app was closed report back to the shared app.
         _ = LumenDownloader.shared.session
+        LumenDownloader.shared.reportActive()
     }
 
     var body: some Scene {

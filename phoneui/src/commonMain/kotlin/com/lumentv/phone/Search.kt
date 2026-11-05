@@ -88,8 +88,8 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
         searching = false
     }
     val r = results
-    val movies = r?.movies?.let { oneEach(it, { m -> m.m.name }, { m -> m.m.category }) }.orEmpty()
-    val series = r?.series?.let { oneEach(it, { s -> s.s.name }, { s -> s.s.category }) }.orEmpty()
+    val movies = remember(r) { r?.movies?.let { oneEach(it, { m -> m.m.name }, { m -> m.m.category }) }.orEmpty() }
+    val series = remember(r) { r?.series?.let { oneEach(it, { s -> s.s.name }, { s -> s.s.category }) }.orEmpty() }
     LazyColumn(state = rememberList("search"), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Text("Recherche", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp)) }
         item {
@@ -108,7 +108,7 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
         if (movies.isNotEmpty()) {
             item { SectionTitle("Films") }
             item {
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LazyRow(state = rememberList("s:mv"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(movies, key = { it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } } }
                 }
             }
@@ -116,7 +116,7 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
         if (series.isNotEmpty()) {
             item { SectionTitle("Séries") }
             item {
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LazyRow(state = rememberList("s:se"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(series, key = { it.s.id }) { s -> Box(Modifier.width(110.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } } }
                 }
             }
@@ -128,7 +128,7 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
             if (films.isEmpty() && shows.isEmpty()) return@forEach
             item(key = "pt:" + h.key) { SectionTitle("Avec ${h.title}") }
             item(key = "pr:" + h.key) {
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LazyRow(state = rememberList("s:p:${h.key}"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(films, key = { "m" + it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } } }
                     items(shows, key = { "s" + it.s.id }) { s -> Box(Modifier.width(110.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } } }
                 }
