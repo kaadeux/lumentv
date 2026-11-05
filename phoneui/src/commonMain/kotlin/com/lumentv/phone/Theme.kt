@@ -16,6 +16,7 @@ object Palette {
     val TextDim = Color(0xFFA0A0A8)
     val Danger = Color(0xFFFF5A5F)
     val Gold = Color(0xFFFFC857)
+    val Good = Color(0xFF4CD98A)
 }
 
 @Composable

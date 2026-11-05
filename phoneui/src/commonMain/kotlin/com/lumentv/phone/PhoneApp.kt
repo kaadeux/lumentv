@@ -205,7 +205,7 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
                 is Route.Movie -> MoviePage(core, r.row, player)
                 is Route.Series -> SeriesPage(core, p, r.row, player)
                 Route.Favorites -> FavoritesPage(core, p, player, open)
-                Route.Guide -> GuidePage(core, p, open)
+                Route.Guide -> GuidePage(core, p, player, open)
                 is Route.GuideChannel -> GuideChannelPage(core, r.channel, player)
                 Route.Sports -> SportsPage(core, p, player)
                 Route.Settings -> SettingsPage(core, p, open)

@@ -191,40 +191,6 @@ private fun Title(text: String) = Text(text, fontSize = 18.sp, fontWeight = Font
 
 // ---- TV guide ---------------------------------------------------------------------------------------------------
 
-private const val FAVORITES = "★ Mes chaînes"
-
-/** The channels of a group (or Ma liste) with what is on; a channel opens its programmes. */
-@Composable
-internal fun GuidePage(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
-    // Locked groups stay out of the guide until their PIN is given (in the TV tab).
-    val groups by produceState(emptyList<String>(), p.id) {
-        value = listOf(FAVORITES) + core.library.groups(p.id, false).filter { !it.locked || Parental.isUnlocked(p.id, it.name) }.map { it.name }
-    }
-    val memory = LocalScroll.current
-    var group by remember(p.id) { mutableStateOf(memory.values["guide"] as? String ?: FAVORITES) }
-    val settings by core.settings.flow.collectAsState(null)
-    val channels by produceState<List<ChannelRow>?>(null, p.id, group) {
-        value = if (group == FAVORITES) core.library.favoriteChannelsAll().filter { it.ch.playlistId == p.id }
-        else {
-            val locked = core.library.lockedGroups(p.id).filterTo(HashSet()) { !Parental.isUnlocked(p.id, it) }
-            core.library.channels(p.id, group, false, settings?.sort ?: "provider").filter { it.ch.groupName !in locked }
-        }
-    }
-    Column {
-        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(groups) { g -> FilterChip(selected = g == group, onClick = { group = g; memory.values["guide"] = g; memory.forget("guide:list") }, label = { Text(g, maxLines = 1) }) }
-        }
-        LazyColumn(state = rememberList("guide:list:$group", ready = channels != null), contentPadding = PaddingValues(vertical = 8.dp)) {
-            val list = channels
-            if (list == null) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-            else if (list.isEmpty()) item {
-                Text(if (group == FAVORITES) "Aucune chaîne dans Ma liste : ajoute-en avec ☆ dans l'onglet TV." else "Aucune chaîne.",
-                    color = Palette.TextDim, modifier = Modifier.padding(16.dp))
-            }
-            else items(list, key = { it.ch.id }) { c -> ChannelLine(core, c, { open(Route.GuideChannel(c)) }) { Text("›", fontSize = 22.sp, color = Palette.TextDim, modifier = Modifier.padding(8.dp)) } }
-        }
-    }
-}
 
 /** A channel's programmes, day by day: the one on now plays live, a past one plays from the catch-up when the channel has it. */
 @Composable
@@ -255,9 +221,7 @@ internal fun GuideChannelPage(core: AppCore, c: ChannelRow, player: VideoPlayer)
                     Row(Modifier.fillMaxWidth().clickable(enabled = playable) {
                         scope.launch {
                             if (live) playChannel(core, player, c, pr.title)
-                            else core.resolver.catchup(c.ch, pr)?.let { spec ->
-                                play(core, player, spec, pr.title, c.ch.name + " · " + dayLabel(pr.start) + " " + hm(pr.start), 0, c.ch.playlistId) { _, _ -> }
-                            }
+                            else playCatchup(core, player, c, pr)
                         }
                     }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
                         Text(hm(pr.start), color = if (live) Palette.Accent else Palette.TextDim, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(56.dp))

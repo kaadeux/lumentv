@@ -40,6 +40,8 @@ class PlayRequest(
     var variants: List<PlayVariant> = emptyList()
     /** The plain HTTP address when [url] is its HTTPS twin (the server answered there): tried if HTTPS fails. */
     var fallbackUrl: String? = null
+    /** Why it failed (the network, the provider's server or the stream itself), given to the callback; set by Playback. */
+    var explain: ((String) -> Unit) -> Unit = {}
 
     internal var onClosed: (() -> Unit)? = null
 

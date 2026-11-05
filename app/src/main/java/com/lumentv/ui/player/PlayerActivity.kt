@@ -395,10 +395,16 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
         }
 
         if (state.error != null) {
+            // The network's fault, the provider's server's or the stream's (shared check, as on the iPhone and the PC).
+            val why by androidx.compose.runtime.produceState<String?>(null, state.error) {
+                value = runCatching { com.lumentv.core.NetworkCheck.explainFailure(vm.graph.core) }.getOrNull()
+            }
             CenterCard(
                 state.error!!,
                 if (state.retryIn > 0) "Nouvelle tentative dans ${state.retryIn} s (essai ${state.attempt})" else null,
             ) {
+                Text(why ?: "Vérification de la connexion…", style = MaterialTheme.typography.bodyMedium, color = Color.White,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(bottom = 12.dp))
                 if (phone) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     TvButton("Réessayer", { c.retryNow() }, primary = true)
                     TvButton("Quitter", { vm.saveProgress(c); onExit() })

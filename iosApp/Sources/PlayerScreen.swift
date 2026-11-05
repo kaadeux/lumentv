@@ -86,6 +86,8 @@ struct PlayerScreen: View {
     @State private var variant = 0
     /// The plain HTTP address was tried after the HTTPS one failed.
     @State private var triedPlain = false
+    /// When it fails: the network's fault, the provider's server's or the stream's (shared check).
+    @State private var why: String?
     @State private var notice: String?
     /// The recap / intro / credits being played, to skip.
     @State private var skip: PlaySkip?
@@ -115,7 +117,7 @@ struct PlayerScreen: View {
             Color.clear.contentShape(Rectangle()).ignoresSafeArea()
                 .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { controls.toggle() }; if controls { scheduleHide() } }
             if loading && !failed { ProgressView().tint(Lumen.accent).scaleEffect(1.6).allowsHitTesting(false) }
-            if failed { message("Lecture impossible", "Le serveur ne répond pas ou le format n'est pas lu.") }
+            if failed { message("Lecture impossible", why ?? "Vérification de la connexion…") }
             if controls { overlay.transition(.opacity) }
             if let s = skip { skipButton(s) }
             if let n = notice {
@@ -128,6 +130,11 @@ struct PlayerScreen: View {
             }
         }
         .onReceive(clock) { _ in tick() }
+        .onChange(of: failed) { f in
+            guard f else { return }
+            why = nil
+            request.explain { text in DispatchQueue.main.async { why = text.isEmpty ? "Le serveur ne répond pas ou le format n'est pas lu." : text } }
+        }
         // The side buttons move the pill too.
         .onReceive(AVAudioSession.sharedInstance().publisher(for: \.outputVolume)) { v in volume = Double(v) }
         .statusBarHidden(!controls)

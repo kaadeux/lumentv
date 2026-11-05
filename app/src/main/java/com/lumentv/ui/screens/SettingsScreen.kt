@@ -112,6 +112,7 @@ fun SettingsScreen(vm: MainViewModel) {
         footer = "Lumen TV ${BuildConfig.VERSION_NAME}",
         privacy = { com.lumentv.core.PrivateNet.summary() },
         privacyNote = null,
+        networkTest = false,
         parentalHint = if (phoneDevice) "Verrouille un groupe de chaînes : appui long sur le groupe dans l'onglet Direct. Masque une chaîne ou un groupe de la même façon."
             else "Verrouille un groupe de chaînes : maintiens OK sur le groupe dans l'écran Direct. Masque une chaîne ou un groupe de la même façon.",
         cache = CacheOps(

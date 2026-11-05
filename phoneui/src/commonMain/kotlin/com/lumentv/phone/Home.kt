@@ -324,6 +324,14 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity?, open: (Route) -> Un
                     extras.privacyNote ?: com.lumentv.core.Privacy.NOTE)
             }
         }
+        if (extras.networkTest) item {
+            var testing by remember { mutableStateOf(false) }
+            Section("État du réseau") {
+                Text("Internet et le serveur du fournisseur, chronométrés, puis la cause probable d'une coupure.", color = Palette.TextDim, fontSize = 14.sp)
+                PhoneButton("Tester ma connexion", modifier = Modifier.fillMaxWidth()) { testing = true }
+            }
+            if (testing) NetworkDialog(core) { testing = false }
+        }
         item {
             Section("Lecture") {
                 Toggle("Épisode suivant automatique", "À la fin d'un épisode, le suivant se lance.", settings?.autoNext ?: true) { on ->

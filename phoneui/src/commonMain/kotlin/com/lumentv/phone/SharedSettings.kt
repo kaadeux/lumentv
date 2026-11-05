@@ -27,6 +27,8 @@ class SettingsExtras(
     val parentalHint: String = "Verrouille un groupe de chaînes avec le ⋮ à côté de son nom dans l'onglet TV. Masque une chaîne, un groupe ou une catégorie de la même façon.",
     /** The pictures' cache: its size and emptying it (the device's image loader). Null: the shared one. */
     val cache: CacheOps? = null,
+    /** The shared "État du réseau" section (Android has its own panel, with the playing stream's figures). */
+    val networkTest: Boolean = true,
 )
 
 class CacheOps(val sizeBytes: suspend () -> Long, val clear: suspend () -> Unit)

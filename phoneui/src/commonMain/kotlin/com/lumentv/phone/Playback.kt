@@ -35,6 +35,7 @@ object Playback {
             var beat: Job? = null
             if (key != null) beat = core.scope.launch { while (true) { core.presence.beat(key); delay(Presence.BEAT_MS) } }
             request.onClosed = { beat?.cancel(); if (key != null) core.scope.launch { core.presence.leave(key) } }
+            request.explain = { done -> core.scope.launch { done(runCatching { com.lumentv.core.NetworkCheck.explainFailure(core) }.getOrDefault("")) } }
             player.play(request)
         }
         val others = key?.let { core.presence.others(it) }.orEmpty()
