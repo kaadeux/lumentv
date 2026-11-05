@@ -1,33 +1,13 @@
 package com.lumentv.desktop
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.text.KeyboardOptions
 import java.security.MessageDigest
 import kotlinx.coroutines.launch
 import androidx.compose.ui.node.invalidateDraw
@@ -102,20 +82,6 @@ object Access {
     }
 }
 
+/** The family code's screen, shared with the iPhone (uikit). */
 @Composable
-fun AccessScreen(onUnlocked: () -> Unit) {
-    var code by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(Modifier.width(420.dp).clip(RoundedCornerShape(16.dp)).background(Pal.panel).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Lumen TV", style = MaterialTheme.typography.headlineSmall, color = Pal.text)
-            Text("Application réservée à la famille. Entrez le code d'accès à 6 chiffres.", color = Pal.dim)
-            OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6); error = false }, singleLine = true, label = { Text("Code d'accès") },
-                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
-            if (error) Text("Code incorrect", color = Pal.danger)
-            Spacer(Modifier.height(4.dp))
-            Button({ if (Access.unlock(code)) onUnlocked() else error = true }, enabled = code.length == 6) { Text("Valider") }
-        }
-    }
-}
+fun AccessScreen(onUnlocked: () -> Unit) = com.lumentv.ui.kit.AccessGateScreen(Access::unlock, onUnlocked)
