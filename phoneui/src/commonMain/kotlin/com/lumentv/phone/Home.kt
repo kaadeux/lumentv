@@ -77,7 +77,11 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 /** The rows of the homes, kept while the app is open: back from a title they are there at once (and the scroll with them). */
-private object HomeCache { val rows = HashMap<String, Any>() }
+private object HomeCache {
+    val rows = HashMap<String, Any>()
+    /** Homes computed to their last row (TMDB's included). */
+    val done = HashSet<String>()
+}
 
 /** A title of the banner: its picture, what TMDB knows of it, and what its buttons do. */
 private class Hero(val key: String, val title: String, val series: Boolean, val tmdb: String?, val year: Int?,
@@ -87,17 +91,23 @@ private class Hero(val key: String, val title: String, val series: Boolean, val 
 
 @Composable
 internal fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open: (Route) -> Unit) {
+    val key = "mv:${p.id}:${p.lastRefresh}"
     @Suppress("UNCHECKED_CAST")
-    var shelves by remember(p.id) { mutableStateOf(HomeCache.rows["mv:${p.id}"] as List<Shelf<MovieRow>>?) }
-    LaunchedEffect(p.id, p.lastRefresh) {
+    var shelves by remember(key) { mutableStateOf(HomeCache.rows[key] as List<Shelf<MovieRow>>?) }
+    LaunchedEffect(key) {
+        // Computed once per list: back from a title the same rows (and so the same place); again after a reload.
+        if (key in HomeCache.done) return@LaunchedEffect
         // History and ratings of the moment: the rows are not computed again at each film watched.
         val history = core.library.observeHistory(600).first()
         val ratings = core.library.observeRatings().first()
         core.discover.movies(p.id, history, ratings).collect { list ->
-            shelves = withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val rows = withContext(kotlinx.coroutines.Dispatchers.Default) {
                 list.map { Shelf(it.title, oneEach(it.items, { m -> m.m.name }, { m -> m.m.category })) }.filter { it.items.isNotEmpty() }
-            }.also { HomeCache.rows["mv:${p.id}"] = it }
+            }
+            // The playlist's rows come first, TMDB's after: a shorter first answer does not replace a fuller page.
+            if (rows.size >= (shelves?.size ?: 0)) { shelves = rows; HomeCache.rows[key] = rows }
         }
+        HomeCache.done += key
     }
     val scope = rememberCoroutineScope()
     val heroes = shelves?.firstOrNull()?.items.orEmpty().take(6).map { m ->
@@ -111,16 +121,20 @@ internal fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
 
 @Composable
 internal fun SeriesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open: (Route) -> Unit) {
+    val key = "se:${p.id}:${p.lastRefresh}"
     @Suppress("UNCHECKED_CAST")
-    var shelves by remember(p.id) { mutableStateOf(HomeCache.rows["se:${p.id}"] as List<Shelf<SeriesRow>>?) }
-    LaunchedEffect(p.id, p.lastRefresh) {
+    var shelves by remember(key) { mutableStateOf(HomeCache.rows[key] as List<Shelf<SeriesRow>>?) }
+    LaunchedEffect(key) {
+        if (key in HomeCache.done) return@LaunchedEffect
         val history = core.library.observeHistory(600).first()
         val ratings = core.library.observeRatings().first()
         core.discover.series(p.id, history, ratings).collect { list ->
-            shelves = withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val rows = withContext(kotlinx.coroutines.Dispatchers.Default) {
                 list.map { Shelf(it.title, oneEach(it.items, { s -> s.s.name }, { s -> s.s.category })) }.filter { it.items.isNotEmpty() }
-            }.also { HomeCache.rows["se:${p.id}"] = it }
+            }
+            if (rows.size >= (shelves?.size ?: 0)) { shelves = rows; HomeCache.rows[key] = rows }
         }
+        HomeCache.done += key
     }
     val scope = rememberCoroutineScope()
     val heroes = shelves?.firstOrNull()?.items.orEmpty().take(6).map { s ->
