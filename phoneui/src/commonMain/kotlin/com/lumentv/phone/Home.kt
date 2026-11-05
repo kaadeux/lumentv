@@ -150,7 +150,7 @@ private fun playMovie(core: AppCore, player: VideoPlayer, scope: kotlinx.corouti
 private fun <T> HomeList(
     core: AppCore, title: String, heroes: List<Hero>, shelves: List<Shelf<T>>?, onCategories: () -> Unit,
     resume: @Composable () -> Unit, row: androidx.compose.foundation.lazy.LazyListScope.(List<T>) -> Unit,
-) = LazyColumn(state = rememberList("home:$title")) {
+) = LazyColumn(state = rememberList("home:$title", ready = shelves != null)) {
     item {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -320,6 +320,19 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, back: () -> Unit) {
                     }
                 }
                 OutlinedButton(onClick = { core.scope.launch { core.epg.refresh(p.id) } }) { Text("Recharger le guide") }
+            }
+        }
+        item {
+            val context = coil3.compose.LocalPlatformContext.current
+            var bytes by remember { mutableStateOf<Long?>(null) }
+            var refresh by remember { mutableStateOf(0) }
+            LaunchedEffect(refresh) { bytes = withContext(IoDispatcher) { cacheBytes(context) } }
+            Section("Stockage") {
+                Text("Cache des images et de TMDB : " + (bytes?.let { "${it / 1_000_000} Mo" } ?: "…"), color = Palette.TextDim, fontSize = 14.sp)
+                Text("Les téléchargements, la liste et le guide ne sont pas touchés.", color = Palette.TextDim, fontSize = 12.sp)
+                OutlinedButton(onClick = {
+                    core.scope.launch { withContext(IoDispatcher) { clearCaches(context) }; refresh++ }
+                }) { Text("Vider le cache") }
             }
         }
         item { Text("Lumen TV pour iPhone", color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }

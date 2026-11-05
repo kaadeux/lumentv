@@ -286,7 +286,7 @@ private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> U
     }
     val memory = LocalScroll.current
     var cat by remember(p.id) { mutableStateOf(memory.values["cat:mv"] as? String ?: RECENT) }
-    val movies by produceState(emptyList<MovieRow>(), p.id, cat, p.lastRefresh) {
+    val movies by produceState<List<MovieRow>?>(null, p.id, cat, p.lastRefresh) {
         val rows = if (cat == RECENT) core.library.recentMovies(p.id) else core.library.movies(p.id, cat)
         // Thousands of titles: sorted out off the screen's thread.
         value = withContext(Dispatchers.Default) { oneEach(rows, { it.m.name }, { it.m.category }) }
@@ -294,8 +294,8 @@ private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> U
     Column {
         Header("Films · catégories", back)
         Chips(cats, cat, "chips:mv") { cat = it; memory.values["cat:mv"] = it; memory.forget("grid:mv") }
-        LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:mv"), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(movies, key = { it.m.id }) { m -> Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } }
+        LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:mv:$cat", ready = movies != null), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(movies.orEmpty(), key = { it.m.id }) { m -> Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } }
         }
     }
 }
@@ -307,15 +307,15 @@ private fun SeriesCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> 
     }
     val memory = LocalScroll.current
     var cat by remember(p.id) { mutableStateOf(memory.values["cat:se"] as? String ?: RECENT) }
-    val series by produceState(emptyList<SeriesRow>(), p.id, cat, p.lastRefresh) {
+    val series by produceState<List<SeriesRow>?>(null, p.id, cat, p.lastRefresh) {
         val rows = if (cat == RECENT) core.library.recentSeries(p.id) else core.library.series(p.id, cat)
         value = withContext(Dispatchers.Default) { oneEach(rows, { it.s.name }, { it.s.category }) }
     }
     Column {
         Header("Séries · catégories", back)
         Chips(cats, cat, "chips:se") { cat = it; memory.values["cat:se"] = it; memory.forget("grid:se") }
-        LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:se"), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(series, key = { it.s.id }) { s -> Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } }
+        LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:se:$cat", ready = series != null), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(series.orEmpty(), key = { it.s.id }) { s -> Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } }
         }
     }
 }
@@ -334,7 +334,7 @@ internal const val MY_CHANNELS = "★ Mes chaînes"
 @Composable
 private fun LiveHome(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
     val groups by produceState(emptyList<com.lumentv.data.repo.GroupInfo>(), p.id, p.lastRefresh) { value = core.library.groups(p.id, false) }
-    LazyColumn(state = rememberList("live")) {
+    LazyColumn(state = rememberList("live", ready = groups.isNotEmpty())) {
         item { Header("TV") }
         item {
             Row(Modifier.fillMaxWidth().clickable { open(Route.Group(MY_CHANNELS)) }.padding(horizontal = 16.dp, vertical = 14.dp)) {
@@ -358,7 +358,7 @@ private fun ChannelsPage(core: AppCore, p: PlaylistEntity, group: String, player
         else core.library.channels(p.id, group, false, settings?.sort ?: "provider")
     }
     val scope = rememberCoroutineScope()
-    LazyColumn(state = rememberList("ch:$group")) {
+    LazyColumn(state = rememberList("ch:$group", ready = channels.isNotEmpty())) {
         item { Header(group, back) }
         if (group == MY_CHANNELS && channels.isEmpty()) item {
             Text("Ajoute des chaînes avec ☆ dans leurs groupes.", color = Palette.TextDim, modifier = Modifier.padding(16.dp))

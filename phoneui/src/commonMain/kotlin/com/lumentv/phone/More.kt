@@ -146,7 +146,7 @@ internal fun FavoritesPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer
     val series by produceState(emptyList<SeriesRow>(), changes) { value = core.library.favoriteSeries().filter { it.s.playlistId == p.id } }
     val channels by produceState(emptyList<ChannelRow>(), changes) { value = core.library.favoriteChannelsAll().filter { it.ch.playlistId == p.id } }
     val scope = rememberCoroutineScope()
-    LazyColumn(state = rememberList("favorites"), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(state = rememberList("favorites", ready = movies.isNotEmpty() || series.isNotEmpty() || channels.isNotEmpty()), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header("Favoris", back) }
         if (movies.isEmpty() && series.isEmpty() && channels.isEmpty()) item {
             Text("Rien encore. Ajoute un film ou une série avec « + Ma liste » sur sa page, une chaîne avec ☆.",
@@ -200,7 +200,7 @@ internal fun GuidePage(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit, 
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(groups) { g -> FilterChip(selected = g == group, onClick = { group = g; memory.values["guide"] = g; memory.forget("guide:list") }, label = { Text(g, maxLines = 1) }) }
         }
-        LazyColumn(state = rememberList("guide:list"), contentPadding = PaddingValues(vertical = 8.dp)) {
+        LazyColumn(state = rememberList("guide:list:$group", ready = channels != null), contentPadding = PaddingValues(vertical = 8.dp)) {
             val list = channels
             if (list == null) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
             else if (list.isEmpty()) item {
@@ -276,7 +276,7 @@ internal fun SportsPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer, b
         games = runCatching { core.sports.games(p.id, prefs) }.getOrDefault(emptyList())
     }
     val scope = rememberCoroutineScope()
-    LazyColumn(state = rememberList("sport"), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(state = rememberList("sport", ready = games != null), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header("Sport", back) }
         item {
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
