@@ -1,6 +1,5 @@
 # Lumen TV 2.1.0 – compte rendu de la mise à niveau
 
-Voir aussi [AUDIT-V2.md](AUDIT-V2.md) (état des lieux avant les modifications).
 
 ## Problèmes identifiés
 
@@ -59,7 +58,7 @@ Voir aussi [AUDIT-V2.md](AUDIT-V2.md) (état des lieux avant les modifications).
 
 ## Fichiers
 
-- **Créés** : `shared/…/core/SmartSearch.kt`, `shared/…/test/…/SmartSearchTest.kt`, `app/…/data/repo/LibraryIndex.kt`, `app/schemas/…/7.json`, `docs/AUDIT-V2.md`, ce rapport.
+- **Créés** : `shared/…/core/SmartSearch.kt`, `shared/…/test/…/SmartSearchTest.kt`, `app/…/data/repo/LibraryIndex.kt`, `app/schemas/…/7.json`, ce rapport.
 - **Réécrits** : `shared/…/data/Tmdb.kt`, `app/…/data/repo/Discover.kt`.
 - **Modifiés** : `LumenApp.kt`, `AppDatabase.kt`, `Daos.kt`, `Entities.kt`, `LibraryRepository.kt`, `BackupManager.kt`, `SportsRepository.kt`, `Featured.kt`, `MainActivity.kt`, `MainViewModel.kt`, `PhoneShell.kt`, `TvShell.kt`, `Components.kt`, `OtherScreens.kt`, `SportsScreens.kt`, `VodScreens.kt`, `app/build.gradle.kts`.
 - **Code supprimé** :
