@@ -128,7 +128,8 @@ internal fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer, back: 
     fun start(fromMs: Long) = scope.launch {
         val spec = dl?.takeIf { it.status == TransferStatus.DONE && it.filePath != null }
             ?.let { com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + it.filePath, null, null, false) } ?: core.resolver.movie(m)
-        play(core, player, spec, Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, fromMs) { pos, dur ->
+        val fromFile = spec.url.startsWith(DownloadManager.SCHEME)
+        play(core, player, spec, Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, fromMs, m.playlistId.takeIf { !fromFile }) { pos, dur ->
             core.scope.launch {
                 val done = dur > 0 && pos > dur * 0.95
                 core.library.record(HistoryEntity(key, HistoryKind.MOVIE, m.playlistId, m.uid, m.name, null, m.poster, null, nowMillis(), if (done) dur else pos, dur))
@@ -244,7 +245,7 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
             val key = LibraryRepository.key(HistoryKind.EPISODE, e.playlistId, e.uid)
             val file = downloads?.fileOf(e.playlistId, e.uid)?.filePath
             val spec = file?.let { com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + it, null, null, false) } ?: core.resolver.episode(e)
-            player.play(PlayRequest(spec.url, spec.userAgent, spec.referer, Featured.shortTitle(s.name), "$label · ${e.title}", fromMs, false,
+            val request = PlayRequest(spec.url, spec.userAgent, spec.referer, Featured.shortTitle(s.name), "$label · ${e.title}", fromMs, false,
                 onFinish = { pos, dur ->
                     core.scope.launch {
                         val done = dur > 0 && pos > dur * 0.95
@@ -261,7 +262,9 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
                 } },
                 onNext = after?.let { n -> { start(n, 0) } },
                 autoNext = core.settings.current().autoNext,
-            ))
+            )
+            Playback.loadSkips(core, request, s.tmdb, e.season, e.episode)
+            Playback.start(core, player, request, e.playlistId.takeIf { file == null })
         }
     }
     fun resumeOf(e: EpisodeEntity) = progress[e.uid]?.takeIf { it.positionMs > 30_000 && !watched(e) }?.positionMs ?: 0

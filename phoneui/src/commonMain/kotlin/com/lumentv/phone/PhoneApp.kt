@@ -224,6 +224,14 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
             }
         }
     }
+    // Another device of the subscription is playing: the TV's warning, then play anyway or not.
+    val pending by Playback.pending.collectAsState()
+    pending?.let { w ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { Playback.pending.value = null }, containerColor = Palette.Panel,
+            title = { Text("Un autre écran regarde") }, text = { Text(w.text) },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { Playback.pending.value = null; w.go() }) { Text("Lancer quand même") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { Playback.pending.value = null }) { Text("Annuler") } })
+    }
     }
 }
 
@@ -324,8 +332,13 @@ private fun SeriesCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> 
 
 internal fun minutes(ms: Long) = (ms / 60_000).let { if (it >= 60) "${it / 60} h ${(it % 60).toString().padStart(2, '0')}" else "$it min" }
 
-internal fun play(core: AppCore, player: VideoPlayer, spec: StreamSpec, title: String, subtitle: String?, startMs: Long, onFinish: (Long, Long) -> Unit) =
-    player.play(PlayRequest(spec.url, spec.userAgent, spec.referer, title, subtitle, startMs, spec.live, onFinish))
+/** Plays through [Playback] (languages, the subscription's other screens); [playlistId] null for a downloaded file. */
+internal suspend fun play(core: AppCore, player: VideoPlayer, spec: StreamSpec, title: String, subtitle: String?, startMs: Long,
+                          playlistId: Long? = null, variants: List<PlayVariant> = emptyList(), onFinish: (Long, Long) -> Unit) {
+    val request = PlayRequest(spec.url, spec.userAgent, spec.referer, title, subtitle, startMs, spec.live, onFinish)
+    request.variants = variants
+    Playback.start(core, player, request, playlistId)
+}
 
 internal const val MY_CHANNELS = "★ Mes chaînes"
 

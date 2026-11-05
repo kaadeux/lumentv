@@ -242,7 +242,7 @@ internal fun GuideChannelPage(core: AppCore, c: ChannelRow, player: VideoPlayer,
                         scope.launch {
                             if (live) playChannel(core, player, c, pr.title)
                             else core.resolver.catchup(c.ch, pr)?.let { spec ->
-                                play(core, player, spec, pr.title, c.ch.name + " · " + dayLabel(pr.start) + " " + hm(pr.start), 0) { _, _ -> }
+                                play(core, player, spec, pr.title, c.ch.name + " · " + dayLabel(pr.start) + " " + hm(pr.start), 0, c.ch.playlistId) { _, _ -> }
                             }
                         }
                     }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {

@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import KSPlayer
 import LumenKit
 import SwiftUI
@@ -12,16 +13,28 @@ enum Lumen {
     static let glass = Color.black.opacity(0.45)
 }
 
+/// The words that name a language in track names ("VFF", "English", "[fr]"), by the settings' code ("fr", "en").
+enum Lang {
+    static func words(_ code: String) -> Set<String> {
+        code == "en" ? ["en", "eng", "english", "anglais", "vo"] : ["fr", "fre", "fra", "french", "français", "francais", "vf", "vff", "vfq"]
+    }
+
+    static func matches(_ name: String, code: String?, lang: String) -> Bool {
+        if let code, words(lang).contains(code.lowercased()) { return true }
+        let tokens = Set(name.lowercased().split { !$0.isLetter }.map(String.init))
+        return !tokens.isDisjoint(with: words(lang))
+    }
+}
+
 /// The player's KSPlayer options: more decoded frames ready (live TS stuttered with KSPlayer's 4), a longer buffer
-/// for IPTV servers, the French audio track first.
+/// for IPTV servers, the audio track in the language of the settings first.
 final class LumenOptions: KSOptions {
+    var audioLang = "fr"
+
     override func videoFrameMaxCount(fps _: Float, naturalSize _: CGSize, isLive _: Bool) -> UInt8 { 16 }
 
     override func wantedAudio(tracks: [MediaPlayerTrack]) -> Int? {
-        tracks.firstIndex { t in
-            let code = (t.languageCode ?? "").lowercased(), name = t.name.lowercased()
-            return ["fr", "fre", "fra"].contains(code) || name.contains("fran") || name.hasPrefix("fr")
-        }
+        tracks.firstIndex { Lang.matches($0.name, code: $0.languageCode, lang: audioLang) }
     }
 }
 
@@ -40,8 +53,15 @@ enum Step { case none, previous, next }
 /// few seconds while it plays). Closing reports where the viewer stopped, in milliseconds.
 struct PlayerScreen: View {
     let request: PlayRequest
-    let url: URL
     let onClose: (Int64, Int64, Step) -> Void
+    /// The stream: a live channel's lower quality replaces it when the picture keeps stopping.
+    @State private var url: URL
+
+    init(request: PlayRequest, url: URL, onClose: @escaping (Int64, Int64, Step) -> Void) {
+        self.request = request
+        self.onClose = onClose
+        _url = State(initialValue: url)
+    }
 
     @StateObject private var player = KSVideoPlayer.Coordinator()
     @State private var controls = true
@@ -54,9 +74,21 @@ struct PlayerScreen: View {
     @State private var scrubbing: Double?
     @State private var hide: DispatchWorkItem?
     @State private var closed = false
+    // Live: stalls seen once it played, and the lower qualities already tried.
+    @State private var played = false
+    @State private var stalls: [Date] = []
+    @State private var bufferingSince: Date?
+    @State private var variant = 0
+    @State private var notice: String?
+    /// The recap / intro / credits being played, to skip.
+    @State private var skip: PlaySkip?
+    private let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var options: KSOptions {
         let o = LumenOptions()
+        o.audioLang = request.audioLang
+        // The subtitles are chosen here (settings: forced only, French, English), not the file's first one.
+        o.autoSelectEmbedSubtitle = false
         o.userAgent = request.userAgent ?? "Lumen TV"
         if let referer = request.referer { o.appendHeader(["Referer": referer]) }
         if request.startMs > 0 { o.startPlayTime = TimeInterval(request.startMs) / 1000 }
@@ -76,7 +108,17 @@ struct PlayerScreen: View {
             if loading && !failed { ProgressView().tint(Lumen.accent).scaleEffect(1.6).allowsHitTesting(false) }
             if failed { message("Lecture impossible", "Le serveur ne répond pas ou le format n'est pas lu.") }
             if controls { overlay.transition(.opacity) }
+            if let s = skip { skipButton(s) }
+            if let n = notice {
+                VStack {
+                    Text(n).font(.subheadline.weight(.semibold)).foregroundColor(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 9).background(Lumen.glass, in: Capsule())
+                    Spacer()
+                }
+                .padding(.top, 72).allowsHitTesting(false)
+            }
         }
+        .onReceive(clock) { _ in tick() }
         .statusBarHidden(!controls)
         .persistentSystemOverlays(.hidden)
         .preferredColorScheme(.dark)
@@ -91,9 +133,18 @@ struct PlayerScreen: View {
             .onStateChanged { layer, state in
                 playing = state.isPlaying
                 loading = state == .preparing || state == .buffering || state == .initialized
-                if state == .readyToPlay { layer.player.contentMode = fit.mode; pickForcedFrench() }
-                if state == .error { failed = true; controls = true }
-                if state == .bufferFinished { scheduleHide() }
+                if state == .readyToPlay { layer.player.contentMode = fit.mode; pickSubtitles() }
+                if state == .error {
+                    // A live channel that fails tries its lower quality before giving up.
+                    if request.live && variant < request.variants.count { stepDown() } else { failed = true; controls = true }
+                }
+                if state == .bufferFinished { played = true; bufferingSince = nil; scheduleHide() }
+                if state == .buffering, played, request.live {
+                    let now = Date()
+                    bufferingSince = now
+                    stalls = stalls.filter { now.timeIntervalSince($0) < 120 } + [now]
+                    if stalls.count >= 2 { stepDown() }
+                }
             }
             .onFinish { _, error in
                 if error == nil, !request.live { close(finished: true, step: request.hasNext && request.autoNext ? .next : .none) }
@@ -245,15 +296,58 @@ struct PlayerScreen: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
     }
 
-    /// The French forced subtitles when the film has them (the dialogue in another language), as on the TV.
-    private func pickForcedFrench() {
+    /// As on the TV: the forced subtitles in the audio's language (the lines in another language), or the full ones
+    /// of the language chosen in the settings.
+    private func pickSubtitles() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             guard player.subtitleModel.selectedSubtitleInfo == nil else { return }
-            if let forced = player.subtitleModel.subtitleInfos.first(where: { i in
-                let n = i.name.lowercased()
-                return (n.contains("forc") || n.contains("forced")) && (n.contains("fr") || n.contains("fre"))
-            }) { player.subtitleModel.selectedSubtitleInfo = forced }
+            let infos = player.subtitleModel.subtitleInfos
+            let full = request.subtitlesOn
+            let lang = full ? request.subtitleLang : request.audioLang
+            func forced(_ name: String) -> Bool { name.lowercased().contains("forc") }
+            let pick = infos.first { Lang.matches($0.name, code: nil, lang: lang) && forced($0.name) != full }
+                ?? (full ? infos.first { Lang.matches($0.name, code: nil, lang: lang) } : nil)
+            if let pick { player.subtitleModel.selectedSubtitleInfo = pick }
         }
+    }
+
+    /// Once a second: a stall longer than 6 s steps a live channel down; the skip button follows the episode.
+    private func tick() {
+        if let since = bufferingSince, request.live, Date().timeIntervalSince(since) > 6 { stepDown() }
+        let ms = Int64(player.timemodel.currentTime) * 1000
+        let current = request.skips.first { $0.startMs <= ms && ms < $0.endMs - 1000 }
+        if current?.label != skip?.label || current?.startMs != skip?.startMs { skip = current }
+    }
+
+    /// The same channel one quality lower (the next of the request's variants), with a word on screen.
+    private func stepDown() {
+        guard request.live, variant < request.variants.count, let next = URL(string: request.variants[variant].url) else { return }
+        notice = "Connexion lente : passage en " + request.variants[variant].label
+        variant += 1
+        stalls = []
+        bufferingSince = nil
+        played = false
+        failed = false
+        url = next
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { notice = nil }
+    }
+
+    private func skipButton(_ s: PlaySkip) -> some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button {
+                    skip = nil
+                    if s.toNext && request.hasNext { close(finished: true, step: .next) }
+                    else { player.seek(time: TimeInterval(s.endMs) / 1000) }
+                } label: {
+                    Text(s.label + "  ›").font(.subheadline.weight(.bold)).foregroundColor(.black)
+                        .padding(.horizontal, 18).padding(.vertical, 11).background(Color.white, in: Capsule())
+                }
+            }
+        }
+        .padding(.trailing, 32).padding(.bottom, controls ? 120 : 36)
     }
 
     private func close(finished: Bool, step: Step) {

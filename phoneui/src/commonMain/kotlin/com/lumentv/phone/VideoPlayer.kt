@@ -28,10 +28,33 @@ class PlayRequest(
     val hasPrevious get() = onPrevious != null
     val hasNext get() = onNext != null
 
+    /** Languages wanted ("fr", "en"): the audio track; subtitles full ([subtitlesOn]) or only forced ones. */
+    var audioLang: String = "fr"
+    var subtitleLang: String = "fr"
+    var subtitlesOn: Boolean = false
+
+    /** Recap, intro and credits of an episode (TheIntroDB), filled in while it plays; the player offers to skip them. */
+    var skips: List<PlaySkip> = emptyList()
+
+    /** Live: the same channel in lower qualities (FHD → HD → SD), tried in turn when the picture keeps stopping. */
+    var variants: List<PlayVariant> = emptyList()
+
+    internal var onClosed: (() -> Unit)? = null
+
     /** The player was closed at [positionMs] of [durationMs] (0 when unknown). */
-    fun finish(positionMs: Long, durationMs: Long) = onFinish(positionMs, durationMs)
+    fun finish(positionMs: Long, durationMs: Long) {
+        onClosed?.invoke()
+        onClosed = null
+        onFinish(positionMs, durationMs)
+    }
 
     /** After [finish]: opens the episode before / after in a new player. */
     fun previous() { onPrevious?.invoke() }
     fun next() { onNext?.invoke() }
 }
+
+/** A part of an episode to skip, in milliseconds; [toNext]: the credits, skipping them opens the next episode. */
+class PlaySkip(val startMs: Long, val endMs: Long, val label: String, val toNext: Boolean)
+
+/** A lower quality of a live channel: where it plays and what it is ("HD", "SD"). */
+class PlayVariant(val url: String, val label: String)

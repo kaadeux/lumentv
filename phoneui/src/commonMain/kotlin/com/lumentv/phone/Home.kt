@@ -152,7 +152,7 @@ private fun playMovie(core: AppCore, player: VideoPlayer, scope: kotlinx.corouti
     val key = LibraryRepository.key(HistoryKind.MOVIE, m.playlistId, m.uid)
     val h = core.library.history(key)
     val from = h?.takeIf { it.durationMs > 0 && it.positionMs in 60_000 until (it.durationMs * 0.95).toLong() }?.positionMs ?: 0
-    play(core, player, core.resolver.movie(m), Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, from) { pos, dur ->
+    play(core, player, core.resolver.movie(m), Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, from, m.playlistId) { pos, dur ->
         scope.launch {
             val done = dur > 0 && pos > dur * 0.95
             core.library.record(HistoryEntity(key, HistoryKind.MOVIE, m.playlistId, m.uid, m.name, null, m.poster, null, nowMillis(), if (done) dur else pos, dur))
@@ -320,6 +320,30 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, back: () -> Unit) {
             Section("Lecture") {
                 Toggle("Épisode suivant automatique", "À la fin d'un épisode, le suivant se lance.", settings?.autoNext ?: true) { on ->
                     core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.autoNext, on) }
+                }
+                Toggle("Qualité auto en direct", "Si l'image coupe, la même chaîne en qualité plus basse (FHD → HD → SD).", settings?.autoQuality ?: true) { on ->
+                    core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.autoQuality, on) }
+                }
+                Text("Langue audio", color = Palette.TextDim, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("fr" to "Français", "en" to "Anglais").forEach { (code, label) ->
+                        androidx.compose.material3.FilterChip(selected = (settings?.audioLang?.ifBlank { "fr" } ?: "fr") == code, label = { Text(label) }, onClick = {
+                            core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.audioLang, code) }
+                        })
+                    }
+                }
+                Text("Sous-titres", color = Palette.TextDim, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val on = settings?.subtitlesOn ?: false
+                    val lang = settings?.subtitleLang?.ifBlank { "fr" } ?: "fr"
+                    listOf(Triple(false, "fr", "Forcés seuls"), Triple(true, "fr", "Français"), Triple(true, "en", "Anglais")).forEach { (wantOn, code, label) ->
+                        androidx.compose.material3.FilterChip(selected = on == wantOn && (!wantOn || lang == code), label = { Text(label) }, onClick = {
+                            core.scope.launch {
+                                core.settings.set(com.lumentv.data.settings.Keys.subsOn, wantOn)
+                                if (wantOn) core.settings.set(com.lumentv.data.settings.Keys.subLang, code)
+                            }
+                        })
+                    }
                 }
             }
         }
