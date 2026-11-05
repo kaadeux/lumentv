@@ -95,8 +95,7 @@ struct PlayerScreen: View {
             .onFinish { _, error in
                 if error == nil, !request.live { close(finished: true) } else if error != nil { failed = true; controls = true }
             }
-            .aspectRatio(fit.ratio, contentMode: .fit)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .modifier(Ratio(ratio: fit.ratio))
     }
 
     /// The subtitles chosen (embedded or not), above the picture.
@@ -255,6 +254,19 @@ struct PlayerScreen: View {
         }
         player.resetPlayer()
         onClose(position, duration)
+    }
+}
+
+/// 16:9 and 4:3 frame the picture to that shape; the other formats take the whole screen (KSPlayer then fits,
+/// fills or stretches inside it).
+private struct Ratio: ViewModifier {
+    let ratio: CGFloat?
+    func body(content: Content) -> some View {
+        if let ratio {
+            content.aspectRatio(ratio, contentMode: .fit).frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 }
 

@@ -14,6 +14,9 @@ struct LumenTVApp: App {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         KSOptions.canBackgroundPlay = true
         KSOptions.isAutoPlay = true
+        // KSPlayer would set the ProMotion screen to the video's rate (25 to 50 Hz for a 25 fps film): iOS then picks
+        // 30, 40 or 60 Hz and repeats one frame in five or so, a steady stutter. At 120 Hz every rate plays evenly.
+        KSOptions.preferredFrame = false
     }
 
     var body: some Scene {
