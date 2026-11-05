@@ -167,6 +167,7 @@ private fun IconTap(icon: ImageVector, label: String, onClick: () -> Unit) =
 /** "Plus": the other destinations as big rows with a line saying what each holds. */
 @Composable
 private fun MoreList(vm: MainViewModel, items: List<Dest>) {
+    val switch = LocalSwitchInterface.current
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
         items(items, key = { it.label }) { d ->
             Row(
@@ -181,6 +182,23 @@ private fun MoreList(vm: MainViewModel, items: List<Dest>) {
                     if (d.hint.isNotEmpty()) Text(d.hint, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
                 }
                 Text("›", style = MaterialTheme.typography.headlineSmall, color = Palette.TextDim)
+            }
+        }
+        switch?.let { toShared ->
+            item(key = "shared") {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.Panel).clickable(onClick = toShared)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("✦", style = MaterialTheme.typography.headlineSmall, color = Palette.Accent, modifier = Modifier.width(28.dp))
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Nouvelle interface", style = MaterialTheme.typography.titleMedium, color = Palette.Text)
+                        Text("Les écrans de l'app iPhone : accueil, fiches, recherche, sport, téléchargements", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                    }
+                    Text("›", style = MaterialTheme.typography.headlineSmall, color = Palette.TextDim)
+                }
             }
         }
         item { Spacer(Modifier.height(12.dp)) }

@@ -21,8 +21,15 @@ object Playback {
 
     val pending = MutableStateFlow<Pending?>(null)
 
+    /**
+     * The platform's player keeps the session itself (the Android phone's PlayerActivity: languages, other screens,
+     * history, next episode): the request goes to it as it is.
+     */
+    var platformPlays = false
+
     /** [playlistId]: the stream's list (null for a downloaded file, which takes no screen). */
     suspend fun start(core: AppCore, player: VideoPlayer, request: PlayRequest, playlistId: Long?) {
+        if (platformPlays) { player.play(request); return }
         val s = core.settings.current()
         request.audioLang = s.audioLang.ifBlank { "fr" }
         request.subtitleLang = s.subtitleLang.ifBlank { "fr" }

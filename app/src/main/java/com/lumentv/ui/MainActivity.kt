@@ -108,8 +108,18 @@ class MainActivity : ComponentActivity() {
                             val w = Device.testWidthDp()
                             Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
                                 Box(if (w > 0) Modifier.width(w.dp).fillMaxHeight() else Modifier.fillMaxSize()) {
-                                    val states = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
-                                    PhoneShell(vm, firstLaunch) { ScreenContent(vm, it, states) }; ToastHost(vm)
+                                    // The shared screens (same as the iPhone), or the classic ones for what they do not have yet.
+                                    val prefs = remember { getSharedPreferences("ui", MODE_PRIVATE) }
+                                    var classic by remember { mutableStateOf(prefs.getBoolean("classic", false)) }
+                                    fun setClassic(on: Boolean) { prefs.edit().putBoolean("classic", on).apply(); classic = on }
+                                    // The shared screens play through PlayerActivity, which keeps the session itself.
+                                    com.lumentv.phone.Playback.platformPlays = true
+                                    val player = remember { PhonePlayer(this@MainActivity) }
+                                    if (!classic) SharedPhoneApp(vm.graph, player) { setClassic(true) }
+                                    else androidx.compose.runtime.CompositionLocalProvider(LocalSwitchInterface provides { setClassic(false) }) {
+                                        val states = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+                                        PhoneShell(vm, firstLaunch) { ScreenContent(vm, it, states) }; ToastHost(vm)
+                                    }
                                 }
                             }
                         } else AppShell(vm, firstLaunch)

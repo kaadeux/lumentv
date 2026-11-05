@@ -172,7 +172,8 @@ internal suspend fun playChannel(core: AppCore, player: VideoPlayer, c: ChannelR
     val spec = core.resolver.channel(c.ch)
     core.library.record(HistoryEntity(LibraryRepository.key(HistoryKind.CHANNEL, c.ch.playlistId, c.ch.uid), HistoryKind.CHANNEL,
         c.ch.playlistId, c.ch.uid, c.ch.name, c.ch.groupName, c.ch.logo, watchedAt = nowMillis()))
-    play(core, player, spec, c.ch.name, now, 0, c.ch.playlistId, Playback.lowerVariants(core, c)) { _, _ -> }
+    play(core, player, spec, c.ch.name, now, 0, c.ch.playlistId, Playback.lowerVariants(core, c),
+        PlaySource("live", c.ch.playlistId, c.ch.uid, channelId = c.ch.id, group = c.ch.groupName)) { _, _ -> }
 }
 
 @Composable

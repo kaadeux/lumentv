@@ -39,6 +39,9 @@ class PlayRequest(
     /** Live: the same channel in lower qualities (FHD → HD → SD), tried in turn when the picture keeps stopping. */
     var variants: List<PlayVariant> = emptyList()
 
+    /** What is played, by its database identity (see PlaySource). */
+    var source: PlaySource? = null
+
     internal var onClosed: (() -> Unit)? = null
 
     /** The player was closed at [positionMs] of [durationMs] (0 when unknown). */
@@ -58,3 +61,21 @@ class PlaySkip(val startMs: Long, val endMs: Long, val label: String, val toNext
 
 /** A lower quality of a live channel: where it plays and what it is ("HD", "SD"). */
 class PlayVariant(val url: String, val label: String)
+
+/**
+ * What is played, for a platform whose own player opens titles by their database identity (the Android phone's
+ * PlayerActivity, which keeps history, positions and the next episode itself). [kind]: "movie", "episode", "live",
+ * "catchup" or "file".
+ */
+class PlaySource(
+    val kind: String,
+    val playlistId: Long = 0,
+    val uid: String = "",
+    val seriesUid: String? = null,
+    val channelId: Long = 0,
+    val group: String? = null,
+    val programStart: Long = 0,
+    val programStop: Long = 0,
+    val programTitle: String? = null,
+    val transferId: Long = 0,
+)

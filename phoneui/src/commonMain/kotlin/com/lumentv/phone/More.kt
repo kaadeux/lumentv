@@ -82,13 +82,17 @@ internal fun dayLabel(t: Long): String {
 // ---- "Plus": the destinations that are not tabs ------------------------------------------------------------------
 
 @Composable
-internal fun MoreHome(open: (Route) -> Unit) = LazyColumn(state = rememberList("more"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+internal fun MoreHome(open: (Route) -> Unit) = MoreList(open, LocalPlatformEntries.current)
+
+@Composable
+private fun MoreList(open: (Route) -> Unit, extra: List<PlatformEntry>) = LazyColumn(state = rememberList("more"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
     item { Text("Plus", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 6.dp)) }
     item { Entry("★", "Favoris", "Films, séries et chaînes de Ma liste") { open(Route.Favorites) } }
     item { Entry("▦", "Guide TV", "Ce qui passe, ce qui vient, le rattrapage") { open(Route.Guide) } }
     item { Entry("⚽", "Sport", "Les matchs et les chaînes qui les diffusent") { open(Route.Sports) } }
     item { Entry("⬇", "Téléchargements", "Films et épisodes à voir sans réseau") { open(Route.Downloads) } }
     item { Entry("⚙", "Réglages", "Profil en ligne, liste, lecture") { open(Route.Settings) } }
+    extra.forEach { e -> item { Entry(e.icon, e.title, e.subtitle, e.onClick) } }
 }
 
 @Composable
@@ -242,7 +246,9 @@ internal fun GuideChannelPage(core: AppCore, c: ChannelRow, player: VideoPlayer,
                         scope.launch {
                             if (live) playChannel(core, player, c, pr.title)
                             else core.resolver.catchup(c.ch, pr)?.let { spec ->
-                                play(core, player, spec, pr.title, c.ch.name + " · " + dayLabel(pr.start) + " " + hm(pr.start), 0, c.ch.playlistId) { _, _ -> }
+                                play(core, player, spec, pr.title, c.ch.name + " · " + dayLabel(pr.start) + " " + hm(pr.start), 0, c.ch.playlistId,
+                                    source = PlaySource("catchup", c.ch.playlistId, c.ch.uid, channelId = c.ch.id, programStart = pr.start,
+                                        programStop = pr.stop, programTitle = pr.title)) { _, _ -> }
                             }
                         }
                     }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
@@ -409,7 +415,8 @@ internal fun DownloadsPage(core: AppCore, player: VideoPlayer, back: () -> Unit)
                     val key = com.lumentv.data.repo.LibraryRepository.key(if (t.refKind == "mv") com.lumentv.data.db.HistoryKind.MOVIE else com.lumentv.data.db.HistoryKind.EPISODE, t.playlistId, t.refUid)
                     val h = core.library.history(key)
                     val from = h?.takeIf { it.durationMs > 0 && it.positionMs < it.durationMs * 0.95 }?.positionMs ?: 0
-                    play(core, player, com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + t.filePath, null, null, false), Featured.shortTitle(t.title), t.subtitle, from) { pos, dur ->
+                    play(core, player, com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + t.filePath, null, null, false), Featured.shortTitle(t.title), t.subtitle, from,
+                        source = PlaySource("file", transferId = t.id)) { pos, dur ->
                         core.scope.launch {
                             core.library.record(com.lumentv.data.db.HistoryEntity(key, if (t.refKind == "mv") com.lumentv.data.db.HistoryKind.MOVIE else com.lumentv.data.db.HistoryKind.EPISODE,
                                 t.playlistId, t.refUid, t.title, t.subtitle, null, t.seriesUid, nowMillis(), if (dur > 0 && pos > dur * 0.95) dur else pos, dur))

@@ -129,7 +129,9 @@ internal fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer, back: 
         val spec = dl?.takeIf { it.status == TransferStatus.DONE && it.filePath != null }
             ?.let { com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + it.filePath, null, null, false) } ?: core.resolver.movie(m)
         val fromFile = spec.url.startsWith(DownloadManager.SCHEME)
-        play(core, player, spec, Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, fromMs, m.playlistId.takeIf { !fromFile }) { pos, dur ->
+        val source = if (fromFile) PlaySource("file", transferId = dl!!.id) else PlaySource("movie", m.playlistId, m.uid)
+        play(core, player, spec, Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, fromMs, m.playlistId.takeIf { !fromFile },
+            source = source) { pos, dur ->
             core.scope.launch {
                 val done = dur > 0 && pos > dur * 0.95
                 core.library.record(HistoryEntity(key, HistoryKind.MOVIE, m.playlistId, m.uid, m.name, null, m.poster, null, nowMillis(), if (done) dur else pos, dur))
@@ -243,7 +245,8 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
             val after = if (i >= 0) all.getOrNull(i + 1) else null
             val label = "S${e.season} E${e.episode}"
             val key = LibraryRepository.key(HistoryKind.EPISODE, e.playlistId, e.uid)
-            val file = downloads?.fileOf(e.playlistId, e.uid)?.filePath
+            val downloaded = downloads?.fileOf(e.playlistId, e.uid)?.takeIf { it.filePath != null }
+            val file = downloaded?.filePath
             val spec = file?.let { com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + it, null, null, false) } ?: core.resolver.episode(e)
             val request = PlayRequest(spec.url, spec.userAgent, spec.referer, Featured.shortTitle(s.name), "$label · ${e.title}", fromMs, false,
                 onFinish = { pos, dur ->
@@ -263,6 +266,8 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
                 onNext = after?.let { n -> { start(n, 0) } },
                 autoNext = core.settings.current().autoNext,
             )
+            request.source = if (downloaded != null) PlaySource("file", transferId = downloaded.id)
+                else PlaySource("episode", e.playlistId, e.uid, seriesUid = s.uid)
             Playback.loadSkips(core, request, s.tmdb, e.season, e.episode)
             Playback.start(core, player, request, e.playlistId.takeIf { file == null })
         }

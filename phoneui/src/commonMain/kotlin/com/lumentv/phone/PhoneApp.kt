@@ -189,6 +189,10 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
     val back: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.size - 1) }
     // Where each list was: kept while going into a title and back, emptied when another tab is opened (it starts at the top).
     val memory = remember { ScrollMemory() }
+    // Android's back: the page before, then Films from another tab.
+    PlatformBackHandler(stack.isNotEmpty() || tab != Tab.MOVIES) {
+        if (stack.isNotEmpty()) back() else { tab = Tab.MOVIES; memory.clear() }
+    }
     androidx.compose.runtime.CompositionLocalProvider(LocalScroll provides memory) {
     Scaffold(
         containerColor = Palette.Background,
@@ -334,9 +338,11 @@ internal fun minutes(ms: Long) = (ms / 60_000).let { if (it >= 60) "${it / 60} h
 
 /** Plays through [Playback] (languages, the subscription's other screens); [playlistId] null for a downloaded file. */
 internal suspend fun play(core: AppCore, player: VideoPlayer, spec: StreamSpec, title: String, subtitle: String?, startMs: Long,
-                          playlistId: Long? = null, variants: List<PlayVariant> = emptyList(), onFinish: (Long, Long) -> Unit) {
+                          playlistId: Long? = null, variants: List<PlayVariant> = emptyList(), source: PlaySource? = null,
+                          onFinish: (Long, Long) -> Unit) {
     val request = PlayRequest(spec.url, spec.userAgent, spec.referer, title, subtitle, startMs, spec.live, onFinish)
     request.variants = variants
+    request.source = source
     Playback.start(core, player, request, playlistId)
 }
 

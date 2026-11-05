@@ -152,7 +152,8 @@ private fun playMovie(core: AppCore, player: VideoPlayer, scope: kotlinx.corouti
     val key = LibraryRepository.key(HistoryKind.MOVIE, m.playlistId, m.uid)
     val h = core.library.history(key)
     val from = h?.takeIf { it.durationMs > 0 && it.positionMs in 60_000 until (it.durationMs * 0.95).toLong() }?.positionMs ?: 0
-    play(core, player, core.resolver.movie(m), Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, from, m.playlistId) { pos, dur ->
+    play(core, player, core.resolver.movie(m), Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, from, m.playlistId,
+        source = PlaySource("movie", m.playlistId, m.uid)) { pos, dur ->
         scope.launch {
             val done = dur > 0 && pos > dur * 0.95
             core.library.record(HistoryEntity(key, HistoryKind.MOVIE, m.playlistId, m.uid, m.name, null, m.poster, null, nowMillis(), if (done) dur else pos, dur))

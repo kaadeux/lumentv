@@ -88,6 +88,10 @@ class AppGraph(app: Application) {
     val backup = BackupManager(app, db, settings)
     val updater = com.lumentv.update.Updater(app, http)
     val transfers = com.lumentv.transfer.TransferRepository(app, db)
+    /** The phone's screens shared with the iPhone (:phoneui): its player and downloads are the phone's own. */
+    val phoneDownloads by lazy {
+        com.lumentv.phone.DownloadManager(core, platformPaths = true).also { it.downloader = com.lumentv.ui.PhoneDownloader(this) }
+    }
     /** Channel shown in the in-app mini-player, null when it is closed. */
     val miniPlayer = kotlinx.coroutines.flow.MutableStateFlow<Long?>(null)
 }
