@@ -30,7 +30,7 @@ jobs:
           key: kmp-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
 
       - name: Compile for the iPhone, test on the simulator
-        run: ./gradlew --no-daemon :shared:compileKotlinIosArm64 :shared:iosSimulatorArm64Test
+        run: chmod +x gradlew && ./gradlew --no-daemon :shared:compileKotlinIosArm64 :shared:iosSimulatorArm64Test
 
       - name: Test report
         if: always()
