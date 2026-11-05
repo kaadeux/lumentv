@@ -48,7 +48,7 @@ object M3uImport {
         var epgUrl: String? = null
         var dupes = 0
 
-        M3uParser.parse(reader, onHeader = { h -> if (epgUrl == null) epgUrl = h.epgUrl }) { e ->
+        M3uParser.parse(reader::readLine, onHeader = { h -> if (epgUrl == null) epgUrl = h.epgUrl }) { e ->
             if (dedupe && !seenUrls.add(e.url)) { dupes++; return@parse }
             val group = e.group.ifBlank { NO_GROUP }
             val c = M3uClassifier.classify(e)

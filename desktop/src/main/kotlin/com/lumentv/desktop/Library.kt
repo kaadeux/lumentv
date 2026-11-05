@@ -97,7 +97,7 @@ class Library(private val http: OkHttpClient) {
         val seenUrls = HashSet<String>()
         var epgUrl: String? = null
         open(p.source, p.userAgent).use { input ->
-            M3uParser.parse(BufferedReader(InputStreamReader(input, Charsets.UTF_8)), onHeader = { h -> if (epgUrl == null) epgUrl = h.epgUrl }) { e ->
+            M3uParser.parse(BufferedReader(InputStreamReader(input, Charsets.UTF_8))::readLine, onHeader = { h -> if (epgUrl == null) epgUrl = h.epgUrl }) { e ->
                 if (p.dedupe && !seenUrls.add(e.url)) return@parse
                 val group = e.group.ifBlank { NO_GROUP }
                 val c = M3uClassifier.classify(e)

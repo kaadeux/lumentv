@@ -1,6 +1,7 @@
 package com.lumentv.data.sports
 
 import com.lumentv.core.normalize
+import kotlinx.datetime.toInstant
 
 data class Sport(val id: String, val label: String, val emoji: String, val keywords: List<String>, val individual: Boolean,
                  /** Short substrings for the database pre-filter; the exact keywords decide afterwards. */
@@ -49,13 +50,14 @@ object EventChannelParser {
     fun parse(name: String): Pair<String, Long>? {
         val m = stamp.find(name) ?: return null
         val (y, mo, d, h, mi) = m.destructured
-        val cal = java.util.Calendar.getInstance()
-        cal.clear()
-        cal.set(y.toInt(), mo.toInt() - 1, d.toInt(), h.toInt(), mi.toInt())
+        val at = runCatching {
+            kotlinx.datetime.LocalDateTime(y.toInt(), mo.toInt(), d.toInt(), h.toInt(), mi.toInt())
+                .toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds()
+        }.getOrNull() ?: return null
         // "PRIME FR 022| Havre vs. PSG (...)": drop the provider prefix before the last "|" and the date.
         val label = name.removeRange(m.range).substringAfterLast('|').replace(Regex("\\s+"), " ").trim().trim('-', ':', ' ')
         if (label.length < 3) return null
-        return label to cal.timeInMillis
+        return label to at
     }
 }
 

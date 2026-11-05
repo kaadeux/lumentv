@@ -1,7 +1,6 @@
 package com.lumentv.data.m3u
 
 import com.lumentv.core.FormatException
-import java.io.BufferedReader
 
 data class M3uHeader(val epgUrl: String?)
 
@@ -27,7 +26,7 @@ data class M3uEntry(
 object M3uParser {
 
     /** @return the number of entries emitted. Throws [FormatException] when the text is not a playlist. */
-    fun parse(reader: BufferedReader, onHeader: (M3uHeader) -> Unit = {}, onEntry: (M3uEntry) -> Unit): Int {
+    fun parse(readLine: () -> String?, onHeader: (M3uHeader) -> Unit = {}, onEntry: (M3uEntry) -> Unit): Int {
         var count = 0
         var sawHeader = false
         var lineNo = 0
@@ -37,7 +36,7 @@ object M3uParser {
         var referer: String? = null
 
         while (true) {
-            val raw = reader.readLine() ?: break
+            val raw = readLine() ?: break
             lineNo++
             var line = raw.trim()
             if (lineNo == 1) line = line.removePrefix("\uFEFF")
@@ -179,7 +178,7 @@ object M3uParser {
     private fun parseHeaderString(text: String): Map<String, String> =
         text.split('&').mapNotNull { part ->
             val k = part.substringBefore('=', "").trim()
-            if (k.isEmpty()) null else k.lowercase() to java.net.URLDecoder.decode(part.substringAfter('='), "UTF-8").trim()
+            if (k.isEmpty()) null else k.lowercase() to com.lumentv.core.urlDecode(part.substringAfter('=')).trim()
         }.toMap()
 }
 

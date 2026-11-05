@@ -1,0 +1,41 @@
+# iPhone version, phase 1: the shared Kotlin code compiled for iOS and its tests run on the iPhone simulator, on a
+# Mac (Kotlin/Native for iOS only builds on macOS). The TV / phone / PC builds stay on the developer's PC.
+name: Shared code on iOS
+
+on:
+  push:
+    branches: [dev, main, ios-poc]
+    paths: ["shared/**", "build.gradle.kts", "settings.gradle.kts", "gradle/**", ".github/workflows/shared-ios.yml"]
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle and Kotlin/Native caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: kmp-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Compile for the iPhone, test on the simulator
+        run: ./gradlew --no-daemon :shared:compileKotlinIosArm64 :shared:iosSimulatorArm64Test
+
+      - name: Test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-ios-tests
+          path: shared/build/reports/tests/
+          retention-days: 7

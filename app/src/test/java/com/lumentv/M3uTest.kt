@@ -18,7 +18,7 @@ class M3uTest {
     private fun parse(text: String): Pair<List<M3uEntry>, String?> {
         val out = ArrayList<M3uEntry>()
         var epg: String? = null
-        M3uParser.parse(BufferedReader(StringReader(text)), { epg = it.epgUrl }) { out += it }
+        M3uParser.parse(BufferedReader(StringReader(text))::readLine, { epg = it.epgUrl }) { out += it }
         return out to epg
     }
 

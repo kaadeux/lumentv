@@ -54,7 +54,7 @@ object Featured {
 
     /** "2026 · ★ 7,2 · MULTI": year, rating, and for a film ([name] given) which copy it is. */
     fun posterLine(year: String?, rating: String?, name: String?): String? =
-        (listOfNotNull(yearOf(year, name ?: "")?.toString(), rating(rating)?.let { "★ " + "%.1f".format(java.util.Locale.FRANCE, it) }) +
+        (listOfNotNull(yearOf(year, name ?: "")?.toString(), rating(rating)?.let { "★ " + oneDecimal(it) }) +
             listOfNotNull(name?.let { versionLabel(it) }?.takeIf { it != "Version" && it.length <= 14 })).joinToString(" · ").ifEmpty { null }
 
     /** One per title, without the foreign copies and hidden categories, at most [ROW]. */

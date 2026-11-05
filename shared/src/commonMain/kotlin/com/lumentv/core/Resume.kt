@@ -19,7 +19,7 @@ object Resume {
     fun remaining(positionMs: Long, durationMs: Long): String? {
         if (durationMs <= 0) return null
         val min = ((durationMs - positionMs).coerceAtLeast(0) / 60_000).toInt().coerceAtLeast(1)
-        return if (min >= 60) "Reste ${min / 60} h ${"%02d".format(min % 60)}" else "Reste $min min"
+        return if (min >= 60) "Reste ${min / 60} h ${(min % 60).toString().padStart(2, '0')}" else "Reste $min min"
     }
 
     /** "S4 E6 · …" → (4, 6). */

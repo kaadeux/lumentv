@@ -1,16 +1,14 @@
 package com.lumentv.core
 
-import java.text.Normalizer
-
 /** Search key: lower case, accents removed, punctuation folded to single spaces. "Télé-Matin" -> "tele matin". */
 fun normalize(text: String): String {
     // Unicode decomposition is the slow part: skip it for plain ASCII names, the usual case.
-    val decomposed = if (text.all { it.code < 128 }) text else Normalizer.normalize(text, Normalizer.Form.NFD)
+    val decomposed = if (text.all { it.code < 128 }) text else decomposeUnicode(text)
     val sb = StringBuilder(decomposed.length)
     var lastSpace = true
     for (c in decomposed) {
         when {
-            Character.getType(c) == Character.NON_SPACING_MARK.toInt() -> Unit
+            c.category == CharCategory.NON_SPACING_MARK -> Unit
             c.isLetterOrDigit() -> { sb.append(c.lowercaseChar()); lastSpace = false }
             !lastSpace -> { sb.append(' '); lastSpace = true }
         }

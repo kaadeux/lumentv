@@ -1,20 +1,12 @@
 package com.lumentv.core
 
 import java.io.FileNotFoundException
-import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLException
 
-/** A server answered with an HTTP error status. */
-class HttpStatusException(val code: Int) : IOException("HTTP $code")
-
-/** The content downloaded is not a playlist / guide we can read. */
-class FormatException(message: String) : IOException(message)
-
-/** Xtream Codes refused the login (auth = 0, expired or disabled account). */
-class XtreamAuthException(message: String) : IOException(message)
+// The exceptions themselves are in commonMain (Exceptions.kt), shared with the iPhone.
 
 /** Turns any failure into a sentence that can be shown on the TV, without URLs or credentials. */
 fun userMessage(t: Throwable): String = when (t) {

@@ -108,7 +108,7 @@ object SmartSearch {
                 if (v < rowMin) rowMin = v
             }
             if (rowMin > max) return max + 1
-            System.arraycopy(prev, 0, prev2, 0, prev.size)
+            prev.copyInto(prev2)
             val t = prev; prev = cur; cur = t
         }
         return prev[b.length]
