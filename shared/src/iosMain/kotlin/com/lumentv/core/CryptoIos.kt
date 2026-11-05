@@ -12,8 +12,8 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.sizeOf
+import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
-import kotlinx.cinterop.value
 import platform.CoreCrypto.CCCrypt
 import platform.CoreCrypto.CCHmac
 import platform.CoreCrypto.CCKeyDerivationPBKDF
@@ -62,10 +62,12 @@ actual object Crypto {
 
     actual fun pbkdf2Sha256(password: ByteArray, salt: ByteArray, iterations: Int, length: Int): ByteArray {
         val out = ByteArray(length)
-        val status = password.pinned { p ->
-            salt.pinned { s ->
+        // CommonCrypto takes the password as C text: the bytes are UTF-8 of the passphrase, so the same text.
+        val text = password.decodeToString()
+        val status = salt.pinned { s ->
+            run {
                 out.usePinned { o ->
-                    CCKeyDerivationPBKDF(kCCPBKDF2, p, password.size.convert(), s.reinterpret<UByteVar>(), salt.size.convert(),
+                    CCKeyDerivationPBKDF(kCCPBKDF2, text, password.size.convert(), s.reinterpret<UByteVar>(), salt.size.convert(),
                         kCCPRFHmacAlgSHA256, iterations.convert(), o.addressOf(0).reinterpret<UByteVar>(), length.convert())
                 }
             }
@@ -118,8 +120,8 @@ actual object Crypto {
         strm.opaque = null
         strm.next_in = null
         strm.avail_in = 0u
-        val init = if (compress) deflateInit2_(strm.ptr, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY, zlibVersion(), sizeOf<z_stream>().toInt())
-        else inflateInit2_(strm.ptr, 31, zlibVersion(), sizeOf<z_stream>().toInt())
+        val init = if (compress) deflateInit2_(strm.ptr, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY, zlibVersion()?.toKString(), sizeOf<z_stream>().toInt())
+        else inflateInit2_(strm.ptr, 31, zlibVersion()?.toKString(), sizeOf<z_stream>().toInt())
         if (init != Z_OK) throw CryptoException("zlib : initialisation ($init)")
         val chunks = ArrayList<ByteArray>()
         val buffer = ByteArray(64 * 1024)

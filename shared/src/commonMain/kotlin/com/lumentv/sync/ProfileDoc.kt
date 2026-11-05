@@ -86,7 +86,7 @@ object ProfileMerge {
     private const val TOMBSTONE_DAYS = 180L
 
     fun playlistKey(type: String, source: String, username: String): String =
-        ProfileKeys.hex(ProfileKeys.sha256("$type|${source.trim().trimEnd('/').lowercase()}|${username.trim()}".toByteArray())).take(16)
+        ProfileKeys.hex(ProfileKeys.sha256("$type|${source.trim().trimEnd('/').lowercase()}|${username.trim()}".encodeToByteArray())).take(16)
 
     fun itemKey(playlist: String, kind: String, uid: String) = "$playlist|$kind|$uid"
 
