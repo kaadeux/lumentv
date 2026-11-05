@@ -73,13 +73,14 @@ import com.lumentv.data.xtream.XtreamApi
 import kotlinx.coroutines.launch
 
 /** Where the viewer is, above the bottom tabs. */
-private sealed interface Route {
+internal sealed interface Route {
     data class Movie(val row: MovieRow) : Route
     data class Series(val row: SeriesRow) : Route
     data class Group(val name: String) : Route
+    data class Categories(val series: Boolean) : Route
 }
 
-private enum class Tab(val label: String, val icon: String) { MOVIES("Films", "🎬"), SERIES("Séries", "📺"), LIVE("TV", "📡") }
+private enum class Tab(val label: String, val icon: String) { MOVIES("Films", "🎬"), SERIES("Séries", "📺"), LIVE("TV", "📡"), PROFILE("Profil", "👤") }
 
 /**
  * The iPhone app (and, step by step, the Android phone's): the account to add first, then Films, Séries and TV over
@@ -104,7 +105,7 @@ fun LumenPhoneApp(core: AppCore, player: VideoPlayer) = LumenTheme {
 }
 
 @Composable
-private fun Centered(content: @Composable () -> Unit) =
+internal fun Centered(content: @Composable () -> Unit) =
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) { content() }
 
 // ---- First start: the Xtream account ----------------------------------------------------------------------------
@@ -197,10 +198,12 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
                 is Route.Movie -> MoviePage(core, r.row, player, back)
                 is Route.Series -> SeriesPage(core, p, r.row, player, back)
                 is Route.Group -> ChannelsPage(core, p, r.name, player, back)
+                is Route.Categories -> if (r.series) SeriesCategories(core, p, open, back) else MovieCategories(core, p, open, back)
                 null -> when (tab) {
                     Tab.MOVIES -> MoviesHome(core, p, player, open)
-                    Tab.SERIES -> SeriesHome(core, p, open)
+                    Tab.SERIES -> SeriesHome(core, p, player, open)
                     Tab.LIVE -> LiveHome(core, p, open)
+                    Tab.PROFILE -> ProfileHome(core, p)
                 }
             }
         }
@@ -208,7 +211,7 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
 }
 
 @Composable
-private fun Header(title: String, back: (() -> Unit)? = null) = Row(
+internal fun Header(title: String, back: (() -> Unit)? = null) = Row(
     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
 ) {
     if (back != null) Text("‹", fontSize = 30.sp, modifier = Modifier.clickable(onClick = back).padding(end = 12.dp))
@@ -223,7 +226,7 @@ private fun Chips(names: List<String>, selected: String?, onPick: (String) -> Un
 }
 
 @Composable
-private fun Poster(url: String?, title: String, progress: Float? = null, onClick: () -> Unit) = Column(Modifier.clickable(onClick = onClick)) {
+internal fun Poster(url: String?, title: String, progress: Float? = null, onClick: () -> Unit) = Column(Modifier.clickable(onClick = onClick)) {
     Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(10.dp)).background(Palette.PanelHigh)) {
         Text(title, color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.align(Alignment.Center).padding(8.dp), maxLines = 3)
         AsyncImage(url, title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -238,12 +241,12 @@ private const val RECENT = "Ajoutés récemment"
  * As on the TV, the phone and the PC (Featured): one poster per title, the copies of a film ("4K MULTI", "FHD VF",
  * "VOSTFR"…) behind it, and the Arabic copies and categories left out.
  */
-private fun <T> oneEach(list: List<T>, name: (T) -> String, category: (T) -> String): List<T> =
+internal fun <T> oneEach(list: List<T>, name: (T) -> String, category: (T) -> String): List<T> =
     list.filter { !Featured.foreign(name(it), category(it)) }.distinctBy { Featured.baseTitle(name(it)) }
 
 /** "Reprendre la lecture": films and episodes started and not finished. */
 @Composable
-private fun ResumeRow(core: AppCore, p: PlaylistEntity, kind: String, onOpen: (HistoryEntity) -> Unit) {
+internal fun ResumeRow(core: AppCore, p: PlaylistEntity, kind: String, onOpen: (HistoryEntity) -> Unit) {
     val history by core.library.observeHistory(200).collectAsState(emptyList())
     val items = history.filter { it.playlistId == p.id && it.kind == kind && it.durationMs > 0 && it.positionMs < it.durationMs * 0.95 && it.positionMs > 60_000 }
         .distinctBy { it.parentUid ?: Featured.baseTitle(it.title) }.take(20)
@@ -259,7 +262,7 @@ private fun ResumeRow(core: AppCore, p: PlaylistEntity, kind: String, onOpen: (H
 }
 
 @Composable
-private fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open: (Route) -> Unit) {
+private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit, back: () -> Unit) {
     val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) {
         value = listOf(RECENT) + core.library.movieCategories(p.id, false).map { it.category }.filter { !Featured.foreign("", it) }
     }
@@ -267,10 +270,8 @@ private fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, op
     val movies by produceState(emptyList<MovieRow>(), p.id, cat, p.lastRefresh) {
         value = oneEach(if (cat == RECENT) core.library.recentMovies(p.id) else core.library.movies(p.id, cat), { it.m.name }, { it.m.category })
     }
-    val scope = rememberCoroutineScope()
     Column {
-        Header("Films")
-        ResumeRow(core, p, HistoryKind.MOVIE) { h -> scope.launch { core.library.movieByUid(p.id, h.uid)?.let { open(Route.Movie(it)) } } }
+        Header("Films · catégories", back)
         Chips(cats, cat) { cat = it }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(movies, key = { it.m.id }) { m -> Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } }
@@ -279,7 +280,7 @@ private fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, op
 }
 
 @Composable
-private fun SeriesHome(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
+private fun SeriesCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit, back: () -> Unit) {
     val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) {
         value = listOf(RECENT) + core.library.seriesCategories(p.id, false).map { it.category }.filter { !Featured.foreign("", it) }
     }
@@ -287,10 +288,8 @@ private fun SeriesHome(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) 
     val series by produceState(emptyList<SeriesRow>(), p.id, cat, p.lastRefresh) {
         value = oneEach(if (cat == RECENT) core.library.recentSeries(p.id) else core.library.series(p.id, cat), { it.s.name }, { it.s.category })
     }
-    val scope = rememberCoroutineScope()
     Column {
-        Header("Séries")
-        ResumeRow(core, p, HistoryKind.EPISODE) { h -> scope.launch { h.parentUid?.let { core.library.seriesByUid(p.id, it) }?.let { open(Route.Series(it)) } } }
+        Header("Séries · catégories", back)
         Chips(cats, cat) { cat = it }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(series, key = { it.s.id }) { s -> Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } }
@@ -300,9 +299,9 @@ private fun SeriesHome(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) 
 
 // ---- Pages ------------------------------------------------------------------------------------------------------
 
-private fun minutes(ms: Long) = (ms / 60_000).let { if (it >= 60) "${it / 60} h ${(it % 60).toString().padStart(2, '0')}" else "$it min" }
+internal fun minutes(ms: Long) = (ms / 60_000).let { if (it >= 60) "${it / 60} h ${(it % 60).toString().padStart(2, '0')}" else "$it min" }
 
-private fun play(core: AppCore, player: VideoPlayer, spec: StreamSpec, title: String, subtitle: String?, startMs: Long, onFinish: (Long, Long) -> Unit) =
+internal fun play(core: AppCore, player: VideoPlayer, spec: StreamSpec, title: String, subtitle: String?, startMs: Long, onFinish: (Long, Long) -> Unit) =
     player.play(PlayRequest(spec.url, spec.userAgent, spec.referer, title, subtitle, startMs, spec.live, onFinish))
 
 @Composable

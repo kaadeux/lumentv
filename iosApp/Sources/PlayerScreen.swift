@@ -353,7 +353,7 @@ private struct RoundButton: View {
     }
 }
 
-/// Sideways while the player is open (the app's screens follow the phone).
+/// Sideways while the player is open; the app's screens stay upright.
 enum Orientation {
     static var landscapeOnly = false
 
@@ -361,6 +361,6 @@ enum Orientation {
         landscapeOnly = on
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
         scene.windows.first?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: on ? .landscape : .allButUpsideDown)) { _ in }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: on ? .landscape : .portrait)) { _ in }
     }
 }

@@ -31,9 +31,9 @@ struct LumenTVApp: App {
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
-    /// The player turns sideways.
+    /// The app stays upright; only the player turns sideways.
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
-        Orientation.landscapeOnly ? .landscape : .allButUpsideDown
+        Orientation.landscapeOnly ? .landscape : .portrait
     }
 }
 
