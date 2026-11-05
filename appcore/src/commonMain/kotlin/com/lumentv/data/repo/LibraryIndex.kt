@@ -27,8 +27,8 @@ class LibraryIndex(private val db: AppDatabase) {
         val stamp = db.playlists().get(pid)?.lastRefresh ?: 0
         built[pid]?.let { (s, i) -> if (s == stamp) return@withLock i }
         val i = withContext(Dispatchers.Default) {
-            val movies = withContext(IoDispatcher) { db.vod().movieIndex(pid) }
-            val series = withContext(IoDispatcher) { db.vod().seriesIndex(pid) }
+            val movies = withContext(IoDispatcher) { db.vod().movieIndex(pid).map { it.lite() } }
+            val series = withContext(IoDispatcher) { db.vod().seriesIndex(pid).map { it.lite() } }
             val channels = withContext(IoDispatcher) { db.channels().channelIndex(pid) }
             Index(movies, series, channels.map { SmartSearch.Entry(it, it.name) })
         }

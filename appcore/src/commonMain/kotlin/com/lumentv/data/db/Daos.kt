@@ -107,13 +107,18 @@ interface ChannelDao {
     suspend fun deleteFor(pid: Long)
 }
 
+/** One film or series for the search index (VodLite of :shared, which Room cannot read from another module on iOS). */
+data class VodIndexRow(val id: Long, val uid: String, val name: String, val category: String, val year: String?, val rating: String?) {
+    fun lite() = com.lumentv.data.discover.VodLite(id, uid, name, category, year, rating)
+}
+
 @Dao
 interface VodDao {
     @Query("SELECT id, uid, name, category, year, rating FROM movies WHERE playlistId = :pid")
-    suspend fun movieIndex(pid: Long): List<com.lumentv.data.discover.VodLite>
+    suspend fun movieIndex(pid: Long): List<VodIndexRow>
 
     @Query("SELECT id, uid, name, category, year, rating FROM series WHERE playlistId = :pid")
-    suspend fun seriesIndex(pid: Long): List<com.lumentv.data.discover.VodLite>
+    suspend fun seriesIndex(pid: Long): List<VodIndexRow>
 
     @Query("""SELECT m.*, p.favorite AS favorite FROM movies m LEFT JOIN prefs p ON p.playlistId = m.playlistId AND p.kind = 'mv' AND p.uid = m.uid
         WHERE m.id IN (:ids)""")
