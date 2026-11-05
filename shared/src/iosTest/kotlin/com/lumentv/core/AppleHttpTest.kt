@@ -1,32 +1,26 @@
 package com.lumentv.core
 
-import com.lumentv.data.IntroDb
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-/** The iPhone's network (NSURLSession) under the shared clients: real requests, on the simulator. */
+/**
+ * The iPhone's network (NSURLSession) under the shared clients, with a real request on the simulator. Plain HTTP
+ * only: GitHub's simulators have no usable certificate store, every HTTPS site fails there ("certificate invalid",
+ * apple.com too, checked on 2026-11-05); HTTPS (TMDB, the profile) is checked on a real iPhone.
+ */
 class AppleHttpTest {
-    private val http = AppleHttp()
-
-    @Test fun getAndHeaders() {
-        http.execute(HttpRequest("https://lumentv-sync.lumentv-sync.workers.dev/v1/health")).use { r ->
+    @Test fun realRequest() {
+        AppleHttp(15_000).execute(HttpRequest("http://example.com/", headers = mapOf("User-Agent" to "Lumen TV"))).use { r ->
             assertEquals(200, r.code)
-            assertTrue(r.text().contains("lumentv-sync"))
-            assertTrue(r.header("content-type")?.contains("json") == true)
+            assertTrue(r.text().contains("Example Domain"))
+            assertTrue(r.header("Content-Type")?.contains("text/html") == true)
         }
-        // An HTTP error status is an answer, not an exception.
-        http.execute(HttpRequest("https://lumentv-sync.lumentv-sync.workers.dev/nope")).use { assertEquals(404, it.code) }
     }
 
-    @Test fun introDbThroughAppleNetwork() {
-        runBlocking {
-        // The same episode as the JVM IntroDbTest (TMDB 124364, S3 E4): an intro and credits in the databases.
-        val seg = IntroDb(http).segments("124364", 3, 4)
-        assertNotNull(seg?.intro)
-        assertNotNull(seg?.credits)
-        }
+    @Test fun noServer() {
+        val e = runCatching { AppleHttp(5_000).execute(HttpRequest("http://serveur-qui-n-existe-pas.invalid/")) }.exceptionOrNull()
+        assertTrue(e is IOException, "attendu : IOException, reçu : $e")
+        assertTrue(userMessage(e!!).isNotBlank())
     }
 }
