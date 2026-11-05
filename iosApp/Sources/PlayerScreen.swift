@@ -33,12 +33,15 @@ enum Fit: String, CaseIterable, Identifiable {
     var mode: UIView.ContentMode { self == .fill ? .scaleAspectFill : self == .fit ? .scaleAspectFit : .scaleToFill }
 }
 
+/// What comes after closing: nothing, or the episode before / after.
+enum Step { case none, previous, next }
+
 /// The player, full screen and sideways: the picture, and Lumen TV's controls shown on a tap (hidden again after a
 /// few seconds while it plays). Closing reports where the viewer stopped, in milliseconds.
 struct PlayerScreen: View {
     let request: PlayRequest
     let url: URL
-    let onClose: (Int64, Int64) -> Void
+    let onClose: (Int64, Int64, Step) -> Void
 
     @StateObject private var player = KSVideoPlayer.Coordinator()
     @State private var controls = true
@@ -93,7 +96,8 @@ struct PlayerScreen: View {
                 if state == .bufferFinished { scheduleHide() }
             }
             .onFinish { _, error in
-                if error == nil, !request.live { close(finished: true) } else if error != nil { failed = true; controls = true }
+                if error == nil, !request.live { close(finished: true, step: request.hasNext && request.autoNext ? .next : .none) }
+                else if error != nil { failed = true; controls = true }
             }
             .modifier(Ratio(ratio: fit.ratio))
     }
@@ -130,7 +134,7 @@ struct PlayerScreen: View {
 
     private var topBar: some View {
         HStack(alignment: .center, spacing: 14) {
-            RoundButton(icon: "xmark") { close(finished: false) }
+            RoundButton(icon: "xmark") { close(finished: false, step: .none) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(request.title).font(.headline).foregroundColor(Lumen.text).lineLimit(1)
                 if let s = request.subtitle { Text(s).font(.subheadline).foregroundColor(Lumen.dim).lineLimit(1) }
@@ -171,8 +175,16 @@ struct PlayerScreen: View {
                     Spacer()
                 }
             } else {
-                TimeBar(model: player.timemodel, scrubbing: $scrubbing) { seconds in
-                    player.seek(time: seconds); scheduleHide()
+                VStack(alignment: .trailing, spacing: 12) {
+                    if request.hasPrevious || request.hasNext {
+                        HStack(spacing: 12) {
+                            if request.hasPrevious { RoundButton(icon: "backward.end.fill") { close(finished: false, step: .previous) } }
+                            if request.hasNext { RoundButton(icon: "forward.end.fill") { close(finished: false, step: .next) } }
+                        }
+                    }
+                    TimeBar(model: player.timemodel, scrubbing: $scrubbing) { seconds in
+                        player.seek(time: seconds); scheduleHide()
+                    }
                 }
             }
         }
@@ -244,7 +256,7 @@ struct PlayerScreen: View {
         }
     }
 
-    private func close(finished: Bool) {
+    private func close(finished: Bool, step: Step) {
         guard !closed else { return }
         closed = true
         var position: Int64 = 0, duration: Int64 = 0
@@ -253,7 +265,7 @@ struct PlayerScreen: View {
             position = finished ? duration : Int64(max(0, p.currentPlaybackTime) * 1000)
         }
         player.resetPlayer()
-        onClose(position, duration)
+        onClose(position, duration, step)
     }
 }
 

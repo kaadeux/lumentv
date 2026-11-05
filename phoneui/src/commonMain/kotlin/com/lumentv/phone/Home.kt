@@ -60,7 +60,15 @@ import com.lumentv.data.db.PlaylistEntity
 import com.lumentv.data.db.SeriesRow
 import com.lumentv.data.repo.LibraryRepository
 import com.lumentv.data.repo.LibraryRepository.Shelf
-import kotlinx.coroutines.delay
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.drawBehind
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -158,10 +166,22 @@ private fun <T> HomeList(
 @Composable
 private fun Banner(core: AppCore, heroes: List<Hero>) {
     val pager = rememberPagerState { heroes.size }
+    // As on the Android phone: the dash of the title shown fills up in 6 s, then the next title comes (back to the
+    // first after the last). A finger moving the banner starts the wait again on the title it lands on.
+    val progress = remember { Animatable(0f) }
     LaunchedEffect(heroes.size) {
-        while (heroes.size > 1) {
-            delay(6_000)
-            if (!pager.isScrollInProgress) pager.animateScrollToPage((pager.currentPage + 1) % heroes.size)
+        progress.snapTo(0f)
+        if (heroes.size < 2) return@LaunchedEffect
+        while (true) {
+            snapshotFlow { pager.isScrollInProgress }.first { !it }
+            val start = pager.currentPage
+            progress.snapTo(0f)
+            val full = coroutineScope {
+                val touched = async { snapshotFlow { pager.isScrollInProgress || pager.currentPage != start }.first { it }; false }
+                val filled = async { progress.animateTo(1f, tween(6_000, easing = LinearEasing)); true }
+                select { touched.onAwait { it }; filled.onAwait { it } }.also { touched.cancel(); filled.cancel() }
+            }
+            if (full) pager.animateScrollToPage((start + 1) % heroes.size, animationSpec = tween(600))
         }
     }
     Column(Modifier.fillMaxWidth()) {
@@ -188,8 +208,10 @@ private fun Banner(core: AppCore, heroes: List<Hero>) {
         }
         if (heroes.size > 1) Row(Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             repeat(heroes.size) { i ->
-                Box(Modifier.size(if (i == pager.currentPage) 18.dp else 6.dp, 6.dp).clip(CircleShape)
-                    .background(if (i == pager.currentPage) Palette.Accent else Palette.TextDim.copy(alpha = 0.5f)))
+                val on = i == pager.currentPage
+                val width by animateDpAsState(if (on) 22.dp else 6.dp, label = "dot")
+                Box(Modifier.size(width, 6.dp).clip(CircleShape).background(Palette.TextDim.copy(alpha = 0.5f))
+                    .then(if (on) Modifier.drawBehind { drawRect(Palette.Accent, size = size.copy(width = size.width * progress.value)) } else Modifier))
             }
         }
     }

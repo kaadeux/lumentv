@@ -78,9 +78,10 @@ internal sealed interface Route {
     data class Series(val row: SeriesRow) : Route
     data class Group(val name: String) : Route
     data class Categories(val series: Boolean) : Route
+    data class Person(val hit: com.lumentv.data.repo.PersonHit) : Route
 }
 
-private enum class Tab(val label: String, val icon: String) { MOVIES("Films", "🎬"), SERIES("Séries", "📺"), LIVE("TV", "📡"), PROFILE("Profil", "👤") }
+private enum class Tab(val label: String, val icon: String) { MOVIES("Films", "🎬"), SERIES("Séries", "📺"), LIVE("TV", "📡"), SEARCH("Recherche", "🔍"), PROFILE("Profil", "👤") }
 
 /**
  * The iPhone app (and, step by step, the Android phone's): the account to add first, then Films, Séries and TV over
@@ -194,11 +195,13 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
                 is Route.Movie -> MoviePage(core, r.row, player, back)
                 is Route.Series -> SeriesPage(core, p, r.row, player, back)
                 is Route.Group -> ChannelsPage(core, p, r.name, player, back)
+                is Route.Person -> PersonPage(r.hit, open, back)
                 is Route.Categories -> if (r.series) SeriesCategories(core, p, open, back) else MovieCategories(core, p, open, back)
                 null -> when (tab) {
                     Tab.MOVIES -> MoviesHome(core, p, player, open)
                     Tab.SERIES -> SeriesHome(core, p, player, open)
                     Tab.LIVE -> LiveHome(core, p, open)
+                    Tab.SEARCH -> SearchHome(core, p, player, open)
                     Tab.PROFILE -> ProfileHome(core, p)
                 }
             }
@@ -375,14 +378,34 @@ private fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player:
     val last = seen.values.maxByOrNull { it.watchedAt }
     var season by remember(s.id) { mutableStateOf<Int?>(null) }
     val current = season ?: episodes?.firstOrNull { it.uid == last?.uid }?.season ?: seasons.firstOrNull()
-    fun start(e: EpisodeEntity, fromMs: Long) = scope.launch {
-        val label = "S${e.season} E${e.episode}"
-        play(core, player, core.resolver.episode(e), s.name, label, fromMs) { pos, dur ->
-            scope.launch {
-                val done = dur > 0 && pos > dur * 0.95
-                core.library.record(HistoryEntity(LibraryRepository.key(HistoryKind.EPISODE, e.playlistId, e.uid), HistoryKind.EPISODE,
-                    e.playlistId, e.uid, s.name, "$label · ${e.title}", s.cover, s.uid, nowMillis(), if (done) dur else pos, dur))
-            }
+    // In the app's scope: the next episode still opens when this page has gone in the meantime.
+    fun start(e: EpisodeEntity, fromMs: Long) {
+        core.scope.launch {
+            val all = episodes.orEmpty().sortedWith(compareBy({ it.season }, { it.episode }))
+            val i = all.indexOfFirst { it.uid == e.uid }
+            val before = all.getOrNull(i - 1)
+            val after = if (i >= 0) all.getOrNull(i + 1) else null
+            val label = "S${e.season} E${e.episode}"
+            val key = LibraryRepository.key(HistoryKind.EPISODE, e.playlistId, e.uid)
+            val spec = core.resolver.episode(e)
+            player.play(PlayRequest(spec.url, spec.userAgent, spec.referer, Featured.shortTitle(s.name), "$label · ${e.title}", fromMs, false,
+                onFinish = { pos, dur ->
+                    core.scope.launch {
+                        val done = dur > 0 && pos > dur * 0.95
+                        core.library.record(HistoryEntity(key, HistoryKind.EPISODE, e.playlistId, e.uid, s.name, "$label · ${e.title}", s.cover,
+                            s.uid, nowMillis(), if (done) dur else pos, dur))
+                    }
+                },
+                // The episode before resumes where it was left; the next one starts at the beginning.
+                onPrevious = before?.let { b -> {
+                    core.scope.launch {
+                        val h = core.library.history(LibraryRepository.key(HistoryKind.EPISODE, b.playlistId, b.uid))
+                        start(b, h?.takeIf { it.durationMs > 0 && it.positionMs < it.durationMs * 0.95 }?.positionMs ?: 0)
+                    }
+                } },
+                onNext = after?.let { n -> { start(n, 0) } },
+                autoNext = core.settings.current().autoNext,
+            ))
         }
     }
     LazyColumn {

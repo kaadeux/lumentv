@@ -11,9 +11,16 @@ final class LumenPlayer: NSObject, VideoPlayer {
         DispatchQueue.main.async {
             guard let url = URL(string: request.url), let top = Self.topController() else { return }
             let box = HostBox()
-            let screen = PlayerScreen(request: request, url: url) { position, duration in
-                box.controller?.dismiss(animated: true)
+            let screen = PlayerScreen(request: request, url: url) { position, duration, step in
+                // The position is kept first; then the episode before / after opens in a new player.
                 request.finish(positionMs: position, durationMs: duration)
+                box.controller?.dismiss(animated: step == .none) {
+                    switch step {
+                    case .previous: request.previous()
+                    case .next: request.next()
+                    case .none: break
+                    }
+                }
             }
             let controller = UIHostingController(rootView: screen)
             controller.modalPresentationStyle = .fullScreen
