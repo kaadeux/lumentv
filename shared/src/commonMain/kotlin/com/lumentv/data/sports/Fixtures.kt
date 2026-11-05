@@ -1,7 +1,12 @@
 package com.lumentv.data.sports
 
+import com.lumentv.core.Http
+import com.lumentv.core.HttpRequest
+import com.lumentv.core.IoDispatcher
 import com.lumentv.core.normalize
-import kotlinx.coroutines.Dispatchers
+import com.lumentv.core.nowMillis
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -10,12 +15,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.TimeZone
-import java.util.concurrent.TimeUnit
+import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * A competition of the official calendar. [path] is ESPN's (free scoreboard, no key) or, when [sportsDb], a
@@ -84,9 +87,11 @@ data class Fixture(
     /** "Habituellement sur Canal+", or null when unknown. */
     val usualBroadcaster get() = league.tvFr?.let { "Habituellement sur $it" }
     /** The channels can be opened during the game and from [OPEN_BEFORE_MS] before kick-off, not earlier. */
-    fun channelsOpen(now: Long = System.currentTimeMillis()) = live || start - now <= OPEN_BEFORE_MS
-    /** "Chaînes accessibles dès 20:00 (1 h avant le match)" */
-    val opensNote get() = "Chaînes accessibles dès " + SimpleDateFormat("HH:mm", Locale.FRANCE).format(java.util.Date(start - OPEN_BEFORE_MS)) + " (1 h avant le match)"
+    fun channelsOpen(now: Long = nowMillis()) = live || start - now <= OPEN_BEFORE_MS
+    /** "Chaînes accessibles dès 20:00 (1 h avant le match)", in the device's time zone. */
+    val opensNote get() = Instant.fromEpochMilliseconds(start - OPEN_BEFORE_MS).toLocalDateTime(TimeZone.currentSystemDefault()).let { t ->
+        "Chaînes accessibles dès " + t.hour.toString().padStart(2, '0') + ":" + t.minute.toString().padStart(2, '0') + " (1 h avant le match)"
+    }
     val label get() = if (home != null && away != null) "${home.short ?: home.name} – ${away.short ?: away.name}" else name
 
     companion object {
@@ -98,19 +103,25 @@ data class Fixture(
  * Upcoming and live games of the chosen competitions, from ESPN's public scoreboard: a few small requests
  * (about 15 KB per competition and day), kept 5 minutes. Replays never appear: only real games are listed.
  */
-class FixtureClient(http: OkHttpClient) {
-    // TheSportsDB answers "429" when asked too often: retried a little later (see RetryInterceptor).
-    private val http = http.newBuilder().callTimeout(10, TimeUnit.SECONDS).addInterceptor(com.lumentv.core.RetryInterceptor()).build()
+class FixtureClient(
+    /** TheSportsDB answers "429" when asked too often: give a client that retries a little later (fixtureClient on the JVM). */
+    private val http: Http,
+) {
     private val json = Json { ignoreUnknownKeys = true }
     private val cache = HashMap<String, Pair<Long, List<Fixture>>>()
+    /** Guards [cache] and [lnrCache]: the requests run in parallel. */
+    private val lock = SynchronizedObject()
 
-    suspend fun fixtures(leagues: Collection<League>, days: Int): List<Fixture> = withContext(Dispatchers.IO) {
-        val day = SimpleDateFormat("yyyyMMdd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
-        val now = System.currentTimeMillis()
+    suspend fun fixtures(leagues: Collection<League>, days: Int): List<Fixture> = withContext(IoDispatcher) {
+        val now = nowMillis()
         // ESPN days are US days: start one day back so tonight's European games are not missed.
         val dates = (-1..days.coerceIn(1, SportsFunnel.MAX_DAYS)).map { now + it * 86_400_000L }
-        // Formatted here, once: SimpleDateFormat is not thread-safe, and the requests below run in parallel.
-        val compact = dates.map { day.format(it) }
+        // "20261105", the UTC day.
+        val compact = dates.map { t ->
+            Instant.fromEpochMilliseconds(t).toLocalDateTime(TimeZone.UTC).date.let { d ->
+                d.year.toString().padStart(4, '0') + d.monthNumber.toString().padStart(2, '0') + d.dayOfMonth.toString().padStart(2, '0')
+            }
+        }
         val end = now + (days.coerceIn(1, SportsFunnel.MAX_DAYS) + 1) * 86_400_000L
         val rounds = days / 7 + 2
         coroutineScope {
@@ -162,7 +173,7 @@ class FixtureClient(http: OkHttpClient) {
      * the 1st half when it was 13-3 in the 2nd). Asked only while a game is on; a game LNR calls over leaves the list.
      */
     private fun withLnr(list: List<Fixture>, url: String): List<Fixture> {
-        val now = System.currentTimeMillis()
+        val now = nowMillis()
         if (list.none { now >= it.start - 10 * 60_000L }) return list
         val matches = lnrMatches(url) ?: return list
         return list.mapNotNull { f ->
@@ -194,14 +205,12 @@ class FixtureClient(http: OkHttpClient) {
 
     /** The games of the page's score banner (a JSON list in its HTML). */
     private fun lnrMatches(url: String): List<LnrMatch>? {
-        synchronized(lnrCache) { lnrCache[url]?.let { (t, list) -> if (System.currentTimeMillis() - t < LIVE_REFRESH_MS - 2_000) return list } }
+        synchronized(lock) { lnrCache[url]?.let { (t, list) -> if (nowMillis() - t < LIVE_REFRESH_MS - 2_000) return list } }
         val list = runCatching {
-            val page = http.newCall(Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()).execute()
-                .use { r -> if (r.isSuccessful) r.body!!.string() else null } ?: return null
+            val page = get(url, mapOf("User-Agent" to "Mozilla/5.0")) ?: return null
             val attr = Regex(":matches='([^']*)'").find(page)?.groupValues?.get(1) ?: return null
             val text = attr.replace("&quot;", "\"").replace("&#039;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
-            val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
-            fun JsonObject.time(k: String) = s(k)?.let { runCatching { iso.parse(it)!!.time }.getOrNull() }
+            fun JsonObject.time(k: String) = s(k)?.let { isoMillis(it) }
             (json.parseToJsonElement(text) as JsonArray).mapNotNull { e ->
                 val o = e as? JsonObject ?: return@mapNotNull null
                 val score = (o["score"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content?.toIntOrNull() }
@@ -211,7 +220,7 @@ class FixtureClient(http: OkHttpClient) {
                     timer?.time("firstPeriodStartDate"), timer?.time("firstPeriodEndDate"), timer?.time("secondPeriodStartDate"), timer?.time("secondPeriodEndDate"))
             }
         }.getOrNull() ?: return null
-        synchronized(lnrCache) { lnrCache[url] = System.currentTimeMillis() to list }
+        synchronized(lock) { lnrCache[url] = nowMillis() to list }
         return list
     }
 
@@ -227,27 +236,26 @@ class FixtureClient(http: OkHttpClient) {
      * [ttl] instead for a calendar only (TheSportsDB's free key allows few requests: the live score comes from LNR).
      */
     private fun cached(key: String, ttl: Long? = null, load: () -> List<Fixture>?): List<Fixture> {
-        synchronized(cache) {
+        synchronized(lock) {
             cache[key]?.let { (t, list) ->
-                val age = System.currentTimeMillis() - t
+                val age = nowMillis() - t
                 if (age < (ttl ?: if (hasLive(list)) LIVE_REFRESH_MS - 2_000 else 5 * 60_000L)) return list
             }
         }
         // A failure (TheSportsDB's free key refuses bursts) keeps the last answer rather than emptying the list.
-        val list = (1..2).firstNotNullOfOrNull { runCatching { load() }.getOrNull() } ?: return synchronized(cache) { cache[key]?.second }.orEmpty()
-        synchronized(cache) { cache[key] = System.currentTimeMillis() to list }
+        val list = (1..2).firstNotNullOfOrNull { runCatching { load() }.getOrNull() } ?: return synchronized(lock) { cache[key]?.second }.orEmpty()
+        synchronized(lock) { cache[key] = nowMillis() to list }
         return list
     }
 
-    private fun get(url: String): String? =
-        http.newCall(Request.Builder().url(url).build()).execute().use { r -> if (r.isSuccessful) r.body!!.string() else null }
+    private fun get(url: String, headers: Map<String, String> = emptyMap()): String? =
+        http.execute(HttpRequest(url, headers = headers, timeoutMs = 10_000)).use { r -> if (r.isSuccessful) r.text() else null }
 
     private fun parse(l: League, body: String): List<Fixture> {
-        val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
         val events = (json.parseToJsonElement(body) as? JsonObject)?.get("events") as? JsonArray ?: return emptyList()
         return events.mapNotNull { e ->
             val o = e as? JsonObject ?: return@mapNotNull null
-            val start = o.s("date")?.let { runCatching { iso.parse(it)!!.time }.getOrNull() } ?: return@mapNotNull null
+            val start = o.s("date")?.let { isoMillis(it) } ?: return@mapNotNull null
             val status = (o["status"] as? JsonObject)?.get("type") as? JsonObject
             val state = status?.s("state") ?: "pre"
             if (state == "post") return@mapNotNull null
@@ -273,12 +281,12 @@ class FixtureClient(http: OkHttpClient) {
 
     /** TheSportsDB day list: no live state, so a game is "live" from kick-off for two hours unless marked finished. */
     private fun parseSportsDb(l: League, body: String): List<Fixture> {
-        val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
         val events = (json.parseToJsonElement(body) as? JsonObject)?.get("events") as? JsonArray ?: return emptyList()
-        val now = System.currentTimeMillis()
+        val now = nowMillis()
         return events.mapNotNull { e ->
             val o = e as? JsonObject ?: return@mapNotNull null
-            val start = o.s("strTimestamp")?.let { runCatching { iso.parse(it.take(19))!!.time }.getOrNull() } ?: return@mapNotNull null
+            // UTC, whatever follows the seconds.
+            val start = o.s("strTimestamp")?.let { isoMillis(it.take(19)) } ?: return@mapNotNull null
             val status = o.s("strStatus").orEmpty()
             if (status in setOf("FT", "AET", "AOT", "Match Finished", "CANC", "PST") || now > start + 2 * 3_600_000L) return@mapNotNull null
             val live = now >= start
@@ -348,7 +356,29 @@ class FixtureClient(http: OkHttpClient) {
         const val LIVE_REFRESH_MS = 30_000L
 
         /** A game live, or starting within 15 minutes: worth following closely. */
-        fun hasLive(list: List<Fixture>, now: Long = System.currentTimeMillis()) = list.any { it.live || it.start - now in 0..15 * 60_000L }
+        fun hasLive(list: List<Fixture>, now: Long = nowMillis()) = list.any { it.live || it.start - now in 0..15 * 60_000L }
+
+        private val isoTime = Regex("^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})(?::(\\d{2}))?(?:\\.\\d+)?\\s*(Z|[+-]\\d{2}:?\\d{2})?")
+
+        /**
+         * "2026-11-05T20:00Z" (ESPN), "2026-11-05T20:00:00+01:00" (LNR), "2026-11-05T20:00:00" (TheSportsDB, UTC):
+         * epoch ms, or null. No offset means UTC.
+         */
+        internal fun isoMillis(text: String): Long? {
+            val m = isoTime.find(text.trim()) ?: return null
+            val g = m.groupValues
+            val day = runCatching { LocalDate(g[1].toInt(), g[2].toInt(), g[3].toInt()) }.getOrNull() ?: return null
+            val h = g[4].toInt(); val min = g[5].toInt(); val sec = g[6].ifEmpty { "0" }.toInt()
+            if (h > 23 || min > 59 || sec > 59) return null
+            var ms = day.toEpochDays() * 86_400_000L + (h * 3600L + min * 60L + sec) * 1000
+            val tz = g[7]
+            if (tz.isNotEmpty() && tz != "Z") {
+                val digits = tz.substring(1).replace(":", "")
+                val offset = (digits.substring(0, 2).toInt() * 60 + digits.substring(2, 4).toInt()) * 60_000L
+                ms -= if (tz[0] == '-') -offset else offset
+            }
+            return ms
+        }
 
         private val clubWords = setOf("stade", "union", "club", "rugby", "olympique", "sporting")
         val leagues = listOf(

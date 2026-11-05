@@ -42,9 +42,10 @@ class AppState(private val scope: CoroutineScope) {
     /** TMDB: rows of the Films / Séries homes, logos, summaries, cast, search by person. */
     val vod = Vod(this)
     /** Official sports calendar (live and upcoming games). */
-    val fixtures = com.lumentv.data.sports.FixtureClient(http)
+    val fixtures = com.lumentv.data.sports.fixtureClient(http)
     /** Which French channel shows each game, days ahead (xmltvfr.fr, sports channels only, twice a day at most). */
-    val frenchGuide = com.lumentv.data.sports.FrenchTvGuide(http, java.io.File(Store.dir, "sports_tv.json")) { org.kxml2.io.KXmlParser() }
+    val frenchGuide = com.lumentv.data.sports.FrenchTvGuide(http.asHttp(), com.lumentv.core.TextFile(java.io.File(Store.dir, "sports_tv.json").path),
+        com.lumentv.core.xmlPullReaders { org.kxml2.io.KXmlParser() })
     private val sync = ProfileSync(http.asHttp(), BuildInfo.SYNC_URL)
     private val prefs = Preferences.userRoot().node("lumentv")
     private val syncLock = Mutex()

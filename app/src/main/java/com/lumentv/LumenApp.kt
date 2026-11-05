@@ -65,8 +65,9 @@ class AppGraph(app: Application) {
     /** Channel shown in the in-app mini-player, null when it is closed. */
     val miniPlayer = kotlinx.coroutines.flow.MutableStateFlow<Long?>(null)
     /** Which French channel shows each game, days ahead (xmltvfr.fr, sports channels only, twice a day at most). */
-    val frenchGuide = com.lumentv.data.sports.FrenchTvGuide(http, java.io.File(app.cacheDir, "sports_tv.json")) { android.util.Xml.newPullParser() }
-    val sports = com.lumentv.data.sports.SportsRepository(db, settings, epg, library, com.lumentv.data.sports.FixtureClient(http), frenchGuide)
+    val frenchGuide = com.lumentv.data.sports.FrenchTvGuide(http.asHttp(), com.lumentv.core.TextFile(java.io.File(app.cacheDir, "sports_tv.json").path),
+        com.lumentv.core.xmlPullReaders { android.util.Xml.newPullParser() })
+    val sports = com.lumentv.data.sports.SportsRepository(db, settings, epg, library, com.lumentv.data.sports.fixtureClient(http), frenchGuide)
     /** Tells the other Lumen TV devices of the same subscription that this one is playing. */
     val presence = com.lumentv.data.xtream.Presence(http.asHttp(), com.lumentv.BuildConfig.SYNC_URL,
         app.getSharedPreferences("device", android.content.Context.MODE_PRIVATE).let { p ->

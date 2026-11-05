@@ -7,7 +7,7 @@ import org.junit.Test
 /** Live: the same request repeated, as the screen does, must give the same games every time. */
 class FixtureRepeatTest {
     @Test fun sameGamesEveryTime() = runBlocking {
-        val client = FixtureClient(OkHttpClient())
+        val client = fixtureClient(OkHttpClient())
         val l1 = FixtureClient.league("fra1")!!
         val out = StringBuilder()
         repeat(3) { i ->

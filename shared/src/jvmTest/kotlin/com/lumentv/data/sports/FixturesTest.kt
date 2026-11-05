@@ -45,7 +45,7 @@ class FixturesTest {
     /** Live check of the public calendar: SPORTS_LIVE=1. */
     @Test fun calendarAnswers() = runBlocking {
         assumeTrue(System.getenv("SPORTS_LIVE") == "1")
-        val list = FixtureClient(OkHttpClient()).fixtures(listOf(ligue1, FixtureClient.league("top14")!!, FixtureClient.league("ufc")!!, FixtureClient.league("prod2")!!), SportsFunnel.DAYS)
+        val list = fixtureClient(OkHttpClient()).fixtures(listOf(ligue1, FixtureClient.league("top14")!!, FixtureClient.league("ufc")!!, FixtureClient.league("prod2")!!), SportsFunnel.DAYS)
         java.io.File("build/fixtures.txt").writeText(list.joinToString("\n") { "${java.util.Date(it.start)} ${it.state} ${it.clock} ${it.homeScore}-${it.awayScore} | ${it.details} | ${it.label} | ${it.venue} | ${it.home?.logo} | ${it.away?.logo}" })
         assertTrue(list.isNotEmpty())
         // Whole Pro D2 rounds (the day request gives 3 games at most), and no country flag for a club.
@@ -54,7 +54,7 @@ class FixturesTest {
     }
 
     @Test fun liveStatusInFrench() {
-        val c = FixtureClient(OkHttpClient())
+        val c = fixtureClient(OkHttpClient())
         org.junit.Assert.assertEquals("Mi-temps", c.liveFr("Halftime"))
         org.junit.Assert.assertEquals("2e mi-temps", c.liveFr("2nd Half"))
         org.junit.Assert.assertEquals("1re période", c.liveFr("1st Period"))

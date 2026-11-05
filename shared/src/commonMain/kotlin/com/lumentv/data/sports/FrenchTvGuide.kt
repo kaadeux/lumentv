@@ -1,22 +1,26 @@
 package com.lumentv.data.sports
 
-import com.lumentv.core.asXmlReader
+import com.lumentv.core.Http
+import com.lumentv.core.HttpBody
+import com.lumentv.core.HttpRequest
+import com.lumentv.core.IoDispatcher
+import com.lumentv.core.TextFile
+import com.lumentv.core.XmlReader
+import com.lumentv.core.gunzip
 import com.lumentv.core.normalize
+import com.lumentv.core.nowMillis
 import com.lumentv.data.epg.XmltvParser
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.xmlpull.v1.XmlPullParser
-import java.io.File
-import java.util.concurrent.TimeUnit
-import java.util.zip.GZIPInputStream
 
 /** One programme of a French sports channel: which channel ("Ligue 1+ 2", "Canal+ Sport 360"), when, what (normalised). */
 @Serializable
@@ -25,28 +29,32 @@ data class Listing(val channel: String, val start: Long, val title: String)
 /**
  * Which French channel shows a game, days ahead: the free XMLTV France guide (xmltvfr.fr, about 390 channels over
  * 5 days) read at most twice a day, keeping only the sports channels. The small result is kept in [cacheFile].
- * [newParser] gives the platform's XML pull parser (built into Android, kxml2 on Windows).
+ * [newReader] reads XML from a body: the platform's pull parser on the TV and the PC (xmlPullReaders), the shared
+ * KotlinXmlReader on the iPhone.
  */
-class FrenchTvGuide(http: OkHttpClient, private val cacheFile: File, private val newParser: () -> XmlPullParser) {
-    private val http = http.newBuilder().readTimeout(120, TimeUnit.SECONDS).build()
+class FrenchTvGuide(private val http: Http, private val cacheFile: TextFile, private val newReader: (HttpBody) -> XmlReader) {
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Mutex()
-    @Volatile private var mem: Cache? = null
+    @kotlin.concurrent.Volatile private var mem: Cache? = null
 
     @Serializable private class Cache(val fetchedAt: Long, val items: List<Listing>)
 
-    private val refreshing = java.util.concurrent.atomic.AtomicBoolean(false)
+    /** One background refresh at a time. */
+    private val refreshLock = SynchronizedObject()
+    private var refreshing = false
+    private val background = CoroutineScope(SupervisorJob() + IoDispatcher)
 
     /**
      * The listings at once: an older copy (up to 2 days) is answered immediately and refreshed in the background, so
      * the sports screen never waits for the 9 MB download; only the very first time does.
      */
     suspend fun listings(): List<Listing> {
-        val now = System.currentTimeMillis()
-        val cached = withContext(Dispatchers.IO) { cached() }
+        val now = nowMillis()
+        val cached = withContext(IoDispatcher) { cached() }
         if (cached != null && now - cached.fetchedAt < MAX_AGE) return cached.items
         if (cached != null && now - cached.fetchedAt < 4 * MAX_AGE) {
-            if (refreshing.compareAndSet(false, true)) Thread { try { runBlocking { refresh() } } finally { refreshing.set(false) } }.start()
+            val start = synchronized(refreshLock) { if (refreshing) false else { refreshing = true; true } }
+            if (start) background.launch { try { refresh() } finally { synchronized(refreshLock) { refreshing = false } } }
             return cached.items
         }
         return refresh()
@@ -54,27 +62,26 @@ class FrenchTvGuide(http: OkHttpClient, private val cacheFile: File, private val
 
     /** Downloads the guide again when the copy is older than 12 h (at start-up, in the background). */
     suspend fun refresh(): List<Listing> = lock.withLock {
-        withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
+        withContext(IoDispatcher) {
+            val now = nowMillis()
             val cached = cached()
             if (cached != null && now - cached.fetchedAt < MAX_AGE) return@withContext cached.items
             runCatching { fetch(now) }.onSuccess { items ->
                 val c = Cache(now, items); mem = c
-                runCatching { cacheFile.parentFile?.mkdirs(); cacheFile.writeText(json.encodeToString(c)) }
+                cacheFile.write(json.encodeToString(c))
             }.getOrNull() ?: cached?.items.orEmpty()
         }
     }
 
-    private fun cached(): Cache? = mem ?: runCatching { json.decodeFromString<Cache>(cacheFile.readText()) }.getOrNull()?.also { mem = it }
+    private fun cached(): Cache? = mem ?: cacheFile.read()?.let { runCatching { json.decodeFromString<Cache>(it) }.getOrNull() }?.also { mem = it }
 
     private fun fetch(now: Long): List<Listing> {
-        val req = Request.Builder().url(URL).header("User-Agent", "LumenTV").build()
-        http.newCall(req).execute().use { r ->
+        // 9 MB compressed: 3 minutes at most for the whole download.
+        http.execute(HttpRequest(URL, headers = mapOf("User-Agent" to "LumenTV"), timeoutMs = 180_000)).use { r ->
             if (!r.isSuccessful) error("HTTP ${r.code}")
             val names = HashMap<String, String>()
             val out = ArrayList<Listing>()
-            val parser = newParser().apply { setInput(GZIPInputStream(r.body!!.byteStream()), "UTF-8") }
-            XmltvParser.parse(parser.asXmlReader(), onChannel = { ch -> ch.names.firstOrNull()?.takeIf { sportsChannel.containsMatchIn(it) }?.let { names[ch.id] = it } }) { p ->
+            XmltvParser.parse(newReader(gunzip(r.body)), onChannel = { ch -> ch.names.firstOrNull()?.takeIf { sportsChannel.containsMatchIn(it) }?.let { names[ch.id] = it } }) { p ->
                 val name = names[p.channel] ?: return@parse
                 if (p.start < now - 3 * 3_600_000L || p.start > now + 6 * 86_400_000L) return@parse
                 // Games are titled "A / B" or "Sport : Compétition | A / B": keep titles with two sides only.
