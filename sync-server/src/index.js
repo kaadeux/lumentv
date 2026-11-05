@@ -26,6 +26,9 @@ export default {
     const pr = url.pathname.match(/^\/v1\/presence\/([0-9a-f]{64})$/);
     if (pr) return presence(request, env, pr[1]);
 
+    const io = url.pathname.match(/^\/ios\/([0-9a-f]{32,64})\/(source\.json|app\.ipa|icon\.png)$/);
+    if (io) return ios(request, env, io[1], io[2]);
+
     const m = url.pathname.match(/^\/v1\/profile\/([0-9a-f]{64})$/);
     if (!m) return json({ error: "not found" }, 404);
     const id = m[1];
@@ -90,6 +93,22 @@ function timingSafeEqual(a, b) {
   let r = 0;
   for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return r === 0;
+}
+
+// iPhone app for SideStore, shared with the family only: served under a secret key (worker secret IOS_KEY), never
+// listed anywhere. The source (source.json, the AltStore / SideStore format) tells SideStore which version is out;
+// the files are put in the IOS store by the publishing script (wrangler kv key put).
+//   GET /ios/<key>/source.json | app.ipa | icon.png
+const IOS_TYPES = { "source.json": "application/json", "app.ipa": "application/octet-stream", "icon.png": "image/png" };
+
+async function ios(request, env, key, file) {
+  if (request.method !== "GET" && request.method !== "HEAD") return json({ error: "method" }, 405);
+  if (!env.IOS_KEY || !env.IOS || !timingSafeEqual(key, env.IOS_KEY)) return json({ error: "not found" }, 404);
+  const body = await env.IOS.get(file, { type: "stream" });
+  if (!body) return json({ error: "not found" }, 404);
+  return new Response(request.method === "HEAD" ? null : body, {
+    headers: { "Content-Type": IOS_TYPES[file], "Cache-Control": "no-store", "X-Robots-Tag": "noindex" },
+  });
 }
 
 async function presence(request, env, id) {

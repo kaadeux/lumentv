@@ -6,3 +6,8 @@ compatibility_date = "2025-06-01"
 binding = "DB"
 database_name = "lumentv-sync"
 database_id = "96a355fa-f8d5-4275-8ec0-681cf19a1144"
+
+# iPhone test builds for SideStore, served only under a secret key (worker secret IOS_KEY).
+[[kv_namespaces]]
+binding = "IOS"
+id = "6e8ecbde034e43ea8e0c4ed2b7b27061"
