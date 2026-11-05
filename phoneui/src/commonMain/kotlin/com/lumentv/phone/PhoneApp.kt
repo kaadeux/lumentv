@@ -87,6 +87,7 @@ internal sealed interface Route {
     data object Sports : Route
     data object Settings : Route
     data object Downloads : Route
+    data class PlaylistEdit(val id: Long, val type: String) : Route
 }
 
 private enum class Tab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
@@ -108,6 +109,7 @@ private fun titleOf(r: Route): String = when (r) {
     Route.Sports -> "Sport"
     Route.Settings -> "Paramètres"
     Route.Downloads -> "Téléchargés"
+    is Route.PlaylistEdit -> if (r.id != 0L) "Modifier la liste" else if (r.type == PlaylistType.XTREAM) "Compte Xtream" else "Playlist M3U"
 }
 
 /**
@@ -126,7 +128,9 @@ fun LumenPhoneApp(core: AppCore, player: VideoPlayer) = LumenTheme {
             list.isEmpty() -> SetupScreen(core)
             else -> {
                 val active = list.firstOrNull { it.id == s.activePlaylistId } ?: list.first()
-                if (active.lastRefresh == 0L) FirstLoad(core, active) else MainScreen(core, active, player)
+                if (active.lastRefresh == 0L) FirstLoad(core, active, others = list.size > 1)
+                // Another list: its own pages, from the top.
+                else androidx.compose.runtime.key(active.id) { MainScreen(core, active, player) }
             }
         }
     }
@@ -136,42 +140,21 @@ fun LumenPhoneApp(core: AppCore, player: VideoPlayer) = LumenTheme {
 internal fun Centered(content: @Composable () -> Unit) =
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) { content() }
 
-// ---- First start: the Xtream account ----------------------------------------------------------------------------
+// ---- First start: the first list ----------------------------------------------------------------------------------
 
 @Composable
-private fun SetupScreen(core: AppCore) {
-    var server by remember { mutableStateOf("http://") }
-    var user by remember { mutableStateOf("") }
-    var pass by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
-        Text("lumenTV", fontSize = 34.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text("Ton compte Xtream. Il reste sur cet iPhone, chiffré.", color = Palette.TextDim)
-        Spacer(Modifier.height(24.dp))
-        ExactField(server, { server = it }, "Serveur (http://…:port)", keyboard = KeyboardType.Uri)
-        ExactField(user, { user = it }, "Identifiant")
-        ExactField(pass, { pass = it }, "Mot de passe", secret = true)
-        error?.let { Spacer(Modifier.height(8.dp)); Text(it, color = Palette.Danger) }
-        Spacer(Modifier.height(20.dp))
-        Button(onClick = {
-            if (server.length < 10 || user.isBlank() || pass.isBlank()) { error = "Remplis les trois champs."; return@Button }
-            scope.launch {
-                val src = XtreamApi.normalizeServer(server.trim())
-                val id = core.playlists.save(PlaylistEntity(
-                    name = src.substringAfter("://").substringBefore(':').substringBefore('/'), type = PlaylistType.XTREAM,
-                    sourceEnc = SecretBox.encrypt(src), username = user.trim(), passwordEnc = SecretBox.encrypt(pass),
-                ))
-                core.settings.set(Keys.activePlaylist, id)
-            }
-        }, modifier = Modifier.fillMaxWidth()) { Text("Se connecter") }
-    }
+private fun SetupScreen(core: AppCore) = Column(Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing).padding(horizontal = 24.dp)) {
+    Spacer(Modifier.height(24.dp))
+    Text("lumenTV", fontSize = 34.sp, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(4.dp))
+    Text("Ajoute ta première liste : une playlist M3U ou un compte Xtream.", color = Palette.TextDim)
+    Spacer(Modifier.height(16.dp))
+    PlaylistForm(core, null, PlaylistType.XTREAM, Modifier.weight(1f), onSaved = {})
 }
 
 /** The list is read once after the account is added (a minute or two for 30 000 titles). */
 @Composable
-private fun FirstLoad(core: AppCore, p: PlaylistEntity) {
+private fun FirstLoad(core: AppCore, p: PlaylistEntity, others: Boolean) {
     var error by remember(p.id) { mutableStateOf<String?>(null) }
     var attempt by remember(p.id) { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -192,7 +175,7 @@ private fun FirstLoad(core: AppCore, p: PlaylistEntity) {
                 Text(error!!, color = Palette.Danger)
                 Spacer(Modifier.height(16.dp))
                 Button(onClick = { attempt++ }) { Text("Réessayer") }
-                OutlinedButton(onClick = { scope.launch { core.playlists.delete(p.id) } }) { Text("Changer de compte") }
+                OutlinedButton(onClick = { scope.launch { core.playlists.delete(p.id) } }) { Text(if (others) "Retirer cette liste" else "Changer de liste") }
             }
         }
     }
@@ -224,7 +207,8 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
                 Route.Guide -> GuidePage(core, p, open)
                 is Route.GuideChannel -> GuideChannelPage(core, r.channel, player)
                 Route.Sports -> SportsPage(core, p, player)
-                Route.Settings -> SettingsPage(core, p)
+                Route.Settings -> SettingsPage(core, p, open)
+                is Route.PlaylistEdit -> PlaylistEditPage(core, r.id, r.type, back)
                 Route.Downloads -> DownloadsPage(core, player)
                 is Route.Categories -> if (r.series) SeriesCategories(core, p, open) else MovieCategories(core, p, open)
                 null -> when (tab) {

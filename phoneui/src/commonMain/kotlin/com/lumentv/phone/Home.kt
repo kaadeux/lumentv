@@ -250,7 +250,7 @@ private fun day(t: Long): String = Instant.fromEpochMilliseconds(t).toLocalDateT
 
 /** The online profile (favourites, history, resume, ratings shared with the TV, the phone and the PC) and the list. */
 @Composable
-internal fun SettingsPage(core: AppCore, p: PlaylistEntity) {
+internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
     val settings by core.settings.flow.collectAsState(null)
     val state by core.profile.state.collectAsState()
     val busy by core.playlists.busy.collectAsState()
@@ -295,7 +295,7 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity) {
             }
         }
         item {
-            Section("Liste") {
+            Section("Liste active") {
                 Text(p.name, fontWeight = FontWeight.SemiBold)
                 Text(listOf("${p.channelCount} chaînes", "${p.movieCount} films", "${p.seriesCount} séries").joinToString(" · "), color = Palette.TextDim, fontSize = 14.sp)
                 if (p.lastRefresh > 0) Text("Actualisée le " + day(p.lastRefresh), color = Palette.TextDim, fontSize = 14.sp)
@@ -313,6 +313,7 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity) {
                 }) { Text(if (p.id in busy) "Actualisation…" else "Recharger la liste") }
             }
         }
+        item { PlaylistsSection(core, p, open) }
         item {
             Section("Lecture") {
                 Toggle("Épisode suivant automatique", "À la fin d'un épisode, le suivant se lance.", settings?.autoNext ?: true) { on ->
@@ -375,7 +376,7 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity) {
 }
 
 @Composable
-private fun Toggle(title: String, subtitle: String, on: Boolean, onChange: (Boolean) -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) {
+internal fun Toggle(title: String, subtitle: String, on: Boolean, onChange: (Boolean) -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) {
     Column(Modifier.weight(1f)) {
         Text(title, fontWeight = FontWeight.SemiBold)
         Text(subtitle, color = Palette.TextDim, fontSize = 13.sp)
@@ -384,7 +385,7 @@ private fun Toggle(title: String, subtitle: String, on: Boolean, onChange: (Bool
 }
 
 @Composable
-private fun Section(title: String, content: @Composable () -> Unit) = Column(
+internal fun Section(title: String, content: @Composable () -> Unit) = Column(
     Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(16.dp),
     verticalArrangement = Arrangement.spacedBy(10.dp),
 ) {
