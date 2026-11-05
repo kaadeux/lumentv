@@ -1,7 +1,6 @@
 package com.lumentv.data.settings
 
 import kotlinx.coroutines.launch
-import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -10,13 +9,11 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import java.security.MessageDigest
-
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("settings")
+import com.lumentv.core.Crypto
+import com.lumentv.core.hex
 
 data class Settings(
     val activePlaylistId: Long = 0,
@@ -73,8 +70,12 @@ object Keys {
     val sportLeagues = stringSetPreferencesKey("sport_leagues")
 }
 
-class SettingsStore(private val context: Context) {
-    val flow: Flow<Settings> = context.dataStore.data.map { p ->
+/**
+ * The app's settings, in a DataStore file: "settings" in the app's files on the TV and the phone (as before, see
+ * settingsStore in androidMain), settings.preferences_pb in the iPhone app's documents.
+ */
+class SettingsStore(private val dataStore: DataStore<Preferences>) {
+    val flow: Flow<Settings> = dataStore.data.map { p ->
         Settings(
             activePlaylistId = p[Keys.activePlaylist] ?: 0,
             startup = p[Keys.startup] ?: "home",
@@ -103,7 +104,7 @@ class SettingsStore(private val context: Context) {
     suspend fun current(): Settings = flow.first()
 
     /** The latest settings, kept up to date by [keepWarm]: read without waiting for the file. */
-    @Volatile private var last: Settings? = null
+    @kotlin.concurrent.Volatile private var last: Settings? = null
 
     /** Follows the settings for the life of the app, so [now] answers from memory. */
     fun keepWarm(scope: kotlinx.coroutines.CoroutineScope) { scope.launch { flow.collect { last = it } } }
@@ -115,11 +116,11 @@ class SettingsStore(private val context: Context) {
     fun now(): Settings = last ?: kotlinx.coroutines.runBlocking { current() }.also { last = it }
 
     suspend fun <T> set(key: Preferences.Key<T>, value: T) {
-        context.dataStore.edit { it[key] = value }
+        dataStore.edit { it[key] = value }
     }
 
     suspend fun setSports(s: com.lumentv.data.sports.SportPrefs) {
-        context.dataStore.edit {
+        dataStore.edit {
             it[Keys.sportIds] = s.sports
             it[Keys.sportComps] = s.competitions.joinToString("\n")
             it[Keys.sportTeams] = s.teams.joinToString("\n")
@@ -136,12 +137,12 @@ class SettingsStore(private val context: Context) {
     }
 
     /** All values as strings, for the backup file. */
-    suspend fun export(): Map<String, String> = context.dataStore.data.first().asMap()
+    suspend fun export(): Map<String, String> = dataStore.data.first().asMap()
         .filterKeys { it.name != Keys.pin.name }
         .entries.associate { it.key.name to it.value.toString() }
 
     suspend fun import(values: Map<String, String>) {
-        context.dataStore.edit { p ->
+        dataStore.edit { p ->
             values.forEach { (k, v) ->
                 when (k) {
                     Keys.startup.name, Keys.buffer.name, Keys.audioLang.name, Keys.subLang.name, Keys.sort.name, Keys.userAgent.name ->
@@ -155,7 +156,7 @@ class SettingsStore(private val context: Context) {
 
     /** The settings a profile shares between devices (not the device-specific ones: start screen, buffer, PIN…). */
     suspend fun syncValues(): Map<String, String> {
-        val p = context.dataStore.data.first()
+        val p = dataStore.data.first()
         return buildMap {
             p[Keys.audioLang]?.let { put(Keys.audioLang.name, it) }
             p[Keys.subLang]?.let { put(Keys.subLang.name, it) }
@@ -173,7 +174,7 @@ class SettingsStore(private val context: Context) {
 
     suspend fun applySync(values: Map<String, String>) {
         if (values == syncValues()) return
-        context.dataStore.edit { p ->
+        dataStore.edit { p ->
             values.forEach { (k, v) ->
                 when (k) {
                     Keys.audioLang.name, Keys.subLang.name, Keys.sort.name, Keys.sportComps.name, Keys.sportTeams.name -> p[stringPreferencesKey(k)] = v
@@ -187,5 +188,5 @@ class SettingsStore(private val context: Context) {
     }
 
     private fun hashPin(pin: String): String =
-        MessageDigest.getInstance("SHA-256").digest(("lumen:" + pin).toByteArray()).joinToString("") { "%02x".format(it) }
+        hex(Crypto.sha256(("lumen:" + pin).encodeToByteArray()))
 }

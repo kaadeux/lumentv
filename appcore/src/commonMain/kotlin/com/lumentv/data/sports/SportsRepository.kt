@@ -1,7 +1,9 @@
 package com.lumentv.data.sports
 
-import android.util.Log
 import androidx.room.RoomRawQuery
+import com.lumentv.core.IoDispatcher
+import com.lumentv.core.logDebug
+import com.lumentv.core.nowMillis
 import com.lumentv.core.normalize
 import com.lumentv.data.db.AppDatabase
 import com.lumentv.data.db.ChannelRow
@@ -10,7 +12,6 @@ import com.lumentv.data.repo.EpgRepository
 import com.lumentv.data.repo.LibraryRepository
 import com.lumentv.data.settings.Settings
 import com.lumentv.data.settings.SettingsStore
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 
@@ -71,7 +72,7 @@ class SportsRepository(
      * seconds on the box, so it is kept until the playlist is reloaded or a channel hidden.
      */
     private data class ChannelMaps(val named: List<Triple<ChannelRow, String, Long>>, val byKey: Map<String, List<ChannelRow>>)
-    @Volatile private var maps: Triple<Long, String, ChannelMaps>? = null
+    @kotlin.concurrent.Volatile private var maps: Triple<Long, String, ChannelMaps>? = null
 
     private suspend fun channelMaps(pid: Long): ChannelMaps = kotlinx.coroutines.coroutineScope {
         val version = "${db.playlists().get(pid)?.lastRefresh}:${library.changes.value}"
@@ -86,11 +87,11 @@ class SportsRepository(
     }
 
     /** Official calendar, like the PC: every live and upcoming game of the chosen competitions, with its channels. */
-    suspend fun games(pid: Long, prefs: SportPrefs): List<Game> = withContext(Dispatchers.IO) {
+    suspend fun games(pid: Long, prefs: SportPrefs): List<Game> = withContext(IoDispatcher) {
         val leagues = SportsFunnel.effectiveLeagues(prefs.sports, prefs.leagues)
         if (leagues.isEmpty()) return@withContext emptyList()
-        val t0 = System.currentTimeMillis()
-        fun lap(what: String) { if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(TAG, "$what +${System.currentTimeMillis() - t0} ms") }
+        val t0 = nowMillis()
+        fun lap(what: String) = logDebug(TAG) { "$what +${nowMillis() - t0} ms" }
         // Calendar, French guide and the playlist's channels are independent: fetched together.
         val listingsAsync = async { runCatching { frenchGuide.listings() }.getOrDefault(emptyList()).also { lap("guide FR") } }
         val mapsAsync = async { channelMaps(pid).also { lap("channels") } }

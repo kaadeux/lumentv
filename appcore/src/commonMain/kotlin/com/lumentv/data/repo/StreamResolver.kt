@@ -6,18 +6,16 @@ import com.lumentv.data.db.MovieEntity
 import com.lumentv.data.db.PlaylistEntity
 import com.lumentv.data.db.PlaylistType
 import com.lumentv.data.db.ProgramEntity
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
+import com.lumentv.core.nowMillis
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 data class StreamSpec(val url: String, val userAgent: String?, val referer: String?, val live: Boolean)
 
 /** Turns a channel / movie / episode / past programme into the URL and headers the player needs. */
 class StreamResolver(private val playlists: PlaylistRepository) {
-    private val cache = HashMap<Long, PlaylistEntity>()
+    private val cache = com.lumentv.core.Lru<Long, PlaylistEntity>(16)
 
     private suspend fun playlist(id: Long): PlaylistEntity =
         cache[id] ?: (playlists.get(id) ?: error("playlist $id")).also { cache[id] = it }
@@ -65,18 +63,19 @@ class StreamResolver(private val playlists: PlaylistRepository) {
 
     companion object {
         /** Supports the common catch-up placeholders: {utc}, {start}, {lutc}, {end}, {utcend}, {duration}, {Y}{m}{d}{H}{M}{S}. */
-        fun fillTemplate(template: String, startMs: Long, stopMs: Long, nowMs: Long = System.currentTimeMillis()): String {
+        fun fillTemplate(template: String, startMs: Long, stopMs: Long, nowMs: Long = nowMillis()): String {
             val utc = (startMs / 1000).toString()
             val end = (stopMs / 1000).toString()
             val dur = ((stopMs - startMs) / 1000).toString()
-            fun fmt(p: String) = SimpleDateFormat(p, Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(startMs))
+            val t = Instant.fromEpochMilliseconds(startMs).toLocalDateTime(TimeZone.UTC)
+            fun two(n: Int) = n.toString().padStart(2, '0')
             return template
                 .replace("\${start}", utc).replace("{start}", utc).replace("{utc}", utc)
                 .replace("\${end}", end).replace("{end}", end).replace("{utcend}", end)
                 .replace("{lutc}", (nowMs / 1000).toString()).replace("\${timestamp}", (nowMs / 1000).toString())
                 .replace("{duration}", dur).replace("\${duration}", dur)
-                .replace("{Y}", fmt("yyyy")).replace("{m}", fmt("MM")).replace("{d}", fmt("dd"))
-                .replace("{H}", fmt("HH")).replace("{M}", fmt("mm")).replace("{S}", fmt("ss"))
+                .replace("{Y}", t.year.toString().padStart(4, '0')).replace("{m}", two(t.monthNumber)).replace("{d}", two(t.dayOfMonth))
+                .replace("{H}", two(t.hour)).replace("{M}", two(t.minute)).replace("{S}", two(t.second))
         }
     }
 }

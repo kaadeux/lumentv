@@ -1,14 +1,12 @@
 package com.lumentv.sync
 
-import com.lumentv.core.asHttp
-import android.app.Application
-import android.content.Context
-import android.util.Log
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ProcessLifecycleOwner
-import com.lumentv.BuildConfig
+import com.lumentv.core.Http
+import com.lumentv.core.IoDispatcher
+import com.lumentv.core.KeyValues
 import com.lumentv.core.SecretBox
+import com.lumentv.core.TextFile
+import com.lumentv.core.logWarn
+import com.lumentv.core.nowMillis
 import com.lumentv.core.userMessage
 import com.lumentv.data.db.AppDatabase
 import com.lumentv.data.db.HistoryEntity
@@ -37,37 +35,39 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import okhttp3.OkHttpClient
-import java.io.File
-import java.util.Base64
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 data class ProfileState(val name: String? = null, val lastSync: Long = 0, val syncing: Boolean = false, val error: String? = null)
 
 /**
  * The online profile on this TV: keeps playlists, favourites, history and shared settings in step with the other
  * devices. Everything is encrypted on the device before it is sent ([ProfileCrypto]); the keys are kept with
- * [SecretBox] (Android Keystore).
+ * [SecretBox] (Android Keystore, iPhone Keychain). [prefs] keeps the keys and the last sync time, [snapshotFile] the
+ * last merged profile (encrypted); [syncUrl] is the sync server, empty when this build has none. The app calls
+ * [syncNow] when it comes to the foreground and goes to the background (followAppLifecycle on Android).
  */
+@OptIn(ExperimentalEncodingApi::class)
 class ProfileManager(
-    private val app: Application,
+    private val prefs: KeyValues,
+    private val snapshotFile: TextFile,
+    private val syncUrl: String,
     private val db: AppDatabase,
     private val settings: SettingsStore,
     private val playlists: PlaylistRepository,
     private val epg: EpgRepository,
     private val library: LibraryRepository,
-    http: OkHttpClient,
+    http: Http,
     private val scope: CoroutineScope,
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
-    private val prefs = app.getSharedPreferences("profile", Context.MODE_PRIVATE)
-    private val snapshotFile = File(app.filesDir, "profile_synced.bin")
-    private val sync = ProfileSync(http.asHttp(), BuildConfig.SYNC_URL)
+    private val sync = ProfileSync(http, syncUrl)
     private val lock = Mutex()
 
-    private val _state = MutableStateFlow(ProfileState(name = storedKeys()?.name, lastSync = prefs.getLong("last", 0)))
+    private val _state = MutableStateFlow(ProfileState(name = storedKeys()?.name, lastSync = prefs.long("last", 0)))
     val state: StateFlow<ProfileState> = _state
 
-    val enabled get() = BuildConfig.SYNC_URL.isNotEmpty()
+    val enabled get() = syncUrl.isNotEmpty()
 
     @Serializable private class StoredKeys(val name: String, val id: String, val token: String, val key: String)
 
@@ -75,8 +75,8 @@ class ProfileManager(
     suspend fun signIn(name: String, passphrase: String): Result<Unit> = runCatching {
         val keys = withContext(Dispatchers.Default) { ProfileKeys.derive(name, passphrase) }
         sync.pull(keys) // checks the passphrase before anything is stored
-        prefs.edit().putString("keys", SecretBox.encrypt(json.encodeToString(
-            StoredKeys(keys.name, keys.id, keys.token, Base64.getEncoder().encodeToString(keys.encKey))))).apply()
+        prefs.put("keys", SecretBox.encrypt(json.encodeToString(
+            StoredKeys(keys.name, keys.id, keys.token, Base64.encode(keys.encKey)))))
         snapshotFile.delete()
         _state.value = ProfileState(name = keys.name)
         syncNow().getOrThrow()
@@ -84,7 +84,7 @@ class ProfileManager(
 
     /** Stops syncing on this TV. Its data stays here; the online profile is untouched. */
     fun signOut() {
-        prefs.edit().clear().apply()
+        prefs.clear()
         snapshotFile.delete()
         _state.value = ProfileState()
     }
@@ -93,7 +93,7 @@ class ProfileManager(
         val keys = storedKeys() ?: return Result.success(Unit)
         _state.value = _state.value.copy(syncing = true, error = null)
         runCatching {
-            withContext(Dispatchers.IO) {
+            withContext(IoDispatcher) {
                 val synced = loadSnapshot()
                 val current = currentDoc(synced)
                 // First sync on this TV: what was already here is dated "long ago", so the profile wins where both
@@ -109,23 +109,19 @@ class ProfileManager(
                 apply(result.doc)
                 saveSnapshot(result.doc)
             }
-            val now = System.currentTimeMillis()
-            prefs.edit().putLong("last", now).apply()
+            val now = nowMillis()
+            prefs.put("last", now)
             _state.value = _state.value.copy(lastSync = now, syncing = false)
         }.onFailure {
-            Log.w(TAG, "sync failed: ${it.javaClass.simpleName}")
+            logWarn(TAG, "sync failed: ${it::class.simpleName}")
             _state.value = _state.value.copy(syncing = false, error = if (it is WrongPassphraseException) it.message else userMessage(it))
         }
     }
 
-    /** Syncs when the app comes to the foreground, shortly after a change, and every 15 minutes. */
+    /** Syncs shortly after a change and every 15 minutes (the app adds: at foreground and background). */
     @OptIn(FlowPreview::class)
     fun start() {
         if (!enabled) return
-        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) { scope.launch { syncNow() } }
-            override fun onStop(owner: LifecycleOwner) { scope.launch { syncNow() } }
-        })
         scope.launch {
             combine(library.changes, db.history().observeFingerprint(), db.playlists().observeAll(), settings.flow, db.ratings().observeAll()) { a, b, c, d, e -> listOf(a, b, c.map { it.id to it.name }, d, e) }
                 .drop(1).debounce(20_000).collect { syncNow() }
@@ -133,17 +129,17 @@ class ProfileManager(
         scope.launch { while (true) { delay(15 * 60_000L); syncNow() } }
     }
 
-    private fun storedKeys(): ProfileKeys? = prefs.getString("keys", null)?.let { s ->
+    private fun storedKeys(): ProfileKeys? = prefs.string("keys")?.let { s ->
         runCatching {
             val k = json.decodeFromString<StoredKeys>(SecretBox.decrypt(s))
-            ProfileKeys(k.name, k.id, k.token, Base64.getDecoder().decode(k.key))
+            ProfileKeys(k.name, k.id, k.token, Base64.decode(k.key))
         }.getOrNull()
     }
 
-    private fun loadSnapshot(): ProfileDoc? = snapshotFile.takeIf { it.exists() }
-        ?.let { runCatching { json.decodeFromString<ProfileDoc>(SecretBox.decrypt(it.readText())) }.getOrNull() }
+    private fun loadSnapshot(): ProfileDoc? = snapshotFile.read()
+        ?.let { runCatching { json.decodeFromString<ProfileDoc>(SecretBox.decrypt(it)) }.getOrNull() }
 
-    private fun saveSnapshot(d: ProfileDoc) = snapshotFile.writeText(SecretBox.encrypt(json.encodeToString(d)))
+    private fun saveSnapshot(d: ProfileDoc) { snapshotFile.write(SecretBox.encrypt(json.encodeToString(d))) }
 
     private fun keyOf(p: PlaylistEntity) = ProfileMerge.playlistKey(p.type, SecretBox.decrypt(p.sourceEnc), p.username)
 

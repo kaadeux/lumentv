@@ -6,6 +6,8 @@ expect class TextFile(path: String) {
     fun read(): String?
     /** Writes [text], creating the folder if needed; false when it cannot. */
     fun write(text: String): Boolean
+    /** Removes the file (nothing when it does not exist). */
+    fun delete()
 }
 
 /** The body decompressed (gzip) as it is read: a 9 MB guide never sits whole in memory. */

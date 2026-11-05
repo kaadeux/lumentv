@@ -7,6 +7,7 @@ actual class TextFile actual constructor(path: String) {
     private val file = File(path)
     actual fun read(): String? = runCatching { file.readText() }.getOrNull()
     actual fun write(text: String): Boolean = runCatching { file.parentFile?.mkdirs(); file.writeText(text) }.isSuccess
+    actual fun delete() { file.delete() }
 }
 
 actual fun gunzip(body: HttpBody): HttpBody {

@@ -15,6 +15,7 @@ import com.lumentv.data.repo.PlaylistRepository
 import com.lumentv.data.repo.StreamResolver
 import com.lumentv.data.settings.SettingsStore
 import com.lumentv.work.RefreshWorker
+import com.lumentv.sync.startWithAppLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,7 +29,7 @@ import java.util.concurrent.TimeUnit
 class AppGraph(app: Application) {
     val appContext: Application = app
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    val settings = SettingsStore(app).also { it.keepWarm(appScope) }
+    val settings = com.lumentv.data.settings.settingsStore(app).also { it.keepWarm(appScope) }
     val db = com.lumentv.data.db.createAppDatabase(app)
 
     init { PrivateNet.init(java.io.File(app.filesDir, "https_hosts.txt")) }
@@ -79,7 +80,10 @@ class AppGraph(app: Application) {
         },
         android.provider.Settings.Global.getString(app.contentResolver, "device_name") ?: android.os.Build.MODEL)
     val introDb = com.lumentv.data.IntroDb(http.asHttp())
-    val profile = com.lumentv.sync.ProfileManager(app, db, settings, playlists, epg, library, http, appScope)
+    val profile = com.lumentv.sync.ProfileManager(
+        com.lumentv.core.sharedPrefs(app, "profile"), com.lumentv.core.TextFile(java.io.File(app.filesDir, "profile_synced.bin").path),
+        BuildConfig.SYNC_URL, db, settings, playlists, epg, library, http.asHttp(), appScope,
+    )
 }
 
 class LumenApp : Application(), ImageLoaderFactory {
@@ -89,7 +93,7 @@ class LumenApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         graph = AppGraph(this)
-        graph.profile.start()
+        graph.profile.startWithAppLifecycle(graph.appScope)
         // Request counters, for measuring: "adb shell setprop log.tag.LumenNet DEBUG" writes them every minute.
         graph.appScope.launch {
             while (true) {

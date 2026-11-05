@@ -38,6 +38,8 @@ actual class TextFile actual constructor(private val path: String) {
         NSFileManager.defaultManager.createDirectoryAtPath(dir, withIntermediateDirectories = true, attributes = null, error = null)
         return NSString.create(string = text).writeToFile(path, atomically = true, encoding = NSUTF8StringEncoding, error = null)
     }
+
+    actual fun delete() { NSFileManager.defaultManager.removeItemAtPath(path, error = null) }
 }
 
 /** zlib's inflate fed piece by piece from [body] (gzip format: windowBits 15 + 16). */

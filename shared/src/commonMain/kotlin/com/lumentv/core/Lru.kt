@@ -29,4 +29,6 @@ class Lru<K, V>(private val max: Int) {
 
     /** The value without counting as a use (for the "already known" checks). */
     fun peek(key: K): V? = synchronized(lock) { map[key] }
+
+    fun clear() = synchronized(lock) { map.clear() }
 }

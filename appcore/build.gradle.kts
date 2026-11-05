@@ -24,6 +24,13 @@ kotlin {
         commonMain.dependencies {
             api(project(":shared"))
             api("androidx.room:room-runtime:$room")
+            // The settings (same "settings" file as before on the TV and the phone).
+            api("androidx.datastore:datastore-preferences-core:1.1.1")
+        }
+        androidMain.dependencies {
+            implementation("androidx.datastore:datastore-preferences:1.1.1")
+            // The profile syncs when the app comes to the foreground (ProcessLifecycleOwner).
+            implementation("androidx.lifecycle:lifecycle-process:2.8.7")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
