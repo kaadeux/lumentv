@@ -90,7 +90,7 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
     val r = results
     val movies = r?.movies?.let { oneEach(it, { m -> m.m.name }, { m -> m.m.category }) }.orEmpty()
     val series = r?.series?.let { oneEach(it, { s -> s.s.name }, { s -> s.s.category }) }.orEmpty()
-    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(state = rememberList("search"), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Text("Recherche", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp)) }
         item {
             OutlinedTextField(query, { query = it }, placeholder = { Text("Film, série, acteur, chaîne…") }, singleLine = true,

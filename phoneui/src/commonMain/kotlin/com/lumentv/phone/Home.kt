@@ -76,6 +76,9 @@ import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
+/** The rows of the homes, kept while the app is open: back from a title they are there at once (and the scroll with them). */
+private object HomeCache { val rows = HashMap<String, Any>() }
+
 /** A title of the banner: its picture, what TMDB knows of it, and what its buttons do. */
 private class Hero(val key: String, val title: String, val series: Boolean, val tmdb: String?, val year: Int?,
                    val image: String?, val meta: String?, val play: (() -> Unit)?, val open: () -> Unit)
@@ -84,13 +87,15 @@ private class Hero(val key: String, val title: String, val series: Boolean, val 
 
 @Composable
 internal fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open: (Route) -> Unit) {
-    var shelves by remember(p.id) { mutableStateOf<List<Shelf<MovieRow>>?>(null) }
+    @Suppress("UNCHECKED_CAST")
+    var shelves by remember(p.id) { mutableStateOf(HomeCache.rows["mv:${p.id}"] as List<Shelf<MovieRow>>?) }
     LaunchedEffect(p.id, p.lastRefresh) {
         // History and ratings of the moment: the rows are not computed again at each film watched.
         val history = core.library.observeHistory(600).first()
         val ratings = core.library.observeRatings().first()
         core.discover.movies(p.id, history, ratings).collect { list ->
             shelves = list.map { Shelf(it.title, oneEach(it.items, { m -> m.m.name }, { m -> m.m.category })) }.filter { it.items.isNotEmpty() }
+                .also { HomeCache.rows["mv:${p.id}"] = it }
         }
     }
     val scope = rememberCoroutineScope()
@@ -105,12 +110,14 @@ internal fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
 
 @Composable
 internal fun SeriesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open: (Route) -> Unit) {
-    var shelves by remember(p.id) { mutableStateOf<List<Shelf<SeriesRow>>?>(null) }
+    @Suppress("UNCHECKED_CAST")
+    var shelves by remember(p.id) { mutableStateOf(HomeCache.rows["se:${p.id}"] as List<Shelf<SeriesRow>>?) }
     LaunchedEffect(p.id, p.lastRefresh) {
         val history = core.library.observeHistory(600).first()
         val ratings = core.library.observeRatings().first()
         core.discover.series(p.id, history, ratings).collect { list ->
             shelves = list.map { Shelf(it.title, oneEach(it.items, { s -> s.s.name }, { s -> s.s.category })) }.filter { it.items.isNotEmpty() }
+                .also { HomeCache.rows["se:${p.id}"] = it }
         }
     }
     val scope = rememberCoroutineScope()
@@ -141,7 +148,7 @@ private fun playMovie(core: AppCore, player: VideoPlayer, scope: kotlinx.corouti
 private fun <T> HomeList(
     core: AppCore, title: String, heroes: List<Hero>, shelves: List<Shelf<T>>?, onCategories: () -> Unit,
     resume: @Composable () -> Unit, row: androidx.compose.foundation.lazy.LazyListScope.(List<T>) -> Unit,
-) = LazyColumn {
+) = LazyColumn(state = rememberList("home:$title")) {
     item {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -238,7 +245,7 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, back: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var signing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(state = rememberList("settings"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Header("Réglages", back) }
         item {
             Section("Profil en ligne") {

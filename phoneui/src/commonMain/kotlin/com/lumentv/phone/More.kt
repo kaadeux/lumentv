@@ -82,7 +82,7 @@ internal fun dayLabel(t: Long): String {
 // ---- "Plus": the destinations that are not tabs ------------------------------------------------------------------
 
 @Composable
-internal fun MoreHome(open: (Route) -> Unit) = LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+internal fun MoreHome(open: (Route) -> Unit) = LazyColumn(state = rememberList("more"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
     item { Text("Plus", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 6.dp)) }
     item { Entry("★", "Favoris", "Films, séries et chaînes de Ma liste") { open(Route.Favorites) } }
     item { Entry("▦", "Guide TV", "Ce qui passe, ce qui vient, le rattrapage") { open(Route.Guide) } }
@@ -146,7 +146,7 @@ internal fun FavoritesPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer
     val series by produceState(emptyList<SeriesRow>(), changes) { value = core.library.favoriteSeries().filter { it.s.playlistId == p.id } }
     val channels by produceState(emptyList<ChannelRow>(), changes) { value = core.library.favoriteChannelsAll().filter { it.ch.playlistId == p.id } }
     val scope = rememberCoroutineScope()
-    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(state = rememberList("favorites"), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header("Favoris", back) }
         if (movies.isEmpty() && series.isEmpty() && channels.isEmpty()) item {
             Text("Rien encore. Ajoute un film ou une série avec « + Ma liste » sur sa page, une chaîne avec ☆.",
@@ -188,7 +188,8 @@ private const val FAVORITES = "★ Mes chaînes"
 @Composable
 internal fun GuidePage(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit, back: () -> Unit) {
     val groups by produceState(emptyList<String>(), p.id) { value = listOf(FAVORITES) + core.library.groups(p.id, false).map { it.name } }
-    var group by remember(p.id) { mutableStateOf(FAVORITES) }
+    val memory = LocalScroll.current
+    var group by remember(p.id) { mutableStateOf(memory.values["guide"] as? String ?: FAVORITES) }
     val settings by core.settings.flow.collectAsState(null)
     val channels by produceState<List<ChannelRow>?>(null, p.id, group) {
         value = if (group == FAVORITES) core.library.favoriteChannelsAll().filter { it.ch.playlistId == p.id }
@@ -197,9 +198,9 @@ internal fun GuidePage(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit, 
     Column {
         Header("Guide TV", back)
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(groups) { g -> FilterChip(selected = g == group, onClick = { group = g }, label = { Text(g, maxLines = 1) }) }
+            items(groups) { g -> FilterChip(selected = g == group, onClick = { group = g; memory.values["guide"] = g; memory.forget("guide:list") }, label = { Text(g, maxLines = 1) }) }
         }
-        LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+        LazyColumn(state = rememberList("guide:list"), contentPadding = PaddingValues(vertical = 8.dp)) {
             val list = channels
             if (list == null) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
             else if (list.isEmpty()) item {
@@ -275,7 +276,7 @@ internal fun SportsPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer, b
         games = runCatching { core.sports.games(p.id, prefs) }.getOrDefault(emptyList())
     }
     val scope = rememberCoroutineScope()
-    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(state = rememberList("sport"), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header("Sport", back) }
         item {
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

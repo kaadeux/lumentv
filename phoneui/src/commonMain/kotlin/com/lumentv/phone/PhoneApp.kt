@@ -185,12 +185,15 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
     val stack = remember { mutableStateListOf<Route>() }
     val open: (Route) -> Unit = { stack.add(it) }
     val back: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.size - 1) }
+    // Where each list was: kept while going into a title and back, emptied when another tab is opened (it starts at the top).
+    val memory = remember { ScrollMemory() }
+    androidx.compose.runtime.CompositionLocalProvider(LocalScroll provides memory) {
     Scaffold(
         containerColor = Palette.Background,
         bottomBar = {
             NavigationBar(containerColor = Palette.Panel) {
                 Tab.entries.forEach { t ->
-                    NavigationBarItem(selected = tab == t, onClick = { tab = t; stack.clear() },
+                    NavigationBarItem(selected = tab == t, onClick = { tab = t; stack.clear(); memory.clear() },
                         icon = { Text(t.icon, fontSize = 20.sp) }, label = { Text(t.label) })
                 }
             }
@@ -218,6 +221,7 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
                 }
             }
         }
+    }
     }
 }
 
@@ -277,14 +281,15 @@ private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> U
     val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) {
         value = listOf(RECENT) + core.library.movieCategories(p.id, false).map { it.category }.filter { !Featured.foreign("", it) }
     }
-    var cat by remember(p.id) { mutableStateOf(RECENT) }
+    val memory = LocalScroll.current
+    var cat by remember(p.id) { mutableStateOf(memory.values["cat:mv"] as? String ?: RECENT) }
     val movies by produceState(emptyList<MovieRow>(), p.id, cat, p.lastRefresh) {
         value = oneEach(if (cat == RECENT) core.library.recentMovies(p.id) else core.library.movies(p.id, cat), { it.m.name }, { it.m.category })
     }
     Column {
         Header("Films · catégories", back)
-        Chips(cats, cat) { cat = it }
-        LazyVerticalGrid(GridCells.Adaptive(108.dp), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Chips(cats, cat) { cat = it; memory.values["cat:mv"] = it; memory.forget("grid:mv") }
+        LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:mv"), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(movies, key = { it.m.id }) { m -> Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } }
         }
     }
@@ -295,14 +300,15 @@ private fun SeriesCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> 
     val cats by produceState(emptyList<String>(), p.id, p.lastRefresh) {
         value = listOf(RECENT) + core.library.seriesCategories(p.id, false).map { it.category }.filter { !Featured.foreign("", it) }
     }
-    var cat by remember(p.id) { mutableStateOf(RECENT) }
+    val memory = LocalScroll.current
+    var cat by remember(p.id) { mutableStateOf(memory.values["cat:se"] as? String ?: RECENT) }
     val series by produceState(emptyList<SeriesRow>(), p.id, cat, p.lastRefresh) {
         value = oneEach(if (cat == RECENT) core.library.recentSeries(p.id) else core.library.series(p.id, cat), { it.s.name }, { it.s.category })
     }
     Column {
         Header("Séries · catégories", back)
-        Chips(cats, cat) { cat = it }
-        LazyVerticalGrid(GridCells.Adaptive(108.dp), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Chips(cats, cat) { cat = it; memory.values["cat:se"] = it; memory.forget("grid:se") }
+        LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:se"), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(series, key = { it.s.id }) { s -> Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } }
         }
     }
@@ -322,7 +328,7 @@ internal const val MY_CHANNELS = "★ Mes chaînes"
 @Composable
 private fun LiveHome(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
     val groups by produceState(emptyList<com.lumentv.data.repo.GroupInfo>(), p.id, p.lastRefresh) { value = core.library.groups(p.id, false) }
-    LazyColumn {
+    LazyColumn(state = rememberList("live")) {
         item { Header("TV") }
         item {
             Row(Modifier.fillMaxWidth().clickable { open(Route.Group(MY_CHANNELS)) }.padding(horizontal = 16.dp, vertical = 14.dp)) {
@@ -346,7 +352,7 @@ private fun ChannelsPage(core: AppCore, p: PlaylistEntity, group: String, player
         else core.library.channels(p.id, group, false, settings?.sort ?: "provider")
     }
     val scope = rememberCoroutineScope()
-    LazyColumn {
+    LazyColumn(state = rememberList("ch:$group")) {
         item { Header(group, back) }
         if (group == MY_CHANNELS && channels.isEmpty()) item {
             Text("Ajoute des chaînes avec ☆ dans leurs groupes.", color = Palette.TextDim, modifier = Modifier.padding(16.dp))
