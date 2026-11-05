@@ -1,5 +1,6 @@
 package com.lumentv.sync
 
+import com.lumentv.core.asHttp
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
@@ -95,7 +96,7 @@ class SyncTest {
     @Test fun twoDevicesAgainstServer() = runBlocking {
         val url = System.getenv("SYNC_TEST_URL")
         assumeTrue(url != null)
-        val sync = ProfileSync(OkHttpClient(), url!!)
+        val sync = ProfileSync(OkHttpClient().asHttp(), url!!)
         val keys = ProfileKeys.derive("test-${System.nanoTime()}", "phrase de test assez longue", 1000)
         val tv = ProfileDoc(favorites = mapOf("pl|ch|1" to SyncFavorite("pl", "ch", "1", at = 10)))
         val pc = ProfileDoc(history = mapOf("pl|ep|7" to SyncHistory("pl", "ep", "7", "Épisode", watchedAt = 1, positionMs = 42, at = 20)))

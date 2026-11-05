@@ -28,7 +28,7 @@ class HoldStreamTest {
         mp.audio().setVolume(0)
         val firstLive = 1L.let { var id = 0L; api.liveStreams { if (id == 0L) id = it.streamId }; id }
         mp.media().play(api.liveUrl(firstLive, "ts"))
-        val presence = com.lumentv.data.xtream.Presence(OkHttpClient(), BuildInfo.SYNC_URL, "hold-test", "PC de test")
+        val presence = com.lumentv.data.xtream.Presence(OkHttpClient().asHttp(), BuildInfo.SYNC_URL, "hold-test", "PC de test")
         val key = com.lumentv.data.xtream.Presence.key("xtream", s("source"), s("username"), s("password"))
         val beats = Thread { try { while (true) { kotlinx.coroutines.runBlocking { presence.beat(key) }; Thread.sleep(30_000) } } catch (_: InterruptedException) {} }.apply { start() }
         Thread.sleep(15_000)

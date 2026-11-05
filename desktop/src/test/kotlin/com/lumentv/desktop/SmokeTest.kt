@@ -1,5 +1,6 @@
 package com.lumentv.desktop
 
+import com.lumentv.core.asHttp
 import com.lumentv.sync.ProfileKeys
 import com.lumentv.sync.ProfileSync
 import kotlinx.coroutines.runBlocking
@@ -23,7 +24,7 @@ class SmokeTest {
         assumeTrue(url != null && name != null && pass != null)
         val out = StringBuilder()
         val http = OkHttpClient.Builder().readTimeout(90, TimeUnit.SECONDS).build()
-        val doc = ProfileSync(http, url!!).pull(ProfileKeys.derive(name!!, pass!!))!!.doc
+        val doc = ProfileSync(http.asHttp(), url!!).pull(ProfileKeys.derive(name!!, pass!!))!!.doc
         val p = doc.playlists.values.first { !it.deleted }
         val lib = Library(http)
         var t = System.currentTimeMillis()

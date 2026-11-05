@@ -1,5 +1,6 @@
 package com.lumentv.sync
 
+import com.lumentv.core.asHttp
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import org.junit.Assume.assumeTrue
@@ -15,7 +16,7 @@ class ProbeTest {
     @Test fun probe() = runBlocking {
         val url = System.getenv("SYNC_TEST_URL"); val name = System.getenv("SYNC_PROBE_NAME"); val pass = System.getenv("SYNC_PROBE_PASS")
         assumeTrue(url != null && name != null && pass != null)
-        val sync = ProfileSync(OkHttpClient(), url!!)
+        val sync = ProfileSync(OkHttpClient().asHttp(), url!!)
         val keys = ProfileKeys.derive(name!!, pass!!)
         var doc = sync.pull(keys)!!.doc
         val out = StringBuilder()

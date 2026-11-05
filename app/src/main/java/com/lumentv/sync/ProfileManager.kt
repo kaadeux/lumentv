@@ -1,5 +1,6 @@
 package com.lumentv.sync
 
+import com.lumentv.core.asHttp
 import android.app.Application
 import android.content.Context
 import android.util.Log
@@ -60,7 +61,7 @@ class ProfileManager(
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
     private val prefs = app.getSharedPreferences("profile", Context.MODE_PRIVATE)
     private val snapshotFile = File(app.filesDir, "profile_synced.bin")
-    private val sync = ProfileSync(http, BuildConfig.SYNC_URL)
+    private val sync = ProfileSync(http.asHttp(), BuildConfig.SYNC_URL)
     private val lock = Mutex()
 
     private val _state = MutableStateFlow(ProfileState(name = storedKeys()?.name, lastSync = prefs.getLong("last", 0)))

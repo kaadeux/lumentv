@@ -1,24 +1,20 @@
 package com.lumentv.data.xtream
 
 import com.lumentv.sync.ProfileKeys
-import kotlinx.coroutines.Dispatchers
+import com.lumentv.core.Http
+import com.lumentv.core.HttpRequest
+import com.lumentv.core.IoDispatcher
+import com.lumentv.core.query
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 /**
  * "Who is watching on this subscription right now", shared through the sync server between Lumen TV devices.
  * Providers' own connection counters are often stale (always 0), so the devices tell each other instead.
  * The subscription is identified by a hash that includes its password: the server never sees the account.
  */
-class Presence(http: OkHttpClient, baseUrl: String, private val deviceId: String, private val deviceName: String) {
-    private val http = http.newBuilder().callTimeout(4, TimeUnit.SECONDS).build()
+class Presence(private val http: Http, baseUrl: String, private val deviceId: String, private val deviceName: String) {
     private val base = baseUrl.trimEnd('/')
     private val json = Json { ignoreUnknownKeys = true }
     val enabled = base.isNotEmpty()
@@ -27,30 +23,28 @@ class Presence(http: OkHttpClient, baseUrl: String, private val deviceId: String
     @Serializable private class Others(val others: List<Other> = emptyList())
 
     /** Names of the other devices playing on this subscription (empty when unknown). */
-    suspend fun others(key: String): List<String> = withContext(Dispatchers.IO) {
+    suspend fun others(key: String): List<String> = withContext(IoDispatcher) {
         if (!enabled) return@withContext emptyList()
         runCatching {
-            val url = "$base/v1/presence/$key".toHttpUrl().newBuilder().addQueryParameter("device", deviceId).build()
-            http.newCall(Request.Builder().url(url).build()).execute().use { r ->
-                if (!r.isSuccessful) emptyList() else json.decodeFromString<Others>(r.body!!.string()).others.map { it.name }.distinct()
+            http.execute(HttpRequest("$base/v1/presence/$key?${query("device" to deviceId)}", timeoutMs = TIMEOUT_MS)).use { r ->
+                if (!r.isSuccessful) emptyList() else json.decodeFromString<Others>(r.text()).others.map { it.name }.distinct()
             }
         }.getOrDefault(emptyList())
     }
 
     /** "Still playing" — repeated every [BEAT_MS] while a stream plays. */
-    suspend fun beat(key: String) = withContext(Dispatchers.IO) {
+    suspend fun beat(key: String) = withContext(IoDispatcher) {
         if (!enabled) return@withContext
         runCatching {
             val body = """{"device":${q(deviceId)},"name":${q(deviceName)},"ttl":${BEAT_MS / 1000 * 3}}"""
-            http.newCall(Request.Builder().url("$base/v1/presence/$key").put(body.toRequestBody("application/json".toMediaType())).build()).execute().close()
+            http.execute(HttpRequest("$base/v1/presence/$key", "PUT", body = body.encodeToByteArray(), contentType = "application/json", timeoutMs = TIMEOUT_MS)).close()
         }
     }
 
-    suspend fun leave(key: String) = withContext(Dispatchers.IO) {
+    suspend fun leave(key: String) = withContext(IoDispatcher) {
         if (!enabled) return@withContext
         runCatching {
-            val url = "$base/v1/presence/$key".toHttpUrl().newBuilder().addQueryParameter("device", deviceId).build()
-            http.newCall(Request.Builder().url(url).delete().build()).execute().close()
+            http.execute(HttpRequest("$base/v1/presence/$key?${query("device" to deviceId)}", "DELETE", timeoutMs = TIMEOUT_MS)).close()
         }
     }
 
@@ -58,10 +52,12 @@ class Presence(http: OkHttpClient, baseUrl: String, private val deviceId: String
 
     companion object {
         const val BEAT_MS = 30_000L
+        /** A presence check never holds the player up long. */
+        private const val TIMEOUT_MS = 4_000L
 
         /** Same value on every device using this account; useless to anyone who does not know the password. */
         fun key(type: String, source: String, username: String, password: String): String =
-            ProfileKeys.hex(ProfileKeys.sha256("lumentv-presence|$type|${source.trim().trimEnd('/').lowercase()}|${username.trim()}|$password".toByteArray()))
+            ProfileKeys.hex(ProfileKeys.sha256("lumentv-presence|$type|${source.trim().trimEnd('/').lowercase()}|${username.trim()}|$password".encodeToByteArray()))
 
         fun warning(devices: List<String>): String {
             val who = devices.joinToString(", ") { "« $it »" }

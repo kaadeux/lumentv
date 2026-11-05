@@ -98,7 +98,7 @@ class DiscoverEngine(private val tmdb: Tmdb) {
             val items = HashMap<String, Tmdb.Item>()
             fun add(list: List<Tmdb.Item>, weight: Double) = list.forEachIndexed { pos, it ->
                 if (it.id in profile.seenIds) return@forEachIndexed
-                items.putIfAbsent(it.id, it)
+                if (it.id !in items) items[it.id] = it
                 score[it.id] = (score[it.id] ?: 0.0) + weight * (1.0 - pos / 50.0)
             }
             details.forEach { (s, d) -> if (s.weight > 0) { add(d.recommendations, s.weight); add(d.similar, s.weight * 0.6) } }

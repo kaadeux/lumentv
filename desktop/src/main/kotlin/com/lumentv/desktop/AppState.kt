@@ -1,5 +1,6 @@
 package com.lumentv.desktop
 
+import com.lumentv.core.asHttp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -44,12 +45,12 @@ class AppState(private val scope: CoroutineScope) {
     val fixtures = com.lumentv.data.sports.FixtureClient(http)
     /** Which French channel shows each game, days ahead (xmltvfr.fr, sports channels only, twice a day at most). */
     val frenchGuide = com.lumentv.data.sports.FrenchTvGuide(http, java.io.File(Store.dir, "sports_tv.json")) { org.kxml2.io.KXmlParser() }
-    private val sync = ProfileSync(http, BuildInfo.SYNC_URL)
+    private val sync = ProfileSync(http.asHttp(), BuildInfo.SYNC_URL)
     private val prefs = Preferences.userRoot().node("lumentv")
     private val syncLock = Mutex()
 
     /** Tells the other Lumen TV devices of the same subscription that this PC is playing. */
-    val presence = com.lumentv.data.xtream.Presence(http, BuildInfo.SYNC_URL,
+    val presence = com.lumentv.data.xtream.Presence(http.asHttp(), BuildInfo.SYNC_URL,
         prefs.get("device", null) ?: java.util.UUID.randomUUID().toString().also { prefs.put("device", it) },
         "PC " + (System.getenv("COMPUTERNAME") ?: "Windows"))
     fun presenceKey(): String? = active?.let { com.lumentv.data.xtream.Presence.key(it.type, it.source, it.username, it.password) }

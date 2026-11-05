@@ -68,7 +68,7 @@ class AppGraph(app: Application) {
     val frenchGuide = com.lumentv.data.sports.FrenchTvGuide(http, java.io.File(app.cacheDir, "sports_tv.json")) { android.util.Xml.newPullParser() }
     val sports = com.lumentv.data.sports.SportsRepository(db, settings, epg, library, com.lumentv.data.sports.FixtureClient(http), frenchGuide)
     /** Tells the other Lumen TV devices of the same subscription that this one is playing. */
-    val presence = com.lumentv.data.xtream.Presence(http, com.lumentv.BuildConfig.SYNC_URL,
+    val presence = com.lumentv.data.xtream.Presence(http.asHttp(), com.lumentv.BuildConfig.SYNC_URL,
         app.getSharedPreferences("device", android.content.Context.MODE_PRIVATE).let { p ->
             p.getString("id", null) ?: java.util.UUID.randomUUID().toString().also { p.edit().putString("id", it).apply() }
         },
