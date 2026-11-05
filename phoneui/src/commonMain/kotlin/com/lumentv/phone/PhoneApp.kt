@@ -122,13 +122,9 @@ private fun SetupScreen(core: AppCore) {
         Spacer(Modifier.height(8.dp))
         Text("Ton compte Xtream. Il reste sur cet iPhone, chiffré.", color = Palette.TextDim)
         Spacer(Modifier.height(24.dp))
-        OutlinedTextField(server, { server = it }, label = { Text("Serveur (http://…:port)") }, singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false), modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(user, { user = it }, label = { Text("Identifiant") }, singleLine = true,
-            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false), modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(pass, { pass = it }, label = { Text("Mot de passe") }, singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false), modifier = Modifier.fillMaxWidth())
+        ExactField(server, { server = it }, "Serveur (http://…:port)", keyboard = KeyboardType.Uri)
+        ExactField(user, { user = it }, "Identifiant")
+        ExactField(pass, { pass = it }, "Mot de passe", secret = true)
         error?.let { Spacer(Modifier.height(8.dp)); Text(it, color = Palette.Danger) }
         Spacer(Modifier.height(20.dp))
         Button(onClick = {

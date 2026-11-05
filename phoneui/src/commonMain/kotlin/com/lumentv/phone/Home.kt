@@ -224,11 +224,8 @@ internal fun ProfileHome(core: AppCore, p: PlaylistEntity) {
                     state.name == null -> {
                         Text("Le même profil que sur la TV : favoris, historique, reprise et notes suivent d'un appareil à l'autre. Chiffré sur l'iPhone avant l'envoi.",
                             color = Palette.TextDim, fontSize = 14.sp)
-                        OutlinedTextField(name, { name = it }, label = { Text("Nom du profil") }, singleLine = true,
-                            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false), modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(pass, { pass = it }, label = { Text("Phrase secrète") }, singleLine = true,
-                            visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
-                            modifier = Modifier.fillMaxWidth())
+                        ExactField(name, { name = it }, "Nom du profil")
+                        ExactField(pass, { pass = it }, "Phrase secrète", secret = true)
                         error?.let { Text(it, color = Palette.Danger) }
                         Button(enabled = !signing && name.isNotBlank() && pass.isNotBlank(), onClick = {
                             signing = true; error = null
