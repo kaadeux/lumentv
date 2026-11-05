@@ -1,5 +1,6 @@
 package com.lumentv.data.repo
 
+import com.lumentv.core.asXmlReader
 import android.util.Log
 import android.util.Xml
 import androidx.room.withTransaction
@@ -83,7 +84,7 @@ class EpgRepository(
             parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
             parser.setInput(stream, null)
             XmltvParser.parse(
-                parser,
+                parser.asXmlReader(),
                 onChannel = { c ->
                     val key = c.id.lowercase()
                     val byName = c.names.any { channelKeyName(it) in wantedNames }

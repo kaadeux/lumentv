@@ -1,5 +1,6 @@
 package com.lumentv
 
+import com.lumentv.core.asXmlReader
 import com.lumentv.core.FormatException
 import com.lumentv.data.epg.EpgMatcher
 import com.lumentv.data.epg.XmltvChannel
@@ -18,7 +19,7 @@ class EpgTest {
         p.setInput(StringReader(xml))
         val ch = ArrayList<XmltvChannel>()
         val pr = ArrayList<XmltvProgram>()
-        XmltvParser.parse(p, { ch += it }, { pr += it })
+        XmltvParser.parse(p.asXmlReader(), { ch += it }, { pr += it })
         return ch to pr
     }
 
@@ -85,7 +86,7 @@ class EpgTest {
         sb.append("</tv>")
         var n = 0
         val p = KXmlParser(); p.setInput(StringReader(sb.toString()))
-        XmltvParser.parse(p, {}, { n++ })
+        XmltvParser.parse(p.asXmlReader(), {}, { n++ })
         assertEquals(45_000, n)
     }
 }

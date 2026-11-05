@@ -1,5 +1,6 @@
 package com.lumentv.desktop
 
+import com.lumentv.core.asXmlReader
 import com.lumentv.core.asHttp
 import com.lumentv.core.FormatException
 import com.lumentv.core.HttpStatusException
@@ -198,7 +199,7 @@ class Library(private val http: OkHttpClient) {
         open(url, userAgent).use { raw ->
             val input = java.io.BufferedInputStream(raw).let { b -> b.mark(2); val gz = b.read() == 0x1f && b.read() == 0x8b; b.reset(); if (gz) GZIPInputStream(b) else b }
             val parser = org.kxml2.io.KXmlParser().apply { setInput(input, null) }
-            XmltvParser.parse(parser, onChannel = { ch -> ch.names.forEach { n -> names.putIfAbsent(channelKeyName(n), ch.id.lowercase()) } }) { pr ->
+            XmltvParser.parse(parser.asXmlReader(), onChannel = { ch -> ch.names.forEach { n -> names.putIfAbsent(channelKeyName(n), ch.id.lowercase()) } }) { pr ->
                 if (pr.stop + shift < from || pr.start + shift > to) return@parse
                 progs.getOrPut(pr.channel.lowercase()) { ArrayList() } += Prog(pr.start + shift, pr.stop + shift, pr.title, pr.description)
             }

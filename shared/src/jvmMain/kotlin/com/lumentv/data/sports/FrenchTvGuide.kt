@@ -1,5 +1,6 @@
 package com.lumentv.data.sports
 
+import com.lumentv.core.asXmlReader
 import com.lumentv.core.normalize
 import com.lumentv.data.epg.XmltvParser
 import kotlinx.coroutines.Dispatchers
@@ -73,7 +74,7 @@ class FrenchTvGuide(http: OkHttpClient, private val cacheFile: File, private val
             val names = HashMap<String, String>()
             val out = ArrayList<Listing>()
             val parser = newParser().apply { setInput(GZIPInputStream(r.body!!.byteStream()), "UTF-8") }
-            XmltvParser.parse(parser, onChannel = { ch -> ch.names.firstOrNull()?.takeIf { sportsChannel.containsMatchIn(it) }?.let { names[ch.id] = it } }) { p ->
+            XmltvParser.parse(parser.asXmlReader(), onChannel = { ch -> ch.names.firstOrNull()?.takeIf { sportsChannel.containsMatchIn(it) }?.let { names[ch.id] = it } }) { p ->
                 val name = names[p.channel] ?: return@parse
                 if (p.start < now - 3 * 3_600_000L || p.start > now + 6 * 86_400_000L) return@parse
                 // Games are titled "A / B" or "Sport : Compétition | A / B": keep titles with two sides only.
