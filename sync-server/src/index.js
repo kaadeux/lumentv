@@ -104,11 +104,25 @@ const IOS_TYPES = { "source.json": "application/json", "app.ipa": "application/o
 async function ios(request, env, key, file) {
   if (request.method !== "GET" && request.method !== "HEAD") return json({ error: "method" }, 405);
   if (!env.IOS_KEY || !env.IOS || !timingSafeEqual(key, env.IOS_KEY)) return json({ error: "not found" }, 404);
+  const headers = { "Content-Type": IOS_TYPES[file], "Cache-Control": "no-store", "X-Robots-Tag": "noindex" };
+  // An IPA over KV's 25 MiB limit is stored in parts: "app.ipa.parts" holds their count, "app.ipa.0", "app.ipa.1"…
+  const parts = parseInt((await env.IOS.get(file + ".parts")) || "0", 10);
+  if (parts > 0) {
+    if (request.method === "HEAD") return new Response(null, { headers });
+    const { readable, writable } = new TransformStream();
+    (async () => {
+      for (let i = 0; i < parts; i++) {
+        const piece = await env.IOS.get(`${file}.${i}`, { type: "stream" });
+        if (!piece) { await writable.abort("missing part"); return; }
+        await piece.pipeTo(writable, { preventClose: true });
+      }
+      await writable.close();
+    })();
+    return new Response(readable, { headers });
+  }
   const body = await env.IOS.get(file, { type: "stream" });
   if (!body) return json({ error: "not found" }, 404);
-  return new Response(request.method === "HEAD" ? null : body, {
-    headers: { "Content-Type": IOS_TYPES[file], "Cache-Control": "no-store", "X-Robots-Tag": "noindex" },
-  });
+  return new Response(request.method === "HEAD" ? null : body, { headers });
 }
 
 async function presence(request, env, id) {
