@@ -87,6 +87,7 @@ internal sealed interface Route {
     data object Sports : Route
     data object Settings : Route
     data object Downloads : Route
+    data object History : Route
     data class PlaylistEdit(val id: Long, val type: String) : Route
 }
 
@@ -109,6 +110,7 @@ private fun titleOf(r: Route): String = when (r) {
     Route.Sports -> "Sport"
     Route.Settings -> "Paramètres"
     Route.Downloads -> "Téléchargés"
+    Route.History -> "Historique"
     is Route.PlaylistEdit -> if (r.id != 0L) "Modifier la liste" else if (r.type == PlaylistType.XTREAM) "Compte Xtream" else "Playlist M3U"
 }
 
@@ -211,6 +213,7 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
                 Route.Settings -> SettingsPage(core, p, open)
                 is Route.PlaylistEdit -> PlaylistEditPage(core, r.id, r.type, back)
                 Route.Downloads -> DownloadsPage(core, player)
+                Route.History -> HistoryPage(core, player, open)
                 is Route.Categories -> if (r.series) SeriesCategories(core, p, open) else MovieCategories(core, p, open)
                 null -> when (tab) {
                     Tab.MOVIES -> MoviesHome(core, p, player, open)

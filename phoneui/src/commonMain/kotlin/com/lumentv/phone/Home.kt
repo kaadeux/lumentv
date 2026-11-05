@@ -143,7 +143,7 @@ internal fun SeriesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
 }
 
 /** Plays a film from the banner: where it was left, else from the start; the position is kept on closing. */
-private fun playMovie(core: AppCore, player: VideoPlayer, scope: kotlinx.coroutines.CoroutineScope, row: MovieRow) = scope.launch {
+internal fun playMovie(core: AppCore, player: VideoPlayer, scope: kotlinx.coroutines.CoroutineScope, row: MovieRow) = scope.launch {
     val m = row.m
     val key = LibraryRepository.key(HistoryKind.MOVIE, m.playlistId, m.uid)
     val h = core.library.history(key)

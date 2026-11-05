@@ -93,9 +93,11 @@ internal fun dayLabel(t: Long): String {
 @Composable
 internal fun MoreHome(open: (Route) -> Unit) = LazyColumn(state = rememberList("more"),
     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // The Android phone's order.
     item { Entry("▦", "Guide TV", "Les programmes de toutes les chaînes, et le rattrapage") { open(Route.Guide) } }
+    item { Entry("⚽", "Sport", "Les matchs à venir et en direct, sur vos chaînes") { open(Route.Sports) } }
     item { Entry("★", "Favoris", "Vos chaînes, films et séries préférés") { open(Route.Favorites) } }
-    item { Entry("⚽", "Sport", "Les matchs et les chaînes qui les diffusent") { open(Route.Sports) } }
+    item { Entry("↻", "Historique", "Reprendre là où vous en étiez") { open(Route.History) } }
     item { Entry("⬇", "Téléchargés", "Films et épisodes sur ce téléphone") { open(Route.Downloads) } }
     item { Entry("⚙", "Paramètres", "Profil en ligne, liste, lecture") { open(Route.Settings) } }
 }
