@@ -10,12 +10,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -23,9 +20,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,53 +64,17 @@ fun Modifier.ignoreHeldOk(): Modifier {
     }
 }
 
-/** A list of choices in a centred panel. Back closes it. */
+/** A list of choices: the shared menu (as on the iPhone and the PC), each choice a tile. Back closes it. */
 @Composable
-fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Unit, subtitle: String? = null) {
-    Dialog(onDismissRequest = onDismiss) {
-        val first = remember { FocusRequester() }
-        Column(
-            Modifier.ignoreHeldOk().panelWidth(460.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
-            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 3)
-            Spacer(Modifier.height(12.dp))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.heightIn(max = 480.dp)) {
-                itemsIndexed(options) { i, o ->
-                    FocusSurface(
-                        onClick = { o.action(); onDismiss() },
-                        modifier = Modifier.fillMaxWidth().then(if (i == options.indexOfFirst { it.checked }.coerceAtLeast(0)) Modifier.focusRequester(first) else Modifier),
-                        container = Palette.PanelHigh, focusedScale = 1.02f,
-                    ) {
-                        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(o.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                            if (o.checked) Text("✓", style = MaterialTheme.typography.titleMedium)
-                        }
-                    }
-                }
-            }
-        }
-        LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
-    }
-}
+fun OptionsDialog(title: String, options: List<MenuOption>, onDismiss: () -> Unit, subtitle: String? = null) =
+    com.lumentv.ui.kit.KitMenu(title, options.map { com.lumentv.ui.kit.KitOption(it.label, it.checked, it.label.startsWith("Supprimer"), it.action) },
+        onDismiss, subtitle, rootModifier = Modifier.ignoreHeldOk())
 
+/** A question and its answer: the shared one. */
 @Composable
-fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
-        val focus = remember { FocusRequester() }
-        Column(Modifier.ignoreHeldOk().panelWidth(480.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(24.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
-            Spacer(Modifier.height(8.dp))
-            Text(message, style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim)
-            Spacer(Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TvButton("Annuler", onDismiss, Modifier.focusRequester(focus))
-                TvButton(confirm, { onConfirm(); onDismiss() }, primary = true)
-            }
-        }
-        LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-    }
-}
+fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) =
+    com.lumentv.ui.kit.KitConfirm(title, message, confirm, onConfirm, onDismiss, danger = confirm.startsWith("Supprimer") || confirm.startsWith("Effacer"),
+        rootModifier = Modifier.ignoreHeldOk())
 
 /** Text entry that suits a remote: the field looks like a button; OK opens the on-screen keyboard. */
 @Composable

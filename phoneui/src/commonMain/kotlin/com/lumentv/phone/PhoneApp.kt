@@ -227,10 +227,8 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
     // Another device of the subscription is playing: the TV's warning, then play anyway or not.
     val pending by Playback.pending.collectAsState()
     pending?.let { w ->
-        androidx.compose.material3.AlertDialog(onDismissRequest = { Playback.pending.value = null }, containerColor = Palette.Panel,
-            title = { Text("Un autre écran regarde") }, text = { Text(w.text) },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { Playback.pending.value = null; w.go() }) { Text("Lancer quand même") } },
-            dismissButton = { androidx.compose.material3.TextButton(onClick = { Playback.pending.value = null }) { Text("Annuler") } })
+        com.lumentv.ui.kit.KitConfirm("Un autre écran regarde", w.text, "Lancer quand même", onConfirm = { w.go() },
+            onDismiss = { Playback.pending.value = null })
     }
     }
 }

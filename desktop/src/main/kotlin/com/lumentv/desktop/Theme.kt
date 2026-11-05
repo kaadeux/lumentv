@@ -74,13 +74,19 @@ private object SoftIndication : androidx.compose.foundation.IndicationNodeFactor
     }
 }
 
+/** The PC's colours for the pieces shared with the TV, the phone and the iPhone (:uikit). */
+val KitPalette = com.lumentv.ui.kit.KitColors(
+    panel = Pal.panel, panelHigh = Pal.panelHigh, text = Pal.text, dim = Pal.dim,
+    accent = Pal.accent, accentSoft = Pal.accent.copy(alpha = 0.2f), danger = Pal.danger,
+)
+
 @Composable
 fun LumenTheme(content: @Composable () -> Unit) = MaterialTheme(
     colorScheme = darkColorScheme(primary = Pal.accent, onPrimary = Color.White, primaryContainer = Pal.accent, onPrimaryContainer = Color.White,
         secondaryContainer = Pal.accent.copy(alpha = 0.3f), onSecondaryContainer = Pal.text, outline = Pal.panelHigh, background = Pal.bg, surface = Pal.panel, onSurface = Pal.text, onBackground = Pal.text,
         surfaceVariant = Pal.panelHigh, onSurfaceVariant = Pal.dim, error = Pal.danger),
 ) {
-    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalIndication provides SoftIndication) {
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalIndication provides SoftIndication, com.lumentv.ui.kit.LocalKitColors provides KitPalette) {
         Box(Modifier.fillMaxSize().background(Pal.bg)) { content() }
     }
 }

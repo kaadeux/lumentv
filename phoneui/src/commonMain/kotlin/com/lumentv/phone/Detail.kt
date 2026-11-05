@@ -22,10 +22,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -478,23 +476,9 @@ internal fun ProgressLine(fraction: Float, modifier: Modifier = Modifier) {
     }
 }
 
-internal class Option(val label: String, val checked: Boolean = false, val onClick: () -> Unit)
+internal class Option(val label: String, val checked: Boolean = false, val danger: Boolean = false, val onClick: () -> Unit)
 
-/** A short menu (versions of a film, an episode's actions). */
+/** A short menu (versions of a film, an episode's actions): the shared one, as on the TV and the PC. */
 @Composable
-internal fun Options(title: String, subtitle: String?, options: List<Option>, onDismiss: () -> Unit) = AlertDialog(
-    onDismissRequest = onDismiss, containerColor = Palette.Panel,
-    title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-    text = {
-        Column {
-            subtitle?.let { Text(it, color = Palette.TextDim, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp)) }
-            options.forEach { o ->
-                Row(Modifier.fillMaxWidth().pressable(RoundedCornerShape(10.dp)) { onDismiss(); o.onClick() }.padding(vertical = 12.dp, horizontal = 8.dp)) {
-                    Text(o.label, modifier = Modifier.weight(1f), fontWeight = if (o.checked) FontWeight.Bold else FontWeight.Normal)
-                    if (o.checked) Text("✓", color = Palette.Accent)
-                }
-            }
-        }
-    },
-    confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
-)
+internal fun Options(title: String, subtitle: String?, options: List<Option>, onDismiss: () -> Unit) =
+    com.lumentv.ui.kit.KitMenu(title, options.map { com.lumentv.ui.kit.KitOption(it.label, it.checked, it.danger, it.onClick) }, onDismiss, subtitle)

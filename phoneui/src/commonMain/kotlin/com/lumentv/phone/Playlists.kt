@@ -11,10 +11,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -190,26 +188,18 @@ internal fun PlaylistsSection(core: AppCore, active: PlaylistEntity?, open: (Rou
                         else "Identifiants chiffrés."
                 }
             } else null,
-            Option("Supprimer") { deleting = p },
+            Option("Supprimer", danger = true) { deleting = p },
         )) { menu = null }
     }
     deleting?.let { p ->
-        AlertDialog(
-            onDismissRequest = { deleting = null }, containerColor = Palette.Panel,
-            title = { Text("Supprimer « ${p.name} » ?") },
-            text = { Text("Ses chaînes, films, séries, son guide et son historique sont retirés de cet iPhone.", color = Palette.TextDim) },
-            confirmButton = {
-                TextButton(onClick = {
-                    deleting = null
-                    core.scope.launch {
-                        val next = list.firstOrNull { it.id != p.id }
-                        if (p.id == active?.id && next != null) core.settings.set(Keys.activePlaylist, next.id)
-                        core.playlists.delete(p.id)
-                        core.resolver.forget()
-                    }
-                }) { Text("Supprimer", color = Palette.Danger) }
-            },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Annuler") } },
-        )
+        com.lumentv.ui.kit.KitConfirm("Supprimer « ${p.name} » ?", "Ses chaînes, films, séries, son guide et son historique sont retirés de cet appareil.",
+            "Supprimer", danger = true, onDismiss = { deleting = null }, onConfirm = {
+                core.scope.launch {
+                    val next = list.firstOrNull { it.id != p.id }
+                    if (p.id == active?.id && next != null) core.settings.set(Keys.activePlaylist, next.id)
+                    core.playlists.delete(p.id)
+                    core.resolver.forget()
+                }
+            })
     }
 }

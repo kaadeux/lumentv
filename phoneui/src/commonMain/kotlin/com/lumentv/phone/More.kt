@@ -4,8 +4,6 @@ import com.lumentv.data.sports.SportsCatalog
 import com.lumentv.data.sports.FixtureClient
 import com.lumentv.data.sports.Fixture
 import androidx.compose.ui.graphics.Color
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
@@ -359,30 +357,9 @@ private fun MenuButton(title: String, value: String, active: Boolean, onClick: (
 private fun PickDialog(title: String, subtitle: String, items: List<Pair<String, String>>, selected: Set<String>,
                        onToggle: (String) -> Unit, onClear: () -> Unit, onDismiss: () -> Unit) {
     val none = items.none { it.first in selected }
-    AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Palette.Panel,
-        title = { Text(title) },
-        text = {
-            Column {
-                Text(subtitle, color = Palette.TextDim, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
-                LazyColumn(Modifier.heightIn(max = 420.dp)) {
-                    item(key = "\u0000all") { PickRow(if (title == "Équipes") "Tous les matchs" else "Toutes", none, onClear) }
-                    items(items, key = { it.first }) { (id, label) -> PickRow(label, id in selected) { onToggle(id) } }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Terminé") } },
-    )
+    com.lumentv.ui.kit.KitMenu(title, listOf(com.lumentv.ui.kit.KitOption(if (title == "Équipes") "Tous les matchs" else "Toutes", none, onClick = onClear)) +
+        items.map { (id, label) -> com.lumentv.ui.kit.KitOption(label, id in selected) { onToggle(id) } }, onDismiss, subtitle, closeOnPick = false)
 }
-
-@Composable
-private fun PickRow(label: String, on: Boolean, onClick: () -> Unit) =
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 11.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Palette.Text, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f))
-        Text(if (on) "✓" else "", color = Palette.Accent, fontWeight = FontWeight.Bold)
-    }
 
 /**
  * A game: competition and stadium, the time (or EN DIRECT and the minute) with its channel, then the two teams face
@@ -504,21 +481,12 @@ internal fun DownloadsPage(core: AppCore, player: VideoPlayer) {
         }
     }
     menu?.let { t ->
-        androidx.compose.material3.AlertDialog(onDismissRequest = { menu = null }, containerColor = Palette.Panel,
-            title = { Text(Featured.shortTitle(t.title), maxLines = 2) },
-            text = {
-                Column {
-                    val running = t.status == com.lumentv.data.db.TransferStatus.RUNNING || t.status == com.lumentv.data.db.TransferStatus.SCHEDULED
-                    val retry = t.status == com.lumentv.data.db.TransferStatus.FAILED || t.status == com.lumentv.data.db.TransferStatus.CANCELLED
-                    if (running) MenuLine("Annuler") { scope.launch { downloads.cancel(t.id) }; menu = null }
-                    if (retry) MenuLine("Réessayer") { scope.launch { downloads.retry(t.id) }; menu = null }
-                    MenuLine("Supprimer") { scope.launch { downloads.delete(t.id) }; menu = null }
-                }
-            },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { menu = null }) { Text("Fermer") } })
+        val running = t.status == com.lumentv.data.db.TransferStatus.RUNNING || t.status == com.lumentv.data.db.TransferStatus.SCHEDULED
+        val retry = t.status == com.lumentv.data.db.TransferStatus.FAILED || t.status == com.lumentv.data.db.TransferStatus.CANCELLED
+        Options(Featured.shortTitle(t.title), null, listOfNotNull(
+            if (running) Option("Annuler") { scope.launch { downloads.cancel(t.id) } } else null,
+            if (retry) Option("Réessayer") { scope.launch { downloads.retry(t.id) } } else null,
+            Option("Supprimer", danger = true) { scope.launch { downloads.delete(t.id) } },
+        )) { menu = null }
     }
 }
-
-@Composable
-private fun MenuLine(text: String, onClick: () -> Unit) =
-    Text(text, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 4.dp))

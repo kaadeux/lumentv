@@ -164,13 +164,21 @@ private fun Menu(title: String, value: String, active: Boolean, open: Boolean, o
             Text(value, color = Pal.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 260.dp))
             Icon(Icons.Filled.ArrowDropDown, null, tint = Pal.dim, modifier = Modifier.size(18.dp))
         }
-        androidx.compose.material3.DropdownMenu(open, { onOpen(false) }, containerColor = Pal.panel, modifier = Modifier.heightIn(max = 420.dp)) { content() }
+        androidx.compose.material3.DropdownMenu(open, { onOpen(false) }, containerColor = Pal.panel, shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.heightIn(max = 420.dp).widthIn(min = 260.dp).padding(horizontal = 8.dp)) {
+            androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { content() }
+        }
     }
 }
 
 @Composable
-private fun MenuEntry(label: String, close: Boolean = false, onClick: () -> Unit) =
-    androidx.compose.material3.DropdownMenuItem({ Text(label, color = Pal.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }, onClick)
+private fun MenuEntry(label: String, close: Boolean = false, onClick: () -> Unit) {
+    val on = label.startsWith("✓")
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (on) Pal.accent.copy(alpha = 0.2f) else Pal.panelHigh)
+        .combinedClickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Text(label, color = Pal.text, fontSize = 14.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
 
 @Composable
 private fun ChoiceChip(label: String, on: Boolean, small: Boolean = false, onClick: () -> Unit) =

@@ -292,12 +292,8 @@ private fun androidx.compose.foundation.layout.BoxScope.RowArrow(side: Alignment
 @Composable
 fun MenuPill(label: String, options: List<Pair<String, () -> Unit>>) {
     var open by remember { mutableStateOf(false) }
-    Box {
-        Pill(label, { open = true })
-        DropdownMenu(open, { open = false }, modifier = Modifier.heightIn(max = 480.dp).background(Pal.panel)) {
-            options.forEach { (text, act) -> DropdownMenuItem({ Text(text, color = Pal.text) }, { open = false; act() }) }
-        }
-    }
+    Pill(label, { open = true })
+    if (open) com.lumentv.ui.kit.KitMenu(label.removeSuffix("▾").trim(), options.map { (text, act) -> com.lumentv.ui.kit.KitOption(text, onClick = act) }, { open = false })
 }
 
 // ---- Tiles of films and series -----------------------------------------------------------------------------------
@@ -344,9 +340,5 @@ fun <T> rememberShelves(vararg keys: Any?, load: () -> kotlinx.coroutines.flow.F
 /** "Reprendre la lecture" removal, asked first. */
 @Composable
 fun ForgetDialog(title: String, series: Boolean, onConfirm: () -> Unit, onDismiss: () -> Unit) =
-    AlertDialog(onDismissRequest = onDismiss, containerColor = Pal.panel,
-        title = { Text("Retirer « $title » ?") },
-        text = { Text(if (series) "La série quitte « Reprendre la lecture ». Les épisodes ne seront plus marqués comme vus."
-            else "Le film quitte « Reprendre la lecture » et repartira du début.") },
-        confirmButton = { Button({ onConfirm(); onDismiss() }) { Text("Retirer") } },
-        dismissButton = { TextButton(onDismiss) { Text("Annuler") } })
+    com.lumentv.ui.kit.KitConfirm("Retirer « $title » ?", if (series) "La série quitte « Reprendre la lecture ». Les épisodes ne seront plus marqués comme vus."
+        else "Le film quitte « Reprendre la lecture » et repartira du début.", "Retirer", onConfirm, onDismiss, danger = true)

@@ -8,9 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,10 +29,12 @@ import com.lumentv.core.NetworkCheck
 internal fun NetworkDialog(core: AppCore, onDismiss: () -> Unit) {
     var run by remember { mutableStateOf(0) }
     val report by produceState<NetReport?>(null, run) { value = null; value = NetworkCheck.run(core) }
-    AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Palette.Panel,
-        title = { Text("État du réseau") },
-        text = {
+    com.lumentv.ui.kit.KitDialog("État du réseau", onDismiss, buttons = {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            com.lumentv.ui.kit.KitButton("Relancer le test", modifier = Modifier.weight(1f)) { run++ }
+            com.lumentv.ui.kit.KitButton("Fermer", primary = true, modifier = Modifier.weight(1f), onClick = onDismiss)
+        }
+    }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val r = report
                 if (r == null) Text("Test en cours…", color = Palette.TextDim)
@@ -50,8 +50,5 @@ internal fun NetworkDialog(core: AppCore, onDismiss: () -> Unit) {
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).background(Palette.PanelHigh).padding(12.dp))
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
-        dismissButton = { TextButton(onClick = { run++ }) { Text("Relancer le test") } },
-    )
+    }
 }

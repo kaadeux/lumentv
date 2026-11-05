@@ -4,9 +4,7 @@ package com.lumentv.ui.screens
 
 import androidx.compose.foundation.layout.height
 import com.lumentv.ui.glassPill
-import com.lumentv.ui.components.panelWidth
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -15,9 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
@@ -25,9 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -35,12 +29,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
@@ -49,18 +40,13 @@ import com.lumentv.data.repo.Groups
 import com.lumentv.data.sports.SportPrefs
 import com.lumentv.data.sports.SportsCatalog
 import com.lumentv.ui.MainViewModel
-import com.lumentv.ui.Screen
 import com.lumentv.ui.components.Badge
 import com.lumentv.ui.components.EmptyState
 import com.lumentv.ui.components.FocusSurface
 import com.lumentv.ui.components.Loading
-import com.lumentv.ui.components.Logo
 import com.lumentv.ui.components.MenuOption
 import com.lumentv.ui.components.OptionsDialog
-import com.lumentv.ui.components.ProgressLine
 import com.lumentv.ui.components.ScreenTitle
-import com.lumentv.ui.components.TvButton
-import com.lumentv.ui.components.TvTextField
 import com.lumentv.ui.player.PlayerLauncher
 import com.lumentv.ui.components.ignoreHeldOk
 import com.lumentv.ui.theme.Palette
@@ -189,36 +175,14 @@ private fun MenuButton(title: String, value: String, active: Boolean, onClick: (
     }
 }
 
-/** A list to tick several entries in; it stays open until "Terminé" or Back. */
+/** A list to tick several entries in (the shared menu); it stays open until "Fermer" or Back. */
 @Composable
 private fun PickDialog(title: String, subtitle: String, items: List<Pair<String, String>>, selected: Set<String>,
                        onToggle: (String) -> Unit, onClear: () -> Unit, onDismiss: () -> Unit) {
     val none = items.none { it.first in selected }
-    Dialog(onDismissRequest = onDismiss) {
-        val first = remember { androidx.compose.ui.focus.FocusRequester() }
-        Column(Modifier.ignoreHeldOk().panelWidth(480.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(20.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
-            Spacer(Modifier.size(12.dp))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.heightIn(max = 420.dp)) {
-                item(key = "\u0000all") { PickRow(if (title == "Équipes") "Tous les matchs" else "Toutes", none, Modifier.focusRequester(first)) { onClear() } }
-                items(items, key = { it.first }) { (id, label) -> PickRow(label, id in selected) { onToggle(id) } }
-            }
-            Spacer(Modifier.size(14.dp))
-            TvButton("Terminé", onDismiss, primary = true)
-        }
-        LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
-    }
-}
-
-@Composable
-private fun PickRow(label: String, on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    FocusSurface(onClick, modifier.fillMaxWidth(), container = Palette.PanelHigh, focusedScale = 1.02f) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(if (on) "✓" else "", style = MaterialTheme.typography.titleMedium, color = Palette.Accent)
-        }
-    }
+    com.lumentv.ui.kit.KitMenu(title, listOf(com.lumentv.ui.kit.KitOption(if (title == "Équipes") "Tous les matchs" else "Toutes", none, onClick = onClear)) +
+        items.map { (id, label) -> com.lumentv.ui.kit.KitOption(label, id in selected) { onToggle(id) } },
+        onDismiss, subtitle, closeOnPick = false, rootModifier = Modifier.ignoreHeldOk())
 }
 
 @Composable

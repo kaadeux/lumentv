@@ -38,11 +38,12 @@ import com.lumentv.sync.ProfileKeys
 import com.lumentv.sync.SyncPlaylist
 import com.lumentv.sync.WrongPassphraseException
 import com.lumentv.ui.kit.KitButton
+import com.lumentv.ui.kit.KitDialog
+import com.lumentv.ui.kit.KitMenu
+import com.lumentv.ui.kit.KitOption
 import com.lumentv.ui.kit.KitChip
-import com.lumentv.ui.kit.KitColors
 import com.lumentv.ui.kit.KitToggle
 import com.lumentv.ui.kit.ListTile
-import com.lumentv.ui.kit.LocalKitColors
 import com.lumentv.ui.kit.PrivacyLines
 import com.lumentv.ui.kit.SecretsLine
 import com.lumentv.ui.kit.SettingsSection
@@ -54,11 +55,6 @@ import java.util.Locale
 
 private val languages = listOf("" to "Automatique", "fr" to "Français", "en" to "Anglais", "es" to "Espagnol", "de" to "Allemand", "it" to "Italien")
 
-/** The PC's colours for the shared settings pieces (the same page as on the iPhone, the TV and the phone). */
-private val kitColors = KitColors(
-    panel = Pal.panel, panelHigh = Pal.panelHigh, text = Pal.text, dim = Pal.dim,
-    accent = Pal.accent, accentSoft = Pal.accent.copy(alpha = 0.2f), danger = Pal.danger,
-)
 
 private fun hm(t: Long) = SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(t))
 private fun day(t: Long) = SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(t))
@@ -71,7 +67,6 @@ fun SettingsScreen(state: AppState) {
     var login by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf<String?>(null) }
-    androidx.compose.runtime.CompositionLocalProvider(LocalKitColors provides kitColors) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     LazyColumn(Modifier.widthIn(max = 760.dp).fillMaxWidth(), contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         item { Text("Paramètres", style = MaterialTheme.typography.headlineSmall, color = Pal.text) }
@@ -186,20 +181,14 @@ fun SettingsScreen(state: AppState) {
         }
     }
     }
-    }
     menu?.let { key ->
         val p = state.playlists[key]
         if (p == null) { menu = null; return@let }
-        AlertDialog(onDismissRequest = { menu = null }, containerColor = Pal.panel,
-            title = { Text(p.name) },
-            text = {
-                androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (key != state.activeKeyOrFirst) KitButton("Utiliser cette liste", modifier = Modifier.fillMaxWidth()) { state.open(key); menu = null }
-                    KitButton("Recharger", modifier = Modifier.fillMaxWidth()) { state.open(key, force = true); menu = null }
-                    KitButton("Supprimer", modifier = Modifier.fillMaxWidth()) { state.removePlaylist(key); menu = null }
-                }
-            },
-            confirmButton = { TextButton({ menu = null }) { Text("Fermer") } })
+        KitMenu(p.name, listOfNotNull(
+            if (key != state.activeKeyOrFirst) KitOption("Utiliser cette liste") { state.open(key) } else null,
+            KitOption("Recharger") { state.open(key, force = true) },
+            KitOption("Supprimer", danger = true) { state.removePlaylist(key) },
+        ), onDismiss = { menu = null }, subtitle = if (p.type == "xtream") "Compte Xtream" else "Playlist M3U")
     }
     if (login) LoginDialog(state) { login = false }
     adding?.let { type -> PlaylistDialog(state, type) { adding = null } }
@@ -212,28 +201,27 @@ private fun LoginDialog(state: AppState, onClose: () -> Unit) {
     var pass by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(onDismissRequest = { if (!busy) onClose() }, containerColor = Pal.panel,
-        title = { Text("Profil en ligne") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.width(460.dp)) {
-                Text("Même nom et même phrase secrète que sur la TV. Un nom nouveau crée le profil. La phrase secrète ne quitte jamais vos appareils et ne peut pas être récupérée si elle est oubliée.", color = Pal.dim)
-                OutlinedTextField(name, { name = it }, label = { Text("Nom du profil") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(pass, { pass = it }, label = { Text("Phrase secrète (${ProfileKeys.MIN_PASSPHRASE} caractères minimum)") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
-                error?.let { Text(it, color = Pal.danger) }
-            }
-        },
-        confirmButton = {
-            Button({
-                busy = true; error = null
-                scope.launch {
-                    state.signIn(name, pass).onSuccess { state.show("Profil « ${state.profileName} » connecté"); onClose() }
-                        .onFailure { error = if (it is IllegalArgumentException || it is WrongPassphraseException) it.message else userMessage(it) }
-                    busy = false
+    KitDialog("Profil en ligne", { if (!busy) onClose() },
+        "Même nom et même phrase secrète que sur la TV. Un nom nouveau crée le profil. La phrase secrète ne quitte jamais vos appareils et ne peut pas être récupérée si elle est oubliée.",
+        buttons = {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                KitButton("Annuler", modifier = Modifier.weight(1f)) { if (!busy) onClose() }
+                KitButton(if (busy) "Connexion…" else "Se connecter / créer", primary = true, modifier = Modifier.weight(1f)) {
+                    if (busy || name.isBlank() || pass.length < ProfileKeys.MIN_PASSPHRASE) return@KitButton
+                    busy = true; error = null
+                    scope.launch {
+                        state.signIn(name, pass).onSuccess { state.show("Profil « ${state.profileName} » connecté"); onClose() }
+                            .onFailure { error = if (it is IllegalArgumentException || it is WrongPassphraseException) it.message else userMessage(it) }
+                        busy = false
+                    }
                 }
-            }, enabled = !busy && name.isNotBlank() && pass.length >= ProfileKeys.MIN_PASSPHRASE) { Text(if (busy) "Connexion…" else "Se connecter / créer") }
-        },
-        dismissButton = { TextButton({ if (!busy) onClose() }) { Text("Annuler") } })
+            }
+        }) {
+        OutlinedTextField(name, { name = it }, label = { Text("Nom du profil") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(pass, { pass = it }, label = { Text("Phrase secrète (${ProfileKeys.MIN_PASSPHRASE} caractères minimum)") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+        error?.let { Text(it, color = Pal.danger) }
+    }
 }
 
 @Composable
@@ -244,28 +232,26 @@ private fun PlaylistDialog(state: AppState, type: String, onClose: () -> Unit) {
     var pass by remember { mutableStateOf("") }
     var epg by remember { mutableStateOf("") }
     val xtream = type == "xtream"
-    AlertDialog(onDismissRequest = onClose, containerColor = Pal.panel,
-        title = { Text(if (xtream) "Compte Xtream" else "Playlist M3U") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.width(460.dp)) {
-                OutlinedTextField(source, { source = it }, label = { Text(if (xtream) "Adresse du serveur" else "Adresse de la playlist (ou chemin d'un fichier)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                if (xtream) {
-                    OutlinedTextField(user, { user = it }, label = { Text("Nom d'utilisateur") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(pass, { pass = it }, label = { Text("Mot de passe") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-                } else OutlinedTextField(epg, { epg = it }, label = { Text("Guide TV XMLTV (facultatif)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(name, { name = it }, label = { Text("Nom affiché (facultatif)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            }
-        },
-        confirmButton = {
-            Button({
+    KitDialog(if (xtream) "Compte Xtream" else "Playlist M3U", onClose, buttons = {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            KitButton("Annuler", modifier = Modifier.weight(1f), onClick = onClose)
+            KitButton("Enregistrer et charger", primary = true, modifier = Modifier.weight(1f)) {
+                if (source.isBlank() || (xtream && (user.isBlank() || pass.isBlank()))) return@KitButton
                 val src = if (xtream) XtreamApi.normalizeServer(source.trim()) else source.trim()
                 state.addPlaylist(SyncPlaylist(
                     name = name.trim().ifBlank { if (xtream) src.substringAfter("://").substringBefore(':').substringBefore('/') else src.substringAfterLast('/').substringBefore('?').ifBlank { "Ma playlist" } },
                     type = type, source = src, username = if (xtream) user.trim() else "", password = if (xtream) pass else "", epgUrl = epg.trim(),
                 ))
                 onClose()
-            }, enabled = source.isNotBlank() && (!xtream || (user.isNotBlank() && pass.isNotBlank()))) { Text("Enregistrer et charger") }
-        },
-        dismissButton = { TextButton(onClose) { Text("Annuler") } })
+            }
+        }
+    }) {
+        OutlinedTextField(source, { source = it }, label = { Text(if (xtream) "Adresse du serveur" else "Adresse de la playlist (ou chemin d'un fichier)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        if (xtream) {
+            OutlinedTextField(user, { user = it }, label = { Text("Nom d'utilisateur") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(pass, { pass = it }, label = { Text("Mot de passe") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+        } else OutlinedTextField(epg, { epg = it }, label = { Text("Guide TV XMLTV (facultatif)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(name, { name = it }, label = { Text("Nom affiché (facultatif)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    }
 }
 

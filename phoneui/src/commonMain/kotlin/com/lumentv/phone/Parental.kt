@@ -2,11 +2,10 @@ package com.lumentv.phone
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -71,21 +70,17 @@ internal object Parental {
 @Composable
 internal fun PinDialog(title: String, subtitle: String?, error: String?, onDismiss: () -> Unit, onPin: (String) -> Unit) {
     var pin by remember(title) { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Palette.Panel,
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                subtitle?.let { Text(it, color = Palette.TextDim, fontSize = 14.sp) }
-                OutlinedTextField(pin, { v -> pin = v.filter { it.isDigit() }.take(8) }, label = { Text("Code PIN") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
-                error?.let { Text(it, color = Palette.Danger) }
-            }
-        },
-        confirmButton = { TextButton(enabled = pin.length >= 4, onClick = { onPin(pin); pin = "" }) { Text("Valider") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
-    )
+    com.lumentv.ui.kit.KitDialog(title, onDismiss, subtitle, buttons = {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            com.lumentv.ui.kit.KitButton("Annuler", modifier = Modifier.weight(1f), onClick = onDismiss)
+            com.lumentv.ui.kit.KitButton("Valider", primary = true, modifier = Modifier.weight(1f)) { if (pin.length >= 4) { onPin(pin); pin = "" } }
+        }
+    }) {
+        OutlinedTextField(pin, { v -> pin = v.filter { it.isDigit() }.take(8) }, label = { Text("Code PIN") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), modifier = Modifier.fillMaxWidth())
+        error?.let { Text(it, color = Palette.Danger) }
+    }
 }
 
 /** The PIN asked by [Parental.check] and its notices, over every page. */
@@ -103,8 +98,8 @@ internal fun PinHost(core: AppCore) {
         }
     }
     Parental.notice?.let { n ->
-        AlertDialog(onDismissRequest = { Parental.notice = null }, containerColor = Palette.Panel, text = { Text(n) },
-            confirmButton = { TextButton(onClick = { Parental.notice = null }) { Text("OK") } })
+        com.lumentv.ui.kit.KitDialog(n, onDismiss = { Parental.notice = null },
+            buttons = { com.lumentv.ui.kit.KitButton("OK", primary = true, modifier = Modifier.fillMaxWidth()) { Parental.notice = null } })
     }
 }
 

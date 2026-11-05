@@ -19,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,18 +26,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.lumentv.AppGraph
 import com.lumentv.player.PlayerController
-import com.lumentv.ui.components.TvButton
 import com.lumentv.ui.components.ignoreHeldOk
-import com.lumentv.ui.components.panelWidth
 import com.lumentv.ui.theme.Palette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -59,28 +54,24 @@ fun NetworkPanel(graph: AppGraph, c: PlayerController?, onDismiss: () -> Unit) {
     // The stream's figures change all the time: read again every 2 s.
     var tick by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(2_000); tick++ } }
-    Dialog(onDismissRequest = onDismiss) {
-        val focus = remember { FocusRequester() }
-        Column(Modifier.ignoreHeldOk().panelWidth(560.dp).clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(24.dp)) {
-            Text("État du réseau", style = MaterialTheme.typography.titleLarge, color = Palette.Text)
-            Spacer(Modifier.height(12.dp))
-            val r = report
-            if (r == null) Text("Test en cours…", style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim)
-            else {
-                r.checks.forEach { line(it) }
-                if (c != null) { tick.let { streamLines(context, c).forEach { line(it) } } }
-                Spacer(Modifier.height(12.dp))
-                Text(r.diagnosis ?: NetworkCheck.ALL_GOOD, style = MaterialTheme.typography.titleMedium, color = Palette.Text,
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Palette.PanelHigh).padding(14.dp))
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TvButton("Fermer", onDismiss, Modifier.focusRequester(focus), primary = true)
-                TvButton("Relancer le test", { run++ })
-            }
+    val close = remember { FocusRequester() }
+    com.lumentv.ui.kit.KitDialog("État du réseau", onDismiss, rootModifier = Modifier.ignoreHeldOk(), buttons = {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            com.lumentv.ui.kit.KitButton("Fermer", primary = true, modifier = Modifier.weight(1f).focusRequester(close), onClick = onDismiss)
+            com.lumentv.ui.kit.KitButton("Relancer le test", modifier = Modifier.weight(1f)) { run++ }
         }
-        LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    }) {
+        val r = report
+        if (r == null) Text("Test en cours…", style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim)
+        else Column {
+            r.checks.forEach { line(it) }
+            if (c != null) { tick.let { streamLines(context, c).forEach { line(it) } } }
+            Spacer(Modifier.height(12.dp))
+            Text(r.diagnosis ?: NetworkCheck.ALL_GOOD, style = MaterialTheme.typography.titleMedium, color = Palette.Text,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Palette.PanelHigh).padding(14.dp))
+        }
     }
+    LaunchedEffect(Unit) { runCatching { close.requestFocus() } }
 }
 
 @Composable
