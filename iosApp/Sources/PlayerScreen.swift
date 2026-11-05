@@ -1,6 +1,7 @@
 import AVFoundation
 import Combine
 import KSPlayer
+import MediaPlayer
 import LumenKit
 import SwiftUI
 import UIKit
@@ -70,7 +71,11 @@ struct PlayerScreen: View {
     @State private var failed = false
     @State private var fit = Fit.fit
     @State private var brightness = Double(UIScreen.main.brightness)
-    @State private var volume = 1.0
+    /// The iPhone's own volume (the side buttons' one), not the player's.
+    @State private var volume = Double(AVAudioSession.sharedInstance().outputVolume)
+    /// Live paused: since when, and how far behind live the picture is (pauses added up).
+    @State private var pausedAt: Date?
+    @State private var behind: TimeInterval = 0
     @State private var scrubbing: Double?
     @State private var hide: DispatchWorkItem?
     @State private var closed = false
@@ -95,7 +100,8 @@ struct PlayerScreen: View {
         if let referer = request.referer { o.appendHeader(["Referer": referer]) }
         if request.startMs > 0 { o.startPlayTime = TimeInterval(request.startMs) / 1000 }
         o.preferredForwardBufferDuration = request.live ? 3 : 5
-        o.maxBufferDuration = request.live ? 30 : 60
+        // Live: a minute kept, so a pause picks up where it stopped.
+        o.maxBufferDuration = 60
         return o
     }
 
@@ -103,6 +109,7 @@ struct PlayerScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
             video.ignoresSafeArea()
+            SystemVolume.Host().frame(width: 1, height: 1).opacity(0.01).allowsHitTesting(false)
             subtitles
             // Taps on the picture (the video view itself is UIKit and would keep them).
             Color.clear.contentShape(Rectangle()).ignoresSafeArea()
@@ -121,6 +128,8 @@ struct PlayerScreen: View {
             }
         }
         .onReceive(clock) { _ in tick() }
+        // The side buttons move the pill too.
+        .onReceive(AVAudioSession.sharedInstance().publisher(for: \.outputVolume)) { v in volume = Double(v) }
         .statusBarHidden(!controls)
         .persistentSystemOverlays(.hidden)
         .preferredColorScheme(.dark)
@@ -139,6 +148,7 @@ struct PlayerScreen: View {
                 if state == .error {
                     // Its HTTPS address first refused: plain HTTP, as before. Then a live channel tries its lower quality.
                     if plainAgain() { return }
+                    if request.live && behind > 0 { goLive(); return }
                     if request.live && variant < request.variants.count { stepDown() } else { failed = true; controls = true }
                 }
                 if state == .bufferFinished { played = true; bufferingSince = nil; scheduleHide() }
@@ -173,10 +183,10 @@ struct PlayerScreen: View {
                 HStack {
                     VerticalPill(value: $brightness, icon: "sun.max.fill") { UIScreen.main.brightness = CGFloat($0); scheduleHide() }
                     Spacer()
-                    if !request.live { centerButtons }
+                    if request.live { livePause } else { centerButtons }
                     Spacer()
                     VerticalPill(value: $volume, icon: volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill") {
-                        player.playbackVolume = Float($0); player.isMuted = $0 == 0; scheduleHide()
+                        SystemVolume.set(Float($0)); scheduleHide()
                     }
                 }
                 Spacer()
@@ -205,6 +215,45 @@ struct PlayerScreen: View {
         }
     }
 
+    /// Live: pause (the stream keeps coming in for a minute), then play on from there.
+    private var livePause: some View {
+        Button {
+            if let since = pausedAt {
+                pausedAt = nil
+                behind += Date().timeIntervalSince(since)
+                // Past what is kept: straight back to live.
+                if behind > 55 { goLive(); notice = "Reprise au direct"; DispatchQueue.main.asyncAfter(deadline: .now() + 3) { notice = nil } }
+                else { player.playerLayer?.play() }
+                scheduleHide()
+            } else {
+                pausedAt = Date()
+                player.playerLayer?.pause()
+                hide?.cancel()
+            }
+        } label: {
+            Image(systemName: pausedAt != nil ? "play.fill" : "pause.fill").font(.system(size: 34, weight: .bold))
+                .frame(width: 76, height: 76).background(Lumen.accent, in: Circle())
+        }
+        .foregroundColor(.white)
+    }
+
+    /// The live picture again: the stream opened anew.
+    private func goLive() {
+        pausedAt = nil
+        behind = 0
+        stalls = []
+        bufferingSince = nil
+        played = false
+        failed = false
+        // As KSPlayer does for a new address: stop, open it again, play.
+        if let layer = player.playerLayer {
+            layer.stop()
+            layer.player.replace(url: url, options: layer.options)
+            layer.play()
+        }
+        scheduleHide()
+    }
+
     private var centerButtons: some View {
         HStack(spacing: 56) {
             Button { player.skip(interval: -15); scheduleHide() } label: { Image(systemName: "gobackward.15").font(.system(size: 36, weight: .medium)) }
@@ -223,9 +272,18 @@ struct PlayerScreen: View {
     private var bottomBar: some View {
         Group {
             if request.live {
-                HStack {
-                    Text("● EN DIRECT").font(.caption.bold()).foregroundColor(.white)
-                        .padding(.horizontal, 10).padding(.vertical, 5).background(Color.red.opacity(0.85), in: Capsule())
+                HStack(spacing: 12) {
+                    if pausedAt == nil && behind < 1 {
+                        Text("● EN DIRECT").font(.caption.bold()).foregroundColor(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5).background(Color.red.opacity(0.85), in: Capsule())
+                    } else {
+                        Text(pausedAt != nil ? "❚❚ EN PAUSE" : "EN DIFFÉRÉ").font(.caption.bold()).foregroundColor(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5).background(Lumen.glass, in: Capsule())
+                        Button { goLive() } label: {
+                            Label("Revenir au direct", systemImage: "forward.end.fill").font(.subheadline.weight(.semibold)).foregroundColor(.white)
+                                .padding(.horizontal, 14).padding(.vertical, 8).background(Color.red.opacity(0.85), in: Capsule())
+                        }
+                    }
                     Spacer()
                 }
             } else {
@@ -294,7 +352,7 @@ struct PlayerScreen: View {
     /// The controls go away 4 s after the last touch while the film plays.
     private func scheduleHide() {
         hide?.cancel()
-        let work = DispatchWorkItem { if playing && scrubbing == nil { withAnimation(.easeInOut(duration: 0.3)) { controls = false } } }
+        let work = DispatchWorkItem { if playing && scrubbing == nil && pausedAt == nil { withAnimation(.easeInOut(duration: 0.3)) { controls = false } } }
         hide = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
     }
@@ -499,4 +557,29 @@ final class LandscapeHost<Content: View>: UIHostingController<Content> {
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .landscapeRight }
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
+}
+
+/// The iPhone's volume, as the side buttons set it: iOS lets an app change it only through MPVolumeView's slider
+/// (shown off screen; it also keeps iOS's own volume banner away while the player's pill moves).
+enum SystemVolume {
+    private static let view: MPVolumeView = {
+        let v = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return v
+    }()
+
+    static func set(_ value: Float) {
+        guard let slider = view.subviews.compactMap({ $0 as? UISlider }).first else { return }
+        DispatchQueue.main.async { slider.setValue(min(1, max(0, value)), animated: false); slider.sendActions(for: .valueChanged) }
+    }
+
+    /// Puts the view in the player's window (needed for the slider to work).
+    struct Host: UIViewRepresentable {
+        func makeUIView(context _: Context) -> UIView {
+            let box = UIView()
+            view.removeFromSuperview()
+            box.addSubview(view)
+            return box
+        }
+        func updateUIView(_: UIView, context _: Context) {}
+    }
 }
