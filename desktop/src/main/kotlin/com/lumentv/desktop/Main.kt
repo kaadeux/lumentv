@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -91,7 +92,8 @@ fun Shell(state: AppState) {
     val sectionStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     Row(Modifier.fillMaxSize().background(Pal.bg)) {
         Column(Modifier.width(220.dp).fillMaxHeight().background(Pal.side).padding(12.dp)) {
-            Text("Lumen TV", style = MaterialTheme.typography.headlineSmall, color = Pal.text, modifier = Modifier.padding(start = 12.dp, top = 8.dp))
+            // The title as on the TV, the phone and the iPhone: "lumen" bold, "TV" light, the orange dot.
+            androidx.compose.foundation.layout.Box(Modifier.padding(start = 12.dp, top = 8.dp)) { com.lumentv.ui.kit.Wordmark(28.sp) }
             Text(state.active?.name ?: "Aucune playlist", style = MaterialTheme.typography.bodySmall, color = Pal.dim, modifier = Modifier.padding(start = 12.dp, bottom = 16.dp))
             Section.entries.forEach { s ->
                 NavigationDrawerItem(
