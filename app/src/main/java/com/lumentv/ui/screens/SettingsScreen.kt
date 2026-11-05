@@ -1,67 +1,46 @@
-@file:OptIn(ExperimentalTvMaterial3Api::class)
-
 package com.lumentv.ui.screens
 
-import androidx.compose.foundation.layout.Box
-import com.lumentv.data.repo.reEncrypted
-import com.lumentv.data.repo.secretsInClear
-import com.lumentv.ui.components.hint
-import com.lumentv.ui.components.ButtonRow
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.Text
 import coil.imageLoader
 import com.lumentv.BuildConfig
 import com.lumentv.core.userMessage
-import com.lumentv.data.db.PlaylistEntity
-import com.lumentv.data.db.PlaylistType
 import com.lumentv.data.settings.Keys
+import com.lumentv.phone.CacheOps
+import com.lumentv.phone.SettingsButton
+import com.lumentv.phone.SettingsChoice
+import com.lumentv.phone.SettingsExtra
+import com.lumentv.phone.SettingsExtras
+import com.lumentv.phone.SettingsMenu
+import com.lumentv.phone.SettingsNote
+import com.lumentv.phone.SettingsToggle
+import com.lumentv.phone.SharedSettings
 import com.lumentv.ui.MainViewModel
 import com.lumentv.ui.Screen
 import com.lumentv.ui.components.ConfirmDialog
-import com.lumentv.ui.components.FocusSurface
-import com.lumentv.ui.components.MenuOption
-import com.lumentv.ui.components.OptionsDialog
-import com.lumentv.ui.components.PinDialog
-import com.lumentv.ui.components.ScreenTitle
-import com.lumentv.ui.components.SettingRow
-import com.lumentv.ui.components.TvButton
-import com.lumentv.ui.theme.Palette
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
-private val languages = listOf("" to "Automatique", "fr" to "Français", "en" to "Anglais", "es" to "Espagnol", "de" to "Allemand",
-    "it" to "Italien", "pt" to "Portugais", "ar" to "Arabe", "nl" to "Néerlandais")
-
+/**
+ * The settings: the iPhone's page (phoneui, shared with the phone and the TV: profile, lists, parental control,
+ * privacy, playback, guide, storage), with what only Android has as sections of its own (updates, the TV's picture,
+ * the connection test, backup, diagnostics).
+ */
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
     val phoneDevice = com.lumentv.ui.LocalPhone.current
@@ -69,239 +48,89 @@ fun SettingsScreen(vm: MainViewModel) {
     val scope = rememberCoroutineScope()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val playlists by vm.playlists.collectAsStateWithLifecycle()
-    val active by vm.active.collectAsStateWithLifecycle()
     var network by remember { mutableStateOf(false) }
-    if (network) com.lumentv.ui.NetworkPanel(vm.graph, null, onDismiss = { network = false })
-    val busy by vm.busy.collectAsStateWithLifecycle()
     var menu by remember { mutableStateOf<String?>(null) }
-    var playlistMenu by remember { mutableStateOf<PlaylistEntity?>(null) }
-    var deleting by remember { mutableStateOf<PlaylistEntity?>(null) }
-    var autoFor by remember { mutableStateOf<PlaylistEntity?>(null) }
-    val profile by vm.graph.profile.state.collectAsStateWithLifecycle()
-    var profileDialog by remember { mutableStateOf(false) }
-    var profileBusy by remember { mutableStateOf(false) }
-    var profileError by remember { mutableStateOf<String?>(null) }
-    var pinStep by remember { mutableStateOf<String?>(null) }
-    var pinError by remember { mutableStateOf<String?>(null) }
-    var newPin by remember { mutableStateOf<String?>(null) }
     var restorePicker by remember { mutableStateOf(false) }
     val backupFile = remember { File(context.getExternalFilesDir(null), "lumen-sauvegarde.json") }
+    // The background reload follows each list's choice (set in the shared page).
+    LaunchedEffect(playlists?.map { it.id to it.refreshHours }) { vm.syncWorker() }
     val stats by produceState("", playlists) {
         val g = vm.graph
         value = "${g.db.channels().observeTotal().first()} chaînes · ${g.db.vod().observeMovieTotal().first()} films · " +
             "${g.db.vod().observeSeriesTotal().first()} séries · ${g.db.epg().observeTotal().first()} programmes"
     }
 
-    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        item { ScreenTitle("Paramètres") }
-
-        item { Group("Mes listes") }
-        val list = playlists.orEmpty()
-        if (list.isEmpty()) item {
-            Text("Bienvenue ! Ajoutez votre playlist M3U ou votre compte Xtream Codes pour commencer. Lumen TV ne fournit aucune chaîne : " +
-                "utilisez les listes de votre propre abonnement.", style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim, modifier = Modifier.padding(bottom = 8.dp))
-        }
-        items(list, key = { it.id }) { p ->
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                PlaylistCard(p, p.id == active?.id, p.id in busy) { playlistMenu = p }
-                if (p.id == active?.id) com.lumentv.ui.kit.StatTiles(listOf("${p.channelCount}" to "chaînes", "${p.movieCount}" to "films", "${p.seriesCount}" to "séries"))
-                Box(Modifier.padding(start = 6.dp)) { com.lumentv.ui.kit.SecretsLine(p.secretsInClear()) }
-                ButtonRow {
-                    val running = p.id in busy
-                    TvButton(if (running) "Rechargement en cours…" else "Recharger la liste", { if (!running) vm.refresh(p.id) },
-                        icon = Icons.Filled.Refresh, primary = p.id == active?.id)
-                    TvButton("Rechargement auto : " + refreshLabel(p.refreshHours), { autoFor = p })
-                }
-            }
-        }
-        item {
-            ButtonRow(Modifier.padding(vertical = 6.dp)) {
-                TvButton("Ajouter une playlist M3U", { vm.open(Screen.PlaylistEdit(0, PlaylistType.M3U)) }, icon = Icons.Filled.Add, primary = list.isEmpty())
-                TvButton("Ajouter un compte Xtream", { vm.open(Screen.PlaylistEdit(0, PlaylistType.XTREAM)) }, icon = Icons.Filled.Add)
-            }
-        }
-
-        if (vm.graph.profile.enabled) {
-            item { Group("Profil en ligne") }
-            item {
-                ButtonRow {
-                    if (profile.name == null) {
-                        TvButton("Se connecter à un profil", { profileError = null; profileDialog = true }, icon = Icons.Filled.Add)
-                        Text("Retrouvez vos favoris et votre historique sur tous vos appareils.", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
-                    } else {
-                        TvButton(if (profile.syncing) "Synchronisation…" else "Synchroniser maintenant", {
-                            scope.launch { vm.graph.profile.syncNow().onSuccess { vm.show("Profil synchronisé") } }
-                        }, icon = Icons.Filled.Refresh)
-                        TvButton("Se déconnecter", { vm.graph.profile.signOut(); vm.show("Profil déconnecté de cette TV") })
-                        Text("Profil « ${profile.name} »" + (profile.error?.let { " · $it" }
-                            ?: if (profile.lastSync > 0) " · synchronisé à " + SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(profile.lastSync)) else ""),
-                            style = MaterialTheme.typography.bodyMedium, color = if (profile.error != null) Palette.Danger else Palette.TextDim)
+    val extras = SettingsExtras(
+        afterLists = listOfNotNull(
+            if (vm.graph.updater.enabled) SettingsExtra("Mises à jour") {
+                SettingsNote("Version ${BuildConfig.VERSION_NAME} · " + if (BuildConfig.CHANNEL == "dev") "canal de test" else "canal famille")
+                SettingsButton("Rechercher une mise à jour") {
+                    scope.launch {
+                        vm.show("Recherche d'une mise à jour…")
+                        vm.graph.updater.check()
+                            .onSuccess { if (it == null) vm.show("Lumen TV est à jour (${BuildConfig.VERSION_NAME}).") }
+                            .onFailure { vm.show("Impossible de vérifier les mises à jour : ${userMessage(it)}") }
                     }
                 }
-            }
-        }
-
-        if (vm.graph.updater.enabled) {
-            item { Group("Mises à jour") }
-            item {
-                ButtonRow {
-                    TvButton("Rechercher une mise à jour", {
-                        scope.launch {
-                            vm.show("Recherche d'une mise à jour…")
-                            vm.graph.updater.check()
-                                .onSuccess { if (it == null) vm.show("Lumen TV est à jour (${BuildConfig.VERSION_NAME}).") }
-                                .onFailure { vm.show("Impossible de vérifier les mises à jour : ${userMessage(it)}") }
-                        }
-                    }, icon = Icons.Filled.Refresh)
-                    Text("Version ${BuildConfig.VERSION_NAME} · " + if (BuildConfig.CHANNEL == "dev") "canal de test" else "canal famille",
-                        style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+            } else null,
+        ),
+        atEnd = listOf(
+            SettingsExtra(if (phoneDevice) "Sur ce téléphone" else "Sur cette TV") {
+                SettingsToggle("Mémoire tampon stable", "Pour une connexion faible : démarre un peu plus lentement, coupe moins.",
+                    settings.bufferMode == "stable") { on -> scope.launch { vm.graph.settings.set(Keys.buffer, if (on) "stable" else "normal") } }
+                if (!phoneDevice) SettingsToggle("Fréquence de l'écran adaptée", "L'écran suit la vidéo (25 ou 50 images par seconde) : image fluide.",
+                    settings.matchFrameRate) { on -> scope.launch { vm.graph.settings.set(Keys.matchFrameRate, on) } }
+                SettingsNote("Format d'image")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0 to "Adapter", 1 to "Zoom", 2 to "Étirer").forEach { (m, label) ->
+                        SettingsChoice(label, settings.resizeMode == m) { scope.launch { vm.graph.settings.set(Keys.resize, m) } }
+                    }
                 }
-            }
-        }
-
-        item { Group("Confidentialité vis-à-vis du FAI") }
-        item {
-            val privacy = remember { com.lumentv.core.PrivateNet.summary() }
-            com.lumentv.ui.kit.SectionCard { com.lumentv.ui.kit.PrivacyLines(privacy.title, privacy.lines, privacy.partial, com.lumentv.core.Privacy.NOTE) }
-        }
-        item { Group("Lecture") }
-        item { SettingRow("Mémoire tampon", if (settings.bufferMode == "stable") "Stable (connexion faible)" else "Normale (démarrage rapide)", {
-            scope.launch { vm.graph.settings.set(Keys.buffer, if (settings.bufferMode == "stable") "normal" else "stable") } }) }
-        item { SettingRow("Qualité automatique des chaînes", if (settings.autoQuality) "Activée : baisse (FHD → HD → SD) si l'image se bloque, remonte ensuite" else "Désactivée", {
-            scope.launch { vm.graph.settings.set(Keys.autoQuality, !settings.autoQuality) } }) }
-        item { SettingRow("Tester ma connexion", "Wi-Fi, internet et serveur du fournisseur", { network = true }) }
-        if (!phoneDevice) item { SettingRow("Fréquence de l'écran", if (settings.matchFrameRate) "Adaptée à la vidéo (image fluide)" else "Fixe", {
-            scope.launch { vm.graph.settings.set(Keys.matchFrameRate, !settings.matchFrameRate) } }) }
-        item { SettingRow("Format d'image", resizeLabel(settings.resizeMode), { menu = "resize" }) }
-        item { SettingRow("Langue audio préférée", languages.firstOrNull { it.first == settings.audioLang }?.second ?: settings.audioLang, { menu = "audio" }) }
-        item { SettingRow("Sous-titres", if (settings.subtitlesOn) "Activés" else "Désactivés", {
-            scope.launch { vm.graph.settings.set(Keys.subsOn, !settings.subtitlesOn) } }) }
-        item { SettingRow("Langue des sous-titres", languages.firstOrNull { it.first == settings.subtitleLang }?.second ?: settings.subtitleLang, { menu = "subs" }) }
-        item { SettingRow("Épisode suivant automatique", if (settings.autoNext) "Oui" else "Non", {
-            scope.launch { vm.graph.settings.set(Keys.autoNext, !settings.autoNext) } }) }
-
-        item { Group("Démarrage et affichage") }
-        item { SettingRow("Au lancement", if (settings.startup == "last") "Reprendre la dernière chaîne" else "Afficher l'accueil", {
-            scope.launch { vm.graph.settings.set(Keys.startup, if (settings.startup == "last") "home" else "last") } }) }
-        item { SettingRow("Éléments masqués", if (settings.showHidden) "Affichés" else "Cachés", {
-            scope.launch { vm.graph.settings.set(Keys.showHidden, !settings.showHidden) } }) }
-
-        item { Group("Guide TV") }
-        item { SettingRow("Jours de programmes à conserver", "${settings.epgDays} jours", { menu = "epgdays" }) }
-        item { SettingRow("Effacer le guide TV enregistré", null, { menu = "clearepg" }) }
-
-        item { Group("Contrôle parental") }
-        item { SettingRow(if (settings.pinHash.isEmpty()) "Définir un code PIN" else "Changer le code PIN", null, { pinStep = if (settings.pinHash.isEmpty()) "new" else "current"; pinError = null }) }
-        if (settings.pinHash.isNotEmpty()) item { SettingRow("Supprimer le code PIN", null, { pinStep = "remove"; pinError = null }) }
-        item { Text(hint("Maintenez OK sur un groupe de chaînes (écran Direct) pour le verrouiller.",
-            "Dans Direct, touchez « Changer » puis « Masquer ou verrouiller » pour verrouiller un groupe."), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(start = 4.dp)) }
-
-        item { Group("Réseau") }
-        item { SettingRow("User-Agent par défaut", settings.defaultUserAgent.ifBlank { "Automatique (Lumen TV)" }, { menu = "ua" }) }
-
-        item { Group("Sauvegarde") }
-        item { SettingRow("Exporter (sans identifiants)", null, { scope.launch { exportBackup(vm, backupFile, false) } }) }
-        item { SettingRow("Exporter avec identifiants et adresses", null, { scope.launch { exportBackup(vm, backupFile, true) } }) }
-        item { SettingRow("Restaurer une sauvegarde", null, { restorePicker = true }) }
-        item { Text("Fichier : ${backupFile.absolutePath}", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(start = 4.dp)) }
-
-        item { Group("Stockage") }
-        item {
-            var cleared by remember { mutableStateOf(0) }
-            val bytes by produceState<Long?>(null, cleared) {
-                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { context.imageLoader.diskCache?.size }
-            }
-            SettingRow("Vider le cache des images", bytes?.let { "${it / 1_000_000} Mo" }, {
-                context.imageLoader.memoryCache?.clear(); context.imageLoader.diskCache?.clear(); cleared++; vm.show("Cache des images vidé") })
-        }
-
-        item { Group("À propos et diagnostic") }
-        item {
-            Column(Modifier.padding(start = 4.dp, bottom = 30.dp)) {
-                Text("Lumen TV ${BuildConfig.VERSION_NAME} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}",
-                    style = MaterialTheme.typography.bodyMedium, color = Palette.Text)
-                Text(stats, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
-                list.forEach { p ->
-                    p.lastError?.let { Text("${p.name} : $it", style = MaterialTheme.typography.bodySmall, color = Palette.Danger) }
+                SettingsNote("Au lancement")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SettingsChoice("L'accueil", settings.startup != "last") { scope.launch { vm.graph.settings.set(Keys.startup, "home") } }
+                    SettingsChoice("La dernière chaîne", settings.startup == "last") { scope.launch { vm.graph.settings.set(Keys.startup, "last") } }
                 }
-                Text("Lecteur gratuit, sans publicité, sans compte et sans télémétrie. Aucune chaîne n'est fournie. " +
-                    "Les identifiants sont chiffrés sur l'appareil et masqués dans les journaux.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-            }
-        }
-    }
+                SettingsButton("User-Agent : " + (userAgents.firstOrNull { it.first == settings.defaultUserAgent }?.second ?: "personnalisé")) { menu = "ua" }
+                SettingsButton("Tester ma connexion") { network = true }
+                SettingsButton("Effacer le guide TV enregistré") { menu = "clearepg" }
+            },
+            SettingsExtra("Sauvegarde") {
+                SettingsButton("Exporter (sans identifiants)") { scope.launch { exportBackup(vm, backupFile, false) } }
+                SettingsButton("Exporter avec identifiants et adresses") { scope.launch { exportBackup(vm, backupFile, true) } }
+                SettingsButton("Restaurer une sauvegarde") { restorePicker = true }
+                SettingsNote("Fichier : ${backupFile.absolutePath}")
+            },
+            SettingsExtra("À propos et diagnostic") {
+                SettingsNote("Lumen TV ${BuildConfig.VERSION_NAME} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}")
+                SettingsNote(stats)
+                playlists.orEmpty().forEach { p -> p.lastError?.let { SettingsNote("${p.name} : $it") } }
+                SettingsNote("Lecteur gratuit, sans publicité, sans compte et sans télémétrie. Aucune chaîne n'est fournie. " +
+                    "Les identifiants sont chiffrés sur l'appareil et masqués dans les journaux.")
+            },
+        ),
+        footer = "Lumen TV ${BuildConfig.VERSION_NAME}",
+        privacy = { com.lumentv.core.PrivateNet.summary() },
+        privacyNote = null,
+        parentalHint = if (phoneDevice) "Verrouille un groupe de chaînes : appui long sur le groupe dans l'onglet Direct. Masque une chaîne ou un groupe de la même façon."
+            else "Verrouille un groupe de chaînes : maintiens OK sur le groupe dans l'écran Direct. Masque une chaîne ou un groupe de la même façon.",
+        cache = CacheOps(
+            sizeBytes = { withContext(Dispatchers.IO) { context.imageLoader.diskCache?.size ?: 0L } },
+            clear = { context.imageLoader.memoryCache?.clear(); context.imageLoader.diskCache?.clear() },
+        ),
+    )
+    SharedSettings(vm.graph.core, onEditList = { id, type -> vm.open(Screen.PlaylistEdit(id, type)) }, extras,
+        maxWidth = if (phoneDevice) androidx.compose.ui.unit.Dp.Unspecified else 820.dp)
 
-    playlistMenu?.let { p ->
-        OptionsDialog(p.name, buildList {
-            if (p.id != active?.id) add(MenuOption("Utiliser cette playlist") { vm.setActive(p.id) })
-            add(MenuOption("Actualiser la liste et le guide") { vm.refresh(p.id) })
-            add(MenuOption("Actualiser seulement le guide TV") { vm.refreshEpg(p.id) })
-            add(MenuOption("Modifier") { vm.open(Screen.PlaylistEdit(p.id, p.type)) })
-            if (p.secretsInClear()) add(MenuOption("Chiffrer les identifiants") {
-                scope.launch {
-                    val again = p.reEncrypted()
-                    vm.graph.playlists.save(again)
-                    vm.show(if (again.secretsInClear()) "Le coffre de l'appareil refuse encore : identifiants non chiffrés" else "Identifiants chiffrés")
-                }
-            })
-            add(MenuOption("Supprimer") { deleting = p })
-        }, onDismiss = { playlistMenu = null }, subtitle = p.accountInfo)
-    }
-    if (profileDialog) com.lumentv.ui.components.ProfileDialog(profileBusy, profileError, onSubmit = { name, pass ->
-        profileBusy = true; profileError = null
-        scope.launch {
-            vm.graph.profile.signIn(name, pass)
-                .onSuccess { profileDialog = false; vm.show("Profil « ${vm.graph.profile.state.value.name} » connecté et synchronisé") }
-                .onFailure { profileError = if (it is IllegalArgumentException || it is com.lumentv.sync.WrongPassphraseException) it.message else userMessage(it) }
-            profileBusy = false
-        }
-    }, onDismiss = { profileDialog = false })
-    autoFor?.let { p ->
-        OptionsDialog("Rechargement automatique", REFRESH_CHOICES.map { h ->
-            MenuOption(refreshLabel(h), h == p.refreshHours) {
-                scope.launch { vm.graph.playlists.save(p.copy(refreshHours = h)); vm.syncWorker() }
-            }
-        }, onDismiss = { autoFor = null }, subtitle = "La liste et le guide TV sont retéléchargés en arrière-plan, sans interrompre la lecture.")
-    }
-    deleting?.let { p ->
-        ConfirmDialog("Supprimer « ${p.name} » ?", "Ses chaînes, favoris, guide et historique seront supprimés de l'appareil.", "Supprimer",
-            onConfirm = { scope.launch { vm.graph.playlists.delete(p.id); vm.graph.resolver.forget(); vm.syncWorker(); vm.show("Playlist supprimée") } },
-            onDismiss = { deleting = null })
-    }
-
+    if (network) com.lumentv.ui.NetworkPanel(vm.graph, null, onDismiss = { network = false })
     when (menu) {
-        "resize" -> OptionsDialog("Format d'image", (0..2).map { m -> MenuOption(resizeLabel(m), m == settings.resizeMode) {
-            scope.launch { vm.graph.settings.set(Keys.resize, m) } } }, onDismiss = { menu = null })
-        "audio" -> OptionsDialog("Langue audio préférée", languages.map { (c, l) -> MenuOption(l, c == settings.audioLang) {
-            scope.launch { vm.graph.settings.set(Keys.audioLang, c) } } }, onDismiss = { menu = null })
-        "subs" -> OptionsDialog("Langue des sous-titres", languages.map { (c, l) -> MenuOption(l, c == settings.subtitleLang) {
-            scope.launch { vm.graph.settings.set(Keys.subLang, c) } } }, onDismiss = { menu = null })
-        "epgdays" -> OptionsDialog("Jours de programmes", listOf(1, 2, 3, 5, 7).map { d -> MenuOption("$d jours", d == settings.epgDays) {
-            scope.launch { vm.graph.settings.set(Keys.epgDays, d) } } }, onDismiss = { menu = null })
-        "ua" -> OptionsDialog("User-Agent par défaut", listOf(
-            "" to "Automatique (Lumen TV)", "VLC/3.0.20 LibVLC/3.0.20" to "VLC", "IPTVSmarters/1.0" to "IPTV Smarters",
-            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" to "Navigateur Chrome",
-        ).map { (v, l) -> MenuOption(l, v == settings.defaultUserAgent) { scope.launch { vm.graph.settings.set(Keys.userAgent, v) } } },
-            onDismiss = { menu = null }, subtitle = "Certains fournisseurs n'acceptent que certains lecteurs.")
+        "ua" -> SettingsMenu("User-Agent par défaut", "Certains fournisseurs n'acceptent que certains lecteurs.",
+            userAgents.map { (v, l) -> l to (v == settings.defaultUserAgent) }, onPick = { i ->
+                scope.launch { vm.graph.settings.set(Keys.userAgent, userAgents[i].first) }
+            }) { menu = null }
         "clearepg" -> ConfirmDialog("Effacer le guide TV ?", "Il sera de nouveau téléchargé à la prochaine actualisation.", "Effacer",
             onConfirm = { scope.launch { vm.graph.epg.clearAll(); vm.show("Guide TV effacé") } }, onDismiss = { menu = null })
     }
-
-    pinStep?.let { step ->
-        PinDialog(when (step) { "current" -> "Code PIN actuel"; "new" -> "Nouveau code PIN (4 chiffres)"; "confirm" -> "Confirmez le nouveau code"; else -> "Code PIN actuel" },
-            error = pinError, onDismiss = { pinStep = null; newPin = null }, onPin = { pin ->
-                scope.launch {
-                    when (step) {
-                        "current" -> if (vm.graph.settings.checkPin(pin)) { pinStep = "new"; pinError = null } else pinError = "Code incorrect"
-                        "new" -> { newPin = pin; pinStep = "confirm"; pinError = null }
-                        "confirm" -> if (pin == newPin) { vm.graph.settings.setPin(pin); newPin = null; pinStep = null; vm.show("Code PIN enregistré") }
-                            else { pinError = "Les codes ne correspondent pas, recommencez"; newPin = null; pinStep = "new" }
-                        "remove" -> if (vm.graph.settings.checkPin(pin)) { vm.graph.settings.setPin(""); pinStep = null; vm.show("Code PIN supprimé") }
-                            else pinError = "Code incorrect"
-                    }
-                }
-            })
-    }
-
     if (restorePicker) {
         FileBrowserDialog("Choisir une sauvegarde", setOf("json"), onPick = { f ->
             restorePicker = false
@@ -314,33 +143,15 @@ fun SettingsScreen(vm: MainViewModel) {
     }
 }
 
+private val userAgents = listOf(
+    "" to "Automatique (Lumen TV)", "VLC/3.0.20 LibVLC/3.0.20" to "VLC", "IPTVSmarters/1.0" to "IPTV Smarters",
+    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" to "Navigateur Chrome",
+)
+
 private suspend fun exportBackup(vm: MainViewModel, file: File, secrets: Boolean) {
     runCatching { vm.graph.backup.export(file, secrets) }
         .onSuccess { vm.show("Sauvegarde de $it playlist(s) écrite dans ${file.name}") }
         .onFailure { vm.show("Échec de la sauvegarde : ${userMessage(it)}") }
-}
-
-@Composable
-private fun Group(title: String) = com.lumentv.ui.kit.SectionTitle(title, Modifier.padding(top = 18.dp))
-
-@Composable
-private fun PlaylistCard(p: PlaylistEntity, active: Boolean, busy: Boolean, onClick: () -> Unit) {
-    FocusSurface(onClick, Modifier.fillMaxWidth(), selected = active, focusedScale = 1.01f) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(p.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val counts = listOfNotNull("${p.channelCount} chaînes", p.movieCount.takeIf { it > 0 }?.let { "$it films" }, p.seriesCount.takeIf { it > 0 }?.let { "$it série" + if (it > 1) "s" else "" })
-                // The active one's counts are in the tiles below it.
-                Text(when (p.type) { PlaylistType.XTREAM -> "Compte Xtream"; else -> "Playlist M3U" } + (if (active) "" else " · " + counts.joinToString(" · ")) +
-                    (if (p.lastRefresh > 0) " · actualisée le " + SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(p.lastRefresh)) else ""),
-                    style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                p.accountInfo?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1) }
-                p.lastError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Danger, maxLines = 2) }
-            }
-            if (busy) Text("Actualisation…", style = MaterialTheme.typography.bodySmall)
-            else if (active) com.lumentv.ui.kit.Badge("Active")
-        }
-    }
 }
 
 fun resizeLabel(m: Int) = when (m) { 1 -> "Zoom (remplir l'écran)"; 2 -> "Étirer"; else -> "Adapter (bandes noires)" }

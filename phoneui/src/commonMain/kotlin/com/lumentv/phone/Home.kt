@@ -250,7 +250,7 @@ private fun day(t: Long): String = Instant.fromEpochMilliseconds(t).toLocalDateT
 
 /** The online profile (favourites, history, resume, ratings shared with the TV, the phone and the PC) and the list. */
 @Composable
-internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Unit) {
+internal fun SettingsPage(core: AppCore, p: PlaylistEntity?, open: (Route) -> Unit, extras: SettingsExtras = SettingsExtras(), modifier: Modifier = Modifier) {
     val settings by core.settings.flow.collectAsState(null)
     val state by core.profile.state.collectAsState()
     val busy by core.playlists.busy.collectAsState()
@@ -259,7 +259,7 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
     var error by remember { mutableStateOf<String?>(null) }
     var signing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LazyColumn(state = rememberList("settings"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+    LazyColumn(modifier, state = rememberList("settings"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         item {
             Section("Profil en ligne") {
                 when {
@@ -295,7 +295,7 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
                 }
             }
         }
-        item {
+        if (p != null) item {
             Section("Liste active") {
                 Text(p.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                 com.lumentv.ui.kit.StatTiles(listOf("${p.channelCount}" to "chaînes", "${p.movieCount}" to "films", "${p.seriesCount}" to "séries"))
@@ -313,13 +313,15 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
             }
         }
         item { PlaylistsSection(core, p, open) }
-        item { ParentalSection(core) }
+        // The device's own sections (Android: updates, playback on the TV…).
+        extras.afterLists.forEach { e -> item { Section(e.title) { e.content() } } }
+        item { ParentalSection(core, extras.parentalHint) }
         item {
             // What the internet provider can still see (as on the TV): encrypted names, HTTPS where the server allows it.
-            val privacy = remember { com.lumentv.core.HttpsUpgrade.summary() }
+            val privacy = remember { extras.privacy() }
             Section("Confidentialité vis-à-vis du FAI") {
                 com.lumentv.ui.kit.PrivacyLines(privacy.title, privacy.lines, privacy.partial,
-                    "Le moteur vidéo FFmpeg (MKV, direct en TS) peut encore demander le nom du serveur au DNS de la box.")
+                    extras.privacyNote ?: com.lumentv.core.Privacy.NOTE)
             }
         }
         item {
@@ -363,34 +365,29 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
                         }
                     }
                 }
-                PhoneButton("Recharger le guide", modifier = Modifier.fillMaxWidth()) { core.scope.launch { core.epg.refresh(p.id) } }
+                if (p != null) PhoneButton("Recharger le guide", modifier = Modifier.fillMaxWidth()) { core.scope.launch { core.epg.refresh(p.id) } }
             }
         }
         item {
             val context = coil3.compose.LocalPlatformContext.current
             var bytes by remember { mutableStateOf<Long?>(null) }
             var refresh by remember { mutableStateOf(0) }
-            LaunchedEffect(refresh) { bytes = withContext(IoDispatcher) { cacheBytes(context) } }
+            LaunchedEffect(refresh) { bytes = withContext(IoDispatcher) { extras.cache?.sizeBytes?.invoke() ?: cacheBytes(context) } }
             Section("Stockage") {
                 Text("Cache des images et de TMDB : " + (bytes?.let { "${it / 1_000_000} Mo" } ?: "…"), color = Palette.TextDim, fontSize = 14.sp)
                 Text("Les téléchargements, la liste et le guide ne sont pas touchés.", color = Palette.TextDim, fontSize = 12.sp)
                 PhoneButton("Vider le cache", modifier = Modifier.fillMaxWidth()) {
-                    core.scope.launch { withContext(IoDispatcher) { clearCaches(context) }; refresh++ }
+                    core.scope.launch { withContext(IoDispatcher) { extras.cache?.clear?.invoke() ?: clearCaches(context) }; refresh++ }
                 }
             }
         }
-        item { Text("Lumen TV pour iPhone", color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+        extras.atEnd.forEach { e -> item { Section(e.title) { e.content() } } }
+        item { Text(extras.footer, color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
     }
 }
 
 @Composable
-internal fun Toggle(title: String, subtitle: String, on: Boolean, onChange: (Boolean) -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) {
-    Column(Modifier.weight(1f)) {
-        Text(title, fontWeight = FontWeight.SemiBold)
-        Text(subtitle, color = Palette.TextDim, fontSize = 13.sp)
-    }
-    androidx.compose.material3.Switch(checked = on, onCheckedChange = onChange)
-}
+internal fun Toggle(title: String, subtitle: String, on: Boolean, onChange: (Boolean) -> Unit) = com.lumentv.ui.kit.KitToggle(title, subtitle, on, onChange)
 
 @Composable
 internal fun Section(title: String, content: @Composable () -> Unit) = com.lumentv.ui.kit.SettingsSection(title, content = content)

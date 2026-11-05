@@ -91,8 +91,9 @@ fun PrivacyLines(title: String, lines: List<String>, partial: Boolean, note: Str
 
 /** A list in Mes listes: its name, what it is, the secrets line, and "Active" or ⋮ on the right. */
 @Composable
-fun ListTile(name: String, kind: String, active: Boolean, modifier: Modifier = Modifier, extra: @Composable () -> Unit = {}) = Row(
-    modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(LocalKitColors.current.panelHigh).padding(12.dp),
+fun ListTile(name: String, kind: String, active: Boolean, onClick: (() -> Unit)? = null, extra: @Composable () -> Unit = {}) = Row(
+    Modifier.fillMaxWidth().then(if (onClick != null) Modifier.pressable(RoundedCornerShape(12.dp), onClick) else Modifier.clip(RoundedCornerShape(12.dp)))
+        .background(LocalKitColors.current.panelHigh).padding(12.dp),
     verticalAlignment = Alignment.CenterVertically,
 ) {
     val c = LocalKitColors.current

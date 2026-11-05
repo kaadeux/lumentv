@@ -1,23 +1,22 @@
 package com.lumentv.desktop
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,15 +27,26 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.lumentv.core.userMessage
 import com.lumentv.data.xtream.XtreamApi
 import com.lumentv.sync.ProfileKeys
 import com.lumentv.sync.SyncPlaylist
 import com.lumentv.sync.WrongPassphraseException
+import com.lumentv.ui.kit.KitButton
+import com.lumentv.ui.kit.KitChip
+import com.lumentv.ui.kit.KitColors
+import com.lumentv.ui.kit.KitToggle
+import com.lumentv.ui.kit.ListTile
+import com.lumentv.ui.kit.LocalKitColors
+import com.lumentv.ui.kit.PrivacyLines
+import com.lumentv.ui.kit.SecretsLine
+import com.lumentv.ui.kit.SettingsSection
+import com.lumentv.ui.kit.StatTiles
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -44,132 +54,155 @@ import java.util.Locale
 
 private val languages = listOf("" to "Automatique", "fr" to "Français", "en" to "Anglais", "es" to "Espagnol", "de" to "Allemand", "it" to "Italien")
 
+/** The PC's colours for the shared settings pieces (the same page as on the iPhone, the TV and the phone). */
+private val kitColors = KitColors(
+    panel = Pal.panel, panelHigh = Pal.panelHigh, text = Pal.text, dim = Pal.dim,
+    accent = Pal.accent, accentSoft = Pal.accent.copy(alpha = 0.2f), danger = Pal.danger,
+)
+
+private fun hm(t: Long) = SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(t))
+private fun day(t: Long) = SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(t))
+
+/** The settings, laid out as on the iPhone, the TV and the phone (shared pieces of :uikit). */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(state: AppState) {
     val scope = rememberCoroutineScope()
     var login by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf<String?>(null) }
-    androidx.compose.runtime.CompositionLocalProvider(com.lumentv.ui.kit.LocalKitColors provides kitColors) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(22.dp)) {
+    var menu by remember { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.CompositionLocalProvider(LocalKitColors provides kitColors) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    LazyColumn(Modifier.widthIn(max = 760.dp).fillMaxWidth(), contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         item { Text("Paramètres", style = MaterialTheme.typography.headlineSmall, color = Pal.text) }
 
         if (state.syncEnabled) item {
-            Card("Profil en ligne") {
+            SettingsSection("Profil en ligne") {
                 val name = state.profileName
                 if (name == null) {
-                    Text("Connectez le même profil que sur la TV : playlists, favoris, historique et réglages se retrouvent ici, chiffrés de bout en bout.", color = Pal.dim)
-                    Button({ login = true }) { Text("Se connecter à un profil") }
+                    Text("Le même profil que sur la TV : playlists, favoris, historique et réglages se retrouvent ici, chiffrés de bout en bout.",
+                        color = Pal.dim, fontSize = 14.sp)
+                    KitButton("Se connecter", primary = true, modifier = Modifier.fillMaxWidth()) { login = true }
                 } else {
-                    Text("Profil « $name »" + (state.syncMessage?.let { " · $it" } ?: if (state.lastSync > 0) " · synchronisé à " + SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(state.lastSync)) else ""),
-                        color = if (state.syncMessage != null) Pal.danger else Pal.text)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button({ scope.launch { state.syncNow().onSuccess { state.show("Profil synchronisé") } } }, enabled = !state.syncing) {
-                            Text(if (state.syncing) "Synchronisation…" else "Synchroniser maintenant")
+                    Text(name, color = Pal.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    Text(state.syncMessage ?: if (state.syncing) "Synchronisation…" else if (state.lastSync > 0) "Synchronisé à " + hm(state.lastSync) else "Pas encore synchronisé",
+                        color = if (state.syncMessage != null) Pal.danger else Pal.dim)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        KitButton("Synchroniser", primary = true, modifier = Modifier.weight(1f)) {
+                            if (!state.syncing) scope.launch { state.syncNow().onSuccess { state.show("Profil synchronisé") } }
                         }
-                        OutlinedButton({ state.signOut() }) { Text("Se déconnecter") }
+                        KitButton("Se déconnecter", modifier = Modifier.weight(1f)) { state.signOut() }
                     }
                 }
             }
         }
 
+        val active = state.active
+        val catalog = state.catalog
+        if (active != null) item {
+            SettingsSection("Liste active") {
+                Text(active.name, color = Pal.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                if (catalog != null) {
+                    StatTiles(listOf("${catalog.channels.size}" to "chaînes", "${catalog.movies.size}" to "films", "${catalog.series.size}" to "séries"))
+                    Text("Chargée le " + day(catalog.loadedAt), color = Pal.dim, fontSize = 14.sp)
+                }
+                state.loadError?.let { Text(it, color = Pal.danger, fontSize = 14.sp) }
+                KitButton(if (state.loading) "Chargement…" else "Recharger la liste", modifier = Modifier.fillMaxWidth()) { if (!state.loading) state.reload() }
+            }
+        }
+
         item {
-            Card("Mes listes") {
-                if (state.playlists.isEmpty()) Text("Aucune playlist sur ce PC.", color = Pal.dim)
+            SettingsSection("Mes listes") {
+                if (state.playlists.isEmpty()) Text("Aucune liste sur ce PC : ajoute ta playlist M3U ou ton compte Xtream, ou connecte ton profil.", color = Pal.dim, fontSize = 14.sp)
                 state.playlists.forEach { (key, p) ->
-                    val isActive = key == state.activeKey || (state.activeKey == null && p == state.active)
-                    val catalog = state.catalog?.takeIf { p == state.active }
-                    com.lumentv.ui.kit.ListTile(p.name, (if (p.type == "xtream") "Compte Xtream" else "Playlist M3U") +
-                        (catalog?.let { " · chargée le " + SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(it.loadedAt)) } ?: ""), isActive) {
+                    val isActive = key == state.activeKeyOrFirst
+                    ListTile(p.name, if (p.type == "xtream") "Compte Xtream" else "Playlist M3U", isActive, onClick = { menu = key }) {
                         // On the PC the login is kept by Windows (DPAPI), always encrypted.
-                        com.lumentv.ui.kit.SecretsLine(false, " par Windows")
-                        if (p == state.active) state.loadError?.let { Text(it, color = Pal.danger, style = MaterialTheme.typography.bodySmall) }
-                    }
-                    catalog?.let { c -> com.lumentv.ui.kit.StatTiles(listOf("${c.channels.size}" to "chaînes", "${c.movies.size}" to "films", "${c.series.size}" to "séries")) }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (p != state.active) OutlinedButton({ state.open(key) }) { Text("Utiliser") }
-                        OutlinedButton({ state.open(key, force = true) }, enabled = !state.loading) { Text(if (state.loading && p == state.active) "Chargement…" else "Recharger") }
-                        TextButton({ state.removePlaylist(key) }) { Text("Supprimer", color = Pal.danger) }
+                        SecretsLine(false, " par Windows")
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button({ adding = "xtream" }) { Text("+ Compte Xtream") }
-                    OutlinedButton({ adding = "m3u" }) { Text("+ Playlist M3U") }
+                    KitChip("+ Playlist M3U") { adding = "m3u" }
+                    KitChip("+ Compte Xtream") { adding = "xtream" }
                 }
             }
         }
 
         item {
-            Card("Lecture") {
-                Choice("Langue audio préférée", state.setting("audio_lang"), languages) { state.setSetting("audio_lang", it) }
-                Choice("Langue des sous-titres", state.setting("sub_lang"), languages) { state.setSetting("sub_lang", it) }
-                Toggle("Sous-titres activés", state.setting("subs_on") == "true") { state.setSetting("subs_on", it.toString()) }
-                Toggle("Épisode suivant automatique", state.setting("auto_next", "true") != "false") { state.setSetting("auto_next", it.toString()) }
-                Text("Ces réglages sont partagés avec la TV par le profil.", color = Pal.dim, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-
-        item {
-            Card("Affichage et son") {
-                var api by remember { mutableStateOf(Store.renderApi) }
-                Choice("Moteur d'affichage", api, listOf("OPENGL" to "OpenGL (recommandé)", "DIRECT3D" to "DirectX", "SOFTWARE" to "Logiciel (le plus sûr, plus lent)")) {
-                    Store.renderApi = it; api = it
-                }
-                Text("À changer si vous voyez des traits noirs ou des clignotements. Pris en compte au prochain lancement, sur ce PC seulement.",
-                    color = Pal.dim, style = MaterialTheme.typography.bodySmall)
-                var aout by remember { mutableStateOf(Store.audioOut) }
-                Choice("Sortie audio", aout, listOf("directsound" to "DirectSound (recommandé)", "mmdevice" to "WASAPI", "waveout" to "WaveOut (ancien)")) {
-                    Store.audioOut = it; aout = it
-                }
-                Text("À changer si le son grésille ou se hache. Pris en compte au prochain lancement, sur ce PC seulement.",
-                    color = Pal.dim, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-
-        item {
-            Card("Confidentialité vis-à-vis du FAI") {
+            SettingsSection("Confidentialité vis-à-vis du FAI") {
                 // Read again every few seconds: servers are moved to HTTPS as the app reaches them.
                 val summary by androidx.compose.runtime.produceState(com.lumentv.core.PrivateNet.summary()) {
                     while (true) { kotlinx.coroutines.delay(5_000); value = com.lumentv.core.PrivateNet.summary() }
                 }
-                com.lumentv.ui.kit.PrivacyLines(summary.title, summary.lines, summary.partial, com.lumentv.core.Privacy.NOTE)
+                PrivacyLines(summary.title, summary.lines, summary.partial, com.lumentv.core.Privacy.NOTE)
             }
         }
 
         item {
-            Card("À propos") {
+            SettingsSection("Lecture") {
+                KitToggle("Épisode suivant automatique", "À la fin d'un épisode, le suivant se lance.", state.setting("auto_next", "true") != "false") {
+                    state.setSetting("auto_next", it.toString())
+                }
+                KitToggle("Sous-titres activés", "Sinon, seulement les sous-titres forcés.", state.setting("subs_on") == "true") { state.setSetting("subs_on", it.toString()) }
+                Text("Langue audio", color = Pal.dim, fontSize = 14.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    languages.forEach { (code, label) -> KitChip(label, state.setting("audio_lang") == code) { state.setSetting("audio_lang", code) } }
+                }
+                Text("Langue des sous-titres", color = Pal.dim, fontSize = 14.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    languages.forEach { (code, label) -> KitChip(label, state.setting("sub_lang") == code) { state.setSetting("sub_lang", code) } }
+                }
+                Text("Partagés avec la TV par le profil.", color = Pal.dim, fontSize = 13.sp)
+            }
+        }
+
+        item {
+            SettingsSection("Sur ce PC") {
+                var api by remember { mutableStateOf(Store.renderApi) }
+                Text("Moteur d'affichage", color = Pal.dim, fontSize = 14.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("OPENGL" to "OpenGL (recommandé)", "DIRECT3D" to "DirectX", "SOFTWARE" to "Logiciel").forEach { (k, l) ->
+                        KitChip(l, api == k) { Store.renderApi = k; api = k }
+                    }
+                }
+                Text("À changer si l'image a des traits noirs ou clignote. Au prochain lancement.", color = Pal.dim, fontSize = 13.sp)
+                var aout by remember { mutableStateOf(Store.audioOut) }
+                Text("Sortie audio", color = Pal.dim, fontSize = 14.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("directsound" to "DirectSound (recommandé)", "mmdevice" to "WASAPI", "waveout" to "WaveOut").forEach { (k, l) ->
+                        KitChip(l, aout == k) { Store.audioOut = k; aout = k }
+                    }
+                }
+                Text("À changer si le son grésille ou se hache. Au prochain lancement.", color = Pal.dim, fontSize = 13.sp)
+            }
+        }
+
+        item {
+            SettingsSection("À propos") {
                 Text("Lumen TV ${BuildInfo.VERSION} pour Windows · lecture par le moteur VLC intégré.", color = Pal.text)
-                Text("Raccourcis du lecteur : Espace pause · ←/→ 10 s · ↑/↓ volume · F plein écran · N épisode suivant · Échap fermer.", color = Pal.dim)
-                Text("Gratuit, sans publicité ni télémétrie. Aucune chaîne n'est fournie. Identifiants chiffrés par Windows sur ce PC.", color = Pal.dim)
+                Text("Raccourcis du lecteur : Espace pause · ←/→ 10 s · ↑/↓ volume · F plein écran · N épisode suivant · Échap fermer.", color = Pal.dim, fontSize = 14.sp)
+                Text("Gratuit, sans publicité ni télémétrie. Aucune chaîne n'est fournie.", color = Pal.dim, fontSize = 14.sp)
             }
         }
     }
     }
+    }
+    menu?.let { key ->
+        val p = state.playlists[key]
+        if (p == null) { menu = null; return@let }
+        AlertDialog(onDismissRequest = { menu = null }, containerColor = Pal.panel,
+            title = { Text(p.name) },
+            text = {
+                androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (key != state.activeKeyOrFirst) KitButton("Utiliser cette liste", modifier = Modifier.fillMaxWidth()) { state.open(key); menu = null }
+                    KitButton("Recharger", modifier = Modifier.fillMaxWidth()) { state.open(key, force = true); menu = null }
+                    KitButton("Supprimer", modifier = Modifier.fillMaxWidth()) { state.removePlaylist(key); menu = null }
+                }
+            },
+            confirmButton = { TextButton({ menu = null }) { Text("Fermer") } })
+    }
     if (login) LoginDialog(state) { login = false }
     adding?.let { type -> PlaylistDialog(state, type) { adding = null } }
-}
-
-@Composable
-private fun Card(title: String, content: @Composable () -> Unit) = com.lumentv.ui.kit.SettingsSection(title, content = content)
-
-/** The PC's colours for the shared settings pieces. */
-private val kitColors = com.lumentv.ui.kit.KitColors(
-    panel = Pal.panel, panelHigh = Pal.panelHigh, text = Pal.text, dim = Pal.dim,
-    accent = Pal.accent, accentSoft = Pal.accent.copy(alpha = 0.2f), danger = Pal.danger,
-)
-
-@Composable
-private fun Choice(label: String, value: String, options: List<Pair<String, String>>, onPick: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Pal.text, modifier = Modifier.weight(1f))
-        OutlinedButton({ open = true }) { Text(options.firstOrNull { it.first == value }?.second ?: value) }
-        DropdownMenu(open, { open = false }) { options.forEach { (k, l) -> DropdownMenuItem({ Text(l) }, { onPick(k); open = false }) } }
-    }
-}
-
-@Composable
-private fun Toggle(label: String, value: Boolean, onChange: (Boolean) -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) {
-    Text(label, color = Pal.text, modifier = Modifier.weight(1f)); Switch(value, onChange)
 }
 
 @Composable

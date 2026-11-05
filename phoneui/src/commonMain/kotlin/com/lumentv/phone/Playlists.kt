@@ -158,15 +158,17 @@ internal fun PlaylistForm(core: AppCore, existing: PlaylistEntity?, startType: S
 
 /** The Paramètres' lists: the one in use, the others, and adding one. */
 @Composable
-internal fun PlaylistsSection(core: AppCore, active: PlaylistEntity, open: (Route) -> Unit) {
+internal fun PlaylistsSection(core: AppCore, active: PlaylistEntity?, open: (Route) -> Unit) {
     val list by core.playlists.observe().collectAsState(emptyList())
     val busy by core.playlists.busy.collectAsState()
     var menu by remember { mutableStateOf<PlaylistEntity?>(null) }
     var deleting by remember { mutableStateOf<PlaylistEntity?>(null) }
     Section("Mes listes") {
+        if (list.isEmpty()) Text("Bienvenue ! Ajoute ta playlist M3U ou ton compte Xtream pour commencer. Lumen TV ne fournit aucune chaîne : " +
+            "utilise les listes de ton propre abonnement.", color = Palette.TextDim, fontSize = 14.sp)
         list.forEach { p ->
             com.lumentv.ui.kit.ListTile(p.name, listOfNotNull(typeLabel(p.type), if (p.id in busy) "actualisation…" else null,
-                p.lastError?.takeIf { it.isNotBlank() }?.let { "erreur" }).joinToString(" · "), p.id == active.id, Modifier.clickable { menu = p }) {
+                p.lastError?.takeIf { it.isNotBlank() }?.let { "erreur" }).joinToString(" · "), p.id == active?.id, onClick = { menu = p }) {
                 com.lumentv.ui.kit.SecretsLine(p.secretsInClear())
             }
         }
@@ -177,7 +179,7 @@ internal fun PlaylistsSection(core: AppCore, active: PlaylistEntity, open: (Rout
     }
     menu?.let { p ->
         Options(p.name, typeLabel(p.type), listOfNotNull(
-            if (p.id != active.id) Option("Utiliser cette liste") { core.scope.launch { core.settings.set(Keys.activePlaylist, p.id) } } else null,
+            if (p.id != active?.id) Option("Utiliser cette liste") { core.scope.launch { core.settings.set(Keys.activePlaylist, p.id) } } else null,
             Option("Actualiser") { core.scope.launch { if (core.playlists.refresh(p.id).ok) core.epg.refresh(p.id) } },
             Option("Modifier") { open(Route.PlaylistEdit(p.id, p.type)) },
             if (p.secretsInClear()) Option("Chiffrer les identifiants") {
@@ -201,8 +203,9 @@ internal fun PlaylistsSection(core: AppCore, active: PlaylistEntity, open: (Rout
                     deleting = null
                     core.scope.launch {
                         val next = list.firstOrNull { it.id != p.id }
-                        if (p.id == active.id && next != null) core.settings.set(Keys.activePlaylist, next.id)
+                        if (p.id == active?.id && next != null) core.settings.set(Keys.activePlaylist, next.id)
                         core.playlists.delete(p.id)
+                        core.resolver.forget()
                     }
                 }) { Text("Supprimer", color = Palette.Danger) }
             },

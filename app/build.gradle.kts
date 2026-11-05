@@ -104,6 +104,8 @@ dependencies {
     val room = "2.7.2"
     implementation(project(":appcore"))
     implementation(project(":uikit"))
+    // The settings page shared with the iPhone.
+    implementation(project(":phoneui"))
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")

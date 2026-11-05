@@ -110,7 +110,7 @@ internal fun PinHost(core: AppCore) {
 
 /** Paramètres › Contrôle parental: the PIN (set, change, remove) and the hidden items. */
 @Composable
-internal fun ParentalSection(core: AppCore) {
+internal fun ParentalSection(core: AppCore, hint: String = SettingsExtras().parentalHint) {
     val settings by core.settings.flow.collectAsState(null)
     val s = settings ?: return
     val hasPin = s.pinHash.isNotEmpty()
@@ -120,8 +120,7 @@ internal fun ParentalSection(core: AppCore) {
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     Section("Contrôle parental") {
-        Text("Verrouille un groupe de chaînes avec le ⋮ à côté de son nom dans l'onglet TV. Masque une chaîne, un groupe ou une catégorie de la même façon.",
-            color = Palette.TextDim, fontSize = 14.sp)
+        Text(hint, color = Palette.TextDim, fontSize = 14.sp)
         Toggle("Afficher les éléments masqués", "Pour les retrouver et les afficher à nouveau.", s.showHidden) { on ->
             scope.launch {
                 if (!on || Parental.check(core, "Afficher les éléments masqués")) core.settings.set(Keys.showHidden, on)

@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.lumentv.ui.kit.pressable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
@@ -413,12 +414,8 @@ private fun Logo(title: String, logo: String?, height: Dp, textSize: Int) {
 
 /** A big button: white for the main action, glassy otherwise. */
 @Composable
-internal fun PhoneButton(text: String, primary: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(modifier.height(46.dp).clip(RoundedCornerShape(10.dp)).background(if (primary) Color(0xF2F2F2F2) else Color(0x33FFFFFF)).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center) {
-        Text(text, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (primary) Palette.Background else Palette.Text, maxLines = 1)
-    }
-}
+internal fun PhoneButton(text: String, primary: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) =
+    com.lumentv.ui.kit.KitButton(text, primary, modifier, onClick)
 
 /** A round icon with its label under it ("+ Ma liste"). */
 @Composable
@@ -442,14 +439,7 @@ private fun DownloadAction(t: TransferEntity?, onClick: () -> Unit) = when (t?.s
 
 /** A glassy pill: seasons. */
 @Composable
-internal fun PhoneChip(label: String, selected: Boolean = false, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(20.dp)
-    Box(Modifier.height(36.dp).clip(shape).background(if (selected) Color(0xE6F2F2F2) else Color(0x26FFFFFF))
-        .border(1.dp, if (selected) Color.Transparent else Color(0x1FFFFFFF), shape).clickable(onClick = onClick)
-        .padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
-        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (selected) Palette.Background else Palette.Text, maxLines = 1)
-    }
-}
+internal fun PhoneChip(label: String, selected: Boolean = false, onClick: () -> Unit) = com.lumentv.ui.kit.KitChip(label, selected, onClick)
 
 /** Who made it and the main actors, from TMDB only: nothing when TMDB does not know the title. */
 @Composable
@@ -499,7 +489,7 @@ internal fun Options(title: String, subtitle: String?, options: List<Option>, on
         Column {
             subtitle?.let { Text(it, color = Palette.TextDim, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp)) }
             options.forEach { o ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onDismiss(); o.onClick() }.padding(vertical = 12.dp, horizontal = 4.dp)) {
+                Row(Modifier.fillMaxWidth().pressable(RoundedCornerShape(10.dp)) { onDismiss(); o.onClick() }.padding(vertical = 12.dp, horizontal = 8.dp)) {
                     Text(o.label, modifier = Modifier.weight(1f), fontWeight = if (o.checked) FontWeight.Bold else FontWeight.Normal)
                     if (o.checked) Text("✓", color = Palette.Accent)
                 }
