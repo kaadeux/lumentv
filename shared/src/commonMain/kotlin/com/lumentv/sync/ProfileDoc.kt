@@ -103,7 +103,7 @@ object ProfileMerge {
     }
 
     /** Drops old tombstones and the oldest history beyond [HISTORY_LIMIT], so the profile stays small. */
-    fun prune(d: ProfileDoc, now: Long = System.currentTimeMillis()): ProfileDoc {
+    fun prune(d: ProfileDoc, now: Long = com.lumentv.core.nowMillis()): ProfileDoc {
         val cutoff = now - TOMBSTONE_DAYS * 86_400_000L
         val history = d.history.filterValues { !it.deleted || it.at > cutoff }
             .entries.sortedByDescending { it.value.watchedAt }.take(HISTORY_LIMIT).associate { it.key to it.value }
@@ -120,7 +120,7 @@ object ProfileMerge {
      * [synced] is the copy merged at the last sync. Unchanged entries keep their old time, changed ones get [now],
      * and entries gone since then become tombstones dated [now].
      */
-    fun stampLocal(synced: ProfileDoc, current: ProfileDoc, now: Long = System.currentTimeMillis()): ProfileDoc = ProfileDoc(
+    fun stampLocal(synced: ProfileDoc, current: ProfileDoc, now: Long = com.lumentv.core.nowMillis()): ProfileDoc = ProfileDoc(
         playlists = stamp(synced.playlists, current.playlists, now, { it.copy(at = 0) }, { p, t -> p.copy(at = t) }, { it.copy(deleted = true) }) { it.deleted },
         favorites = stamp(synced.favorites, current.favorites, now, { it.copy(at = 0) }, { p, t -> p.copy(at = t) }, { it.copy(on = false) }) { !it.on },
         history = stamp(synced.history, current.history, now, { it.copy(at = 0) }, { p, t -> p.copy(at = t) }, { it.copy(deleted = true) }) { it.deleted },

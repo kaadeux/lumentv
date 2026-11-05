@@ -74,7 +74,7 @@ class ProfileSync(private val http: OkHttpClient, baseUrl: String) {
 
     private fun decode(keys: ProfileKeys, data: String): ProfileDoc =
         try { json.decodeFromString(ProfileCrypto.open(keys, data)) }
-        catch (e: javax.crypto.AEADBadTagException) { throw WrongPassphraseException() }
+        catch (e: com.lumentv.core.CryptoException) { throw WrongPassphraseException() }
 
     private fun request(keys: ProfileKeys) =
         Request.Builder().url("$base/v1/profile/${keys.id}").header("Authorization", "Bearer ${keys.token}")

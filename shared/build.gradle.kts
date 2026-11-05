@@ -7,6 +7,8 @@ plugins {
 }
 
 kotlin {
+    // expect / actual classes (IOException): still marked Beta by Kotlin, used here for one exception type.
+    compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
     jvm {
         compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
     }
