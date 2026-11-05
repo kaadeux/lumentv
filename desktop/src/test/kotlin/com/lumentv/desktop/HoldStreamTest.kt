@@ -1,5 +1,6 @@
 package com.lumentv.desktop
 
+import com.lumentv.core.asHttp
 import com.lumentv.data.xtream.XtreamApi
 import com.lumentv.data.xtream.XtreamCredentials
 import kotlinx.serialization.json.Json
@@ -20,7 +21,7 @@ class HoldStreamTest {
         val path = System.getenv("HOLD_BACKUP"); assumeTrue(path != null)
         val p = Json.parseToJsonElement(File(path!!).readText()).jsonObject["playlists"]!!.jsonArray.first().jsonObject
         fun s(k: String) = p[k]!!.jsonPrimitive.content
-        val api = XtreamApi(OkHttpClient(), XtreamCredentials(s("source"), s("username"), s("password")), null)
+        val api = XtreamApi(OkHttpClient().asHttp(), XtreamCredentials(s("source"), s("username"), s("password")), null)
         val log = StringBuilder()
         log.appendLine("before: ${api.authenticate().summary()}")
         val mp = Vlc.factory.mediaPlayers().newMediaPlayer()

@@ -1,5 +1,6 @@
 package com.lumentv.desktop
 
+import com.lumentv.core.asHttp
 import com.lumentv.data.Segments
 import com.lumentv.data.xtream.Presence
 import com.lumentv.data.xtream.ScreenGuard
@@ -584,7 +585,7 @@ class PlayerWindow private constructor(private val state: AppState) {
                 val others = key?.let { runBlocking { kotlinx.coroutines.withTimeoutOrNull(1_500) { state.presence.others(it) } } }.orEmpty()
                 val warning = if (others.isNotEmpty()) Presence.warning(others) else if (p.type != "xtream" || ScreenGuard.ownStreamCounted()) null else runCatching {
                     val http = state.http.newBuilder().callTimeout(1500, java.util.concurrent.TimeUnit.MILLISECONDS).build()
-                    ScreenGuard.warning(XtreamApi(http, XtreamCredentials(p.source, p.username, p.password), p.userAgent.ifBlank { null }).authenticate())
+                    ScreenGuard.warning(XtreamApi(http.asHttp(), XtreamCredentials(p.source, p.username, p.password), p.userAgent.ifBlank { null }).authenticate())
                 }.getOrNull()
                 SwingUtilities.invokeLater {
                     if (warning == null) return@invokeLater show(state, item)

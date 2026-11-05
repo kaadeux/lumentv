@@ -1,5 +1,6 @@
 package com.lumentv
 
+import com.lumentv.core.asHttp
 import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
@@ -50,9 +51,11 @@ class AppGraph(app: Application) {
     val library = LibraryRepository(db)
     val resolver = StreamResolver(playlists)
     val artwork = com.lumentv.data.repo.Artwork(playlists)
-    val tmdb = com.lumentv.data.Tmdb(http, com.lumentv.BuildConfig.TMDB_KEY, app.cacheDir)
+    /** TMDB's requests: with their disk cache and retries (TmdbHttp), shared by the logos. */
+    val tmdbHttp = com.lumentv.data.TmdbHttp.client(http, app.cacheDir)
+    val tmdb = com.lumentv.data.Tmdb(tmdbHttp.asHttp(), com.lumentv.BuildConfig.TMDB_KEY)
     /** Logos and ratings through the same client, so they share TMDB's disk cache. */
-    val logos = com.lumentv.data.TitleLogos(tmdb.http, com.lumentv.BuildConfig.TMDB_KEY)
+    val logos = com.lumentv.data.TitleLogos(tmdbHttp.asHttp(), com.lumentv.BuildConfig.TMDB_KEY)
     /** The whole library, light, in memory: search and TMDB matching. */
     val index = com.lumentv.data.repo.LibraryIndex(db)
     val discover = com.lumentv.data.repo.Discover(db, tmdb, index)
@@ -70,7 +73,7 @@ class AppGraph(app: Application) {
             p.getString("id", null) ?: java.util.UUID.randomUUID().toString().also { p.edit().putString("id", it).apply() }
         },
         android.provider.Settings.Global.getString(app.contentResolver, "device_name") ?: android.os.Build.MODEL)
-    val introDb = com.lumentv.data.IntroDb(http)
+    val introDb = com.lumentv.data.IntroDb(http.asHttp())
     val profile = com.lumentv.sync.ProfileManager(app, db, settings, playlists, epg, library, http, appScope)
 }
 
@@ -92,7 +95,7 @@ class LumenApp : Application(), ImageLoaderFactory {
         // Caches over their limit (it was lowered in 2.4.9: images 120 → 60 MB, TMDB 40 → 20 MB) are emptied once.
         graph.appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             runCatching { coil.Coil.imageLoader(this@LumenApp).diskCache?.let { if (it.size > it.maxSize) it.clear() } }
-            runCatching { graph.tmdb.trimCache() }
+            runCatching { com.lumentv.data.TmdbHttp.trimCache(graph.tmdbHttp) }
         }
         graph.appScope.launch {
             val auto = graph.playlists.all().any { it.refreshHours > 0 }

@@ -1,16 +1,16 @@
 package com.lumentv.data
 
-import kotlinx.coroutines.Dispatchers
+import com.lumentv.core.Http
+import com.lumentv.core.HttpRequest
+import com.lumentv.core.IoDispatcher
+import com.lumentv.core.Lru
+import com.lumentv.core.query
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.util.concurrent.TimeUnit
 
 /** Where the recap, the intro and the credits are in an episode (ms); null when unknown. */
 data class Segments(val recap: LongRange?, val intro: LongRange?, val credits: LongRange?) {
@@ -32,20 +32,19 @@ data class Segments(val recap: LongRange?, val intro: LongRange?, val credits: L
  * TheIntroDB and SkipDB for the parts it lacks. IntroDB and SkipDB want the IMDb id, found once per series from the
  * TMDB id on Wikidata. A few small requests per episode at most, kept in small bounded caches (the TV has little memory).
  */
-class IntroDb(http: OkHttpClient) {
-    private val http = http.newBuilder().callTimeout(5, TimeUnit.SECONDS).build()
+class IntroDb(private val http: Http) {
     private val episodes = Lru<String, Segments>(300)
     /** TMDB id → IMDb id, "" when Wikidata has none. */
     private val imdbIds = Lru<String, String>(100)
 
-    suspend fun segments(tmdb: String, season: Int, episode: Int): Segments? = withContext(Dispatchers.IO) {
+    suspend fun segments(tmdb: String, season: Int, episode: Int): Segments? = withContext(IoDispatcher) {
         val key = "$tmdb/$season/$episode"
         episodes[key]?.let { return@withContext it }
         val imdb = imdbOf(tmdb)
         val sources: List<() -> Pair<Segments, Set<String>>?> = listOf(
-            { imdb?.let { id -> get(INTRODB.toHttpUrl().newBuilder().addQueryParameter("imdb_id", id).season(season, episode))?.let(::parseIntroDb) } },
-            { get(THEINTRODB.toHttpUrl().newBuilder().addQueryParameter("tmdb_id", tmdb).season(season, episode))?.let { parse(it)?.to(emptySet()) } },
-            { imdb?.let { id -> get(SKIPDB.toHttpUrl().newBuilder().addQueryParameter("imdb_id", id).season(season, episode))?.let(::parseSkipDb) } },
+            { imdb?.let { id -> get(INTRODB, "imdb_id" to id, *at(season, episode))?.let(::parseIntroDb) } },
+            { get(THEINTRODB, "tmdb_id" to tmdb, *at(season, episode))?.let { parse(it)?.to(emptySet()) } },
+            { imdb?.let { id -> get(SKIPDB, "imdb_id" to id, *at(season, episode))?.let(::parseSkipDb) } },
         )
         var merged: Segments? = null
         // Parts a database confirms the episode does not have ("no recap"): no need to look further for them.
@@ -64,29 +63,19 @@ class IntroDb(http: OkHttpClient) {
     private fun imdbOf(tmdb: String): String? {
         imdbIds[tmdb]?.let { return it.ifEmpty { null } }
         val query = "SELECT ?imdb WHERE { ?s wdt:P4983 \"$tmdb\"; wdt:P345 ?imdb } LIMIT 1"
-        val body = get(WIKIDATA.toHttpUrl().newBuilder().addQueryParameter("query", query).addQueryParameter("format", "json")) ?: return null
+        val body = get(WIKIDATA, "query" to query, "format" to "json") ?: return null
         val id = Regex("\"(tt\\d+)\"").find(body)?.groupValues?.get(1).orEmpty()
         imdbIds[tmdb] = id
         return id.ifEmpty { null }
     }
 
-    private fun okhttp3.HttpUrl.Builder.season(season: Int, episode: Int) =
-        addQueryParameter("season", season.toString()).addQueryParameter("episode", episode.toString())
+    private fun at(season: Int, episode: Int) = arrayOf("season" to season.toString(), "episode" to episode.toString())
 
-    /** The body of a successful answer, null on any failure (nothing is cached then). */
-    private fun get(url: okhttp3.HttpUrl.Builder): String? = runCatching {
-        http.newCall(Request.Builder().url(url.build()).header("User-Agent", "LumenTV/1.0 (lecteur IPTV familial)").build()).execute()
-            .use { r -> if (r.isSuccessful) r.body?.string() else null }
+    /** The body of a successful answer, null on any failure (nothing is cached then). 5 s at most per request. */
+    private fun get(url: String, vararg params: Pair<String, String>): String? = runCatching {
+        http.execute(HttpRequest("$url?${query(*params)}", headers = mapOf("User-Agent" to "LumenTV/1.0 (lecteur IPTV familial)"), timeoutMs = 5_000))
+            .use { r -> if (r.isSuccessful) r.text() else null }
     }.getOrNull()
-
-    /** A small map that forgets the least recently used entries beyond [max]. */
-    private class Lru<K, V>(private val max: Int) {
-        private val map = object : LinkedHashMap<K, V>(16, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>) = size > max
-        }
-        @Synchronized operator fun get(k: K): V? = map[k]
-        @Synchronized operator fun set(k: K, v: V) { map[k] = v }
-    }
 
     companion object {
         private const val INTRODB = "https://api.introdb.app/segments"

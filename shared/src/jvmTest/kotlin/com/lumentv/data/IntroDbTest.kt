@@ -1,5 +1,6 @@
 package com.lumentv.data
 
+import com.lumentv.core.asHttp
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertNotNull
@@ -9,7 +10,7 @@ import org.junit.Test
 /** Live: the databases together find the parts of episodes TheIntroDB alone lacked. */
 class IntroDbTest {
     @Test fun mergedSources() = runBlocking {
-        val db = IntroDb(OkHttpClient())
+        val db = IntroDb(OkHttpClient().asHttp())
         val out = StringBuilder()
         fun fmt(r: LongRange?) = r?.let { "${it.first / 1000}-${if (it.last > 1_000_000_000) "fin" else (it.last / 1000).toString()} s" } ?: "—"
         val cases = listOf(Triple("124364", 3, 4), Triple("124364", 1, 1), Triple("66732", 1, 1), Triple("67744", 1, 3))

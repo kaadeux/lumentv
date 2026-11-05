@@ -1,25 +1,24 @@
 package com.lumentv.data.xtream
 
 import com.lumentv.core.FormatException
+import com.lumentv.core.Http
+import com.lumentv.core.HttpBody
+import com.lumentv.core.HttpRequest
+import com.lumentv.core.HttpResponse
 import com.lumentv.core.HttpStatusException
 import com.lumentv.core.XtreamAuthException
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.json.DecodeSequenceMode
+import com.lumentv.core.forEachJsonValue
+import com.lumentv.core.urlDecode
+import com.lumentv.core.urlEncode
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.decodeToSequence
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.InputStream
-import java.net.URLEncoder
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 
 data class XtreamCredentials(val server: String, val username: String, val password: String)
 
@@ -32,7 +31,10 @@ data class XtreamAccount(
 ) {
     fun summary(): String = buildList {
         status?.let { add(it) }
-        expiresAt?.let { add("expire le " + SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(Date(it))) }
+        expiresAt?.let {
+            val d = Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.currentSystemDefault()).date
+            add("expire le ${d.dayOfMonth.toString().padStart(2, '0')}/${d.monthNumber.toString().padStart(2, '0')}/${d.year}")
+        }
         if (maxConnections != null) add("connexions ${activeConnections ?: 0}/$maxConnections")
     }.joinToString(" · ")
 }
@@ -52,8 +54,8 @@ data class XVodInfo(val plot: String?, val durationSecs: Int, val genre: String?
                     /** The film's TMDB id when the provider gives it. */
                     val tmdb: String? = null)
 
-/** Xtream Codes `player_api.php` client. Lists are read as a stream, element by element. */
-class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredentials, private val userAgent: String?) {
+/** Xtream Codes `player_api.php` client. Lists are read as a stream, element by element (shared with the iPhone). */
+class XtreamApi(private val http: Http, private val creds: XtreamCredentials, private val userAgent: String?) {
 
     private val base = normalizeServer(creds.server)
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -65,7 +67,7 @@ class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredent
     }
 
     fun authenticate(): XtreamAccount {
-        val root = open(api(null)).use { json.parseToJsonElement(it.reader().readText()) } as? JsonObject
+        val root = open(api(null)).use { json.parseToJsonElement(it.text()) } as? JsonObject
             ?: throw FormatException("Réponse Xtream inattendue : ce serveur n'est peut-être pas un serveur Xtream Codes.")
         val user = root["user_info"] as? JsonObject
             ?: throw FormatException("Réponse Xtream sans « user_info » : vérifiez l'adresse du serveur.")
@@ -115,12 +117,12 @@ class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredent
     }
 
     fun seriesInfo(seriesId: Long): List<XEpisode> {
-        val root = open(api("get_series_info", "&series_id=$seriesId")).use { json.parseToJsonElement(it.reader().readText()) }
+        val root = open(api("get_series_info", "&series_id=$seriesId")).use { json.parseToJsonElement(it.text()) }
         return parseSeriesEpisodes(root)
     }
 
     fun vodInfo(streamId: Long): XVodInfo? {
-        val root = open(api("get_vod_info", "&vod_id=$streamId")).use { json.parseToJsonElement(it.reader().readText()) } as? JsonObject
+        val root = open(api("get_vod_info", "&vod_id=$streamId")).use { json.parseToJsonElement(it.text()) } as? JsonObject
         val info = root?.get("info") as? JsonObject ?: return null
         return XVodInfo(
             plot = info.str("plot") ?: info.str("description"),
@@ -140,19 +142,18 @@ class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredent
     fun catchupUrl(streamId: Long, startMs: Long, durationMinutes: Int, serverZone: String?): String =
         catchupUrl(base, creds.username, creds.password, streamId, startMs, durationMinutes, serverZone)
 
-    private fun open(url: String): InputStream {
-        val req = Request.Builder().url(url).apply { userAgent?.takeIf { it.isNotBlank() }?.let { header("User-Agent", it) } }.build()
-        val resp = http.newCall(req).execute()
+    private fun open(url: String): HttpResponse {
+        val headers = userAgent?.takeIf { it.isNotBlank() }?.let { mapOf("User-Agent" to it) } ?: emptyMap()
+        val resp = http.execute(HttpRequest(url, headers = headers))
         if (!resp.isSuccessful) {
             resp.close()
             throw HttpStatusException(resp.code)
         }
-        return resp.body?.byteStream() ?: throw FormatException("Réponse vide du serveur Xtream.")
+        return resp
     }
 
-    @OptIn(ExperimentalSerializationApi::class)
     private fun each(url: String, block: (JsonObject) -> Unit) {
-        open(url).use { stream -> forEachObject(json, stream, block) }
+        open(url).use { r -> forEachObject(json, r.body, block) }
     }
 
     companion object {
@@ -168,7 +169,7 @@ class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredent
             if (!url.contains("get.php", true)) return null
             val query = url.substringAfter('?', "")
             val params = query.split('&').associate {
-                it.substringBefore('=').lowercase() to java.net.URLDecoder.decode(it.substringAfter('=', ""), "UTF-8")
+                it.substringBefore('=').lowercase() to urlDecode(it.substringAfter('=', ""))
             }
             val u = params["username"] ?: return null
             val p = params["password"] ?: return null
@@ -179,15 +180,17 @@ class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredent
             "${normalizeServer(c.server)}/xmltv.php?username=${enc(c.username)}&password=${enc(c.password)}"
 
         fun catchupUrl(base: String, user: String, pass: String, streamId: Long, startMs: Long, durationMinutes: Int, serverZone: String?): String {
-            val fmt = SimpleDateFormat("yyyy-MM-dd:HH-mm", Locale.US)
-            fmt.timeZone = serverZone?.let { TimeZone.getTimeZone(it) } ?: TimeZone.getDefault()
-            return "${normalizeServer(base)}/timeshift/${enc(user)}/${enc(pass)}/$durationMinutes/${fmt.format(Date(startMs))}/$streamId.ts"
+            // An unknown zone counts as GMT, as java.util.TimeZone did.
+            val zone = serverZone?.let { runCatching { TimeZone.of(it) }.getOrElse { TimeZone.UTC } } ?: TimeZone.currentSystemDefault()
+            val t = Instant.fromEpochMilliseconds(startMs).toLocalDateTime(zone)
+            fun two(n: Int) = n.toString().padStart(2, '0')
+            val stamp = "${t.year}-${two(t.monthNumber)}-${two(t.dayOfMonth)}:${two(t.hour)}-${two(t.minute)}"
+            return "${normalizeServer(base)}/timeshift/${enc(user)}/${enc(pass)}/$durationMinutes/$stamp/$streamId.ts"
         }
 
-        @OptIn(ExperimentalSerializationApi::class)
-        fun forEachObject(json: Json, stream: InputStream, block: (JsonObject) -> Unit) {
-            val seq = json.decodeToSequence(stream, JsonElement.serializer(), DecodeSequenceMode.AUTO_DETECT)
-            for (el in seq) {
+        /** Each object of a list answer (an array, or objects one after another). */
+        fun forEachObject(json: Json, body: HttpBody, block: (JsonObject) -> Unit) {
+            forEachJsonValue(json, body) { el ->
                 when (el) {
                     is JsonObject -> block(el)
                     is JsonArray -> el.forEach { (it as? JsonObject)?.let(block) }
@@ -237,7 +240,7 @@ class XtreamApi(private val http: OkHttpClient, private val creds: XtreamCredent
             }
         }
 
-        private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+        private fun enc(s: String) = urlEncode(s)
     }
 }
 

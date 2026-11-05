@@ -2,8 +2,9 @@ package com.lumentv.data.discover
 
 import com.lumentv.core.Featured
 import com.lumentv.data.Tmdb
-import kotlinx.coroutines.Dispatchers
+import com.lumentv.core.IoDispatcher
 import kotlinx.coroutines.async
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -11,9 +12,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /** A row of the Films / Séries home. */
 class Row(val title: String, val items: List<VodLite>)
@@ -75,7 +73,7 @@ class DiscoverEngine(private val tmdb: Tmdb) {
         val seeds = seeds(input, byUid, seen)
         val type = if (series) "tv" else "movie"
         val region = if (series) emptyArray() else arrayOf("region" to "FR")
-        val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val today = isoDay(com.lumentv.core.nowMillis())
         fun pick(items: List<Tmdb.Item>, skip: Set<Long> = emptySet()) =
             one(items.mapNotNull { idx.find(series, it) }.filter { ok(it) && it.uid !in seen && it.id !in skip })
 
@@ -145,7 +143,7 @@ class DiscoverEngine(private val tmdb: Tmdb) {
             // TMDB knows where a title can be watched in France, not since when. Films: the latest released ("sorties
             // récentes"). Series: those with an episode aired in the last 60 days, most popular first, so a new season of
             // an older series (Lupin) counts; daily shows (news, reality, soaps, talk shows) left out.
-            val since = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(System.currentTimeMillis() - 60 * 86_400_000L))
+            val since = isoDay(com.lumentv.core.nowMillis() - 60 * 86_400_000L)
             val p = Tmdb.PLATFORMS.map { (name, id) ->
                 async {
                     val where = arrayOf("with_watch_providers" to "$id", "watch_region" to "FR", "with_watch_monetization_types" to "flatrate", "vote_count.gte" to "10")
@@ -161,7 +159,7 @@ class DiscoverEngine(private val tmdb: Tmdb) {
             (g + p).awaitAll()
         }
         emit(local + taste + extra)
-    }.flowOn(Dispatchers.IO)
+    }.flowOn(IoDispatcher)
 
     /** One copy per title. */
     private fun one(list: List<VodLite>) = list.distinctBy { it.id }.distinctBy { Featured.baseTitle(it.name) }.take(ROW * 2)
@@ -220,3 +218,7 @@ class DiscoverEngine(private val tmdb: Tmdb) {
         fun keep(title: String, shown: Int) = shown >= MIN_ROW || (title == MY_RATINGS && shown > 0)
     }
 }
+
+/** "2026-11-05": the day (on this device's clock) of an instant, as TMDB's date filters want it. */
+internal fun isoDay(ms: Long): String =
+    kotlinx.datetime.Instant.fromEpochMilliseconds(ms).toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date.toString()

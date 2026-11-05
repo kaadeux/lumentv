@@ -1,5 +1,6 @@
 package com.lumentv.desktop
 
+import com.lumentv.core.asHttp
 import com.lumentv.core.FormatException
 import com.lumentv.core.HttpStatusException
 import com.lumentv.core.channelKeyName
@@ -66,7 +67,7 @@ const val NO_GROUP = "Sans catégorie"
 
 /** Downloads playlists and guides. */
 class Library(private val http: OkHttpClient) {
-    private fun xtream(p: SyncPlaylist) = XtreamApi(http, XtreamCredentials(p.source, p.username, p.password), p.userAgent.ifBlank { null })
+    private fun xtream(p: SyncPlaylist) = XtreamApi(http.asHttp(), XtreamCredentials(p.source, p.username, p.password), p.userAgent.ifBlank { null })
 
     suspend fun load(p: SyncPlaylist): Catalog = withContext(Dispatchers.IO) { if (p.type == "xtream") loadXtream(p) else loadM3u(p) }
 
@@ -181,7 +182,7 @@ class Library(private val http: OkHttpClient) {
     fun movieUrl(p: SyncPlaylist, m: Mv) = if (p.type == "xtream") xtream(p).movieUrl(m.streamId, m.ext) else m.url
     fun episodeUrl(p: SyncPlaylist, e: Ep) = if (p.type == "xtream" && e.streamId > 0) xtream(p).episodeUrl(e.streamId, e.ext) else e.url
 
-    private val introDb = com.lumentv.data.IntroDb(http)
+    private val introDb = com.lumentv.data.IntroDb(http.asHttp())
 
     /** Recap / intro / credits of an episode (TheIntroDB). */
     suspend fun segments(tmdb: String, season: Int, episode: Int): Segments? = introDb.segments(tmdb, season, episode)

@@ -44,10 +44,10 @@ class XtreamAndCoreTest {
     @Test fun streamsListsAndSkipsJunk() {
         val json = Json { ignoreUnknownKeys = true; isLenient = true }
         val items = ArrayList<JsonObject>()
-        XtreamApi.forEachObject(json, """[{"stream_id":"1","name":"A"},{"stream_id":2,"name":"B"},5,null]""".byteInputStream()) { items += it }
+        XtreamApi.forEachObject(json, com.lumentv.core.HttpBody.of("""[{"stream_id":"1","name":"A"},{"stream_id":2,"name":"B"},5,null]""".encodeToByteArray())) { items += it }
         assertEquals(listOf("A", "B"), items.map { it["name"]!!.jsonPrimitive.content })
         items.clear()
-        XtreamApi.forEachObject(json, "[]".byteInputStream()) { items += it }
+        XtreamApi.forEachObject(json, com.lumentv.core.HttpBody.of("[]".encodeToByteArray())) { items += it }
         assertTrue(items.isEmpty())
     }
 

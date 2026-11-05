@@ -1,5 +1,6 @@
 package com.lumentv.data
 
+import com.lumentv.core.asHttp
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import org.junit.Assume.assumeTrue
@@ -11,7 +12,7 @@ class IntroDbCoverageTest {
         val tmdb = System.getenv("COVERAGE_TMDB")
         assumeTrue(tmdb != null)
         val seasons = System.getenv("COVERAGE_SEASONS")?.toInt() ?: 4
-        val db = IntroDb(OkHttpClient())
+        val db = IntroDb(OkHttpClient().asHttp())
         fun fmt(r: LongRange?) = r?.let { "%d:%02d".format(it.first / 60_000, it.first / 1000 % 60) } ?: "—"
         val out = StringBuilder()
         for (s in 1..seasons) for (e in 1..12) {

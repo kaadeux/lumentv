@@ -108,7 +108,7 @@ class AppState(private val scope: CoroutineScope) {
         Thread { runCatching { Vlc.factory } }.apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
         activeKeyOrFirst?.let { open(it) }
         // TMDB's cache over its limit (lowered in 1.7.2: 40 → 20 MB) is emptied once.
-        scope.launch(Dispatchers.IO) { runCatching { vod.tmdb.trimCache() } }
+        scope.launch(Dispatchers.IO) { runCatching { com.lumentv.data.TmdbHttp.trimCache(vod.tmdbHttp) } }
         if (profileName != null) scope.launch { syncNow() }
         scope.launch { while (true) { delay(10 * 60_000L); if (profileName != null) syncNow() } }
     }

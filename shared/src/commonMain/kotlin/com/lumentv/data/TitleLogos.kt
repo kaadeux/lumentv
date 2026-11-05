@@ -5,18 +5,17 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.util.concurrent.TimeUnit
+import com.lumentv.core.Http
+import com.lumentv.core.HttpRequest
+import com.lumentv.core.Lru
+import com.lumentv.core.query
 
 /**
  * The title of a film or series as its poster writes it (the logo: "SUPERMAN", "STRANGER THINGS"), from TMDB with a
  * free personal key. French logo first, then English, then one without words. Found by the TMDB id when the provider
  * gives it, else by the title and the year. Kept for the session, the absence of a logo too.
  */
-class TitleLogos(http: OkHttpClient, private val key: String) {
-    private val http = http.newBuilder().callTimeout(8, TimeUnit.SECONDS).build()
+class TitleLogos(private val http: Http, private val key: String) {
     private val json = Json { ignoreUnknownKeys = true }
     /**
      * What TMDB says of a title: its logo, its rating (out of 10, from its users' votes), its summary in French (null
@@ -27,19 +26,17 @@ class TitleLogos(http: OkHttpClient, private val key: String) {
                val overview: String? = null, val cast: List<String> = emptyList(), val makers: List<String> = emptyList(),
                val poster: String? = null)
 
-    private val cache = object : LinkedHashMap<String, Info?>(256, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Info?>?) = size > 600
-    }
+    private val cache = Lru<String, Info?>(600)
 
     val enabled get() = key.isNotBlank()
 
-    fun cached(series: Boolean, tmdb: String?, title: String, year: Int?): Info? = synchronized(cache) { cache[keyOf(series, tmdb, title, year)] }
+    fun cached(series: Boolean, tmdb: String?, title: String, year: Int?): Info? = cache.peek(keyOf(series, tmdb, title, year))
 
     /** Logo, rating, summary and cast (one request: the details with their images and credits), null when TMDB does not know the title. Blocking. */
     fun info(series: Boolean, tmdb: String?, title: String, year: Int?): Info? {
         if (!enabled) return null
         val k = keyOf(series, tmdb, title, year)
-        synchronized(cache) { if (cache.containsKey(k)) return cache[k] }
+        if (k in cache) return cache[k]
         val found = runCatching {
             val kind = if (series) "tv" else "movie"
             val id = tmdb ?: search(kind, clean(title), year ?: com.lumentv.core.Featured.yearOf(null, title)) ?: return@runCatching null
@@ -56,7 +53,7 @@ class TitleLogos(http: OkHttpClient, private val key: String) {
                 d.s("overview")?.trim()?.takeIf { it.isNotEmpty() }, cast, makers.distinct().take(3),
                 d.s("poster_path")?.let { "https://image.tmdb.org/t/p/w342$it" })
         }.getOrNull()
-        synchronized(cache) { cache[k] = found }
+        cache[k] = found
         return found
     }
 
@@ -75,9 +72,9 @@ class TitleLogos(http: OkHttpClient, private val key: String) {
     }
 
     private fun get(url: String, vararg params: Pair<String, String>): JsonObject? {
-        val u = url.toHttpUrl().newBuilder().addQueryParameter("api_key", key).apply { params.forEach { (k, v) -> addQueryParameter(k, v) } }.build()
-        return http.newCall(Request.Builder().url(u).build()).execute().use { r ->
-            if (!r.isSuccessful) null else json.parseToJsonElement(r.body!!.string()) as? JsonObject
+        // 8 s at most: a slow answer only costs the logo, the page shows the title in text meanwhile.
+        return http.execute(HttpRequest("$url?${query("api_key" to key, *params)}", timeoutMs = 8_000)).use { r ->
+            if (!r.isSuccessful) null else json.parseToJsonElement(r.text()) as? JsonObject
         }
     }
 

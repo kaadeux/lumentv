@@ -1,5 +1,6 @@
 package com.lumentv.data.repo
 
+import com.lumentv.core.asHttp
 import android.util.Log
 import androidx.room.withTransaction
 import com.lumentv.core.FormatException
@@ -67,7 +68,7 @@ class PlaylistRepository(
 
     fun credentials(p: PlaylistEntity) = XtreamCredentials(SecretBox.decrypt(p.sourceEnc), p.username, SecretBox.decrypt(p.passwordEnc))
 
-    suspend fun xtream(p: PlaylistEntity) = XtreamApi(http, credentials(p), userAgentFor(p))
+    suspend fun xtream(p: PlaylistEntity) = XtreamApi(http.asHttp(), credentials(p), userAgentFor(p))
 
     suspend fun userAgentFor(p: PlaylistEntity): String? = p.userAgent.ifBlank { defaultUserAgent() }.ifBlank { null }
 

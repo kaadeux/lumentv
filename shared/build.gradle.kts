@@ -23,6 +23,8 @@ kotlin {
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
             // Dates and time zones the same on the JVM and iOS (guide, sports).
             api("org.jetbrains.kotlinx:kotlinx-datetime:0.6.1")
+            // Locks shared by the JVM and the iPhone (caches read from several threads).
+            api("org.jetbrains.kotlinx:atomicfu:0.25.0")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

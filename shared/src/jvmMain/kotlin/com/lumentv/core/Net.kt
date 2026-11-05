@@ -90,10 +90,10 @@ object NetStats {
  * Runs [load] once for a key even when several callers ask at the same time: the others wait for and share its
  * answer (two rows asking TMDB for the same title at once make one request).
  */
-class InFlight<K : Any, V> {
+actual class InFlight<K : Any, V> actual constructor() {
     private val running = ConcurrentHashMap<K, java.util.concurrent.CompletableFuture<V>>()
 
-    fun get(key: K, load: () -> V): V {
+    actual fun get(key: K, load: () -> V): V {
         val mine = java.util.concurrent.CompletableFuture<V>()
         val other = running.putIfAbsent(key, mine)
         if (other != null) return try { other.get() } catch (e: java.util.concurrent.ExecutionException) { throw e.cause ?: e }

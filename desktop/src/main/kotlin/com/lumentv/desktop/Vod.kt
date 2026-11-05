@@ -1,6 +1,7 @@
 package com.lumentv.desktop
 
 import com.lumentv.core.Featured
+import com.lumentv.core.asHttp
 import com.lumentv.core.Resume
 import com.lumentv.data.TitleLogos
 import com.lumentv.data.Tmdb
@@ -36,9 +37,11 @@ class Shelf<T>(val title: String, val items: List<T>)
  * the search by title and by person, and the copies of a film. Personal ratings live in the profile (shared with the TV).
  */
 class Vod(private val state: AppState) {
-    val tmdb = Tmdb(state.http, BuildInfo.TMDB_KEY, Store.dir)
+    /** TMDB's requests: with their disk cache and retries (TmdbHttp), shared by the logos. */
+    val tmdbHttp = com.lumentv.data.TmdbHttp.client(state.http, Store.dir)
+    val tmdb = Tmdb(tmdbHttp.asHttp(), BuildInfo.TMDB_KEY)
     /** Logos, ratings, summaries and cast, through TMDB's client (its disk cache). */
-    val logos = TitleLogos(tmdb.http, BuildInfo.TMDB_KEY)
+    val logos = TitleLogos(tmdbHttp.asHttp(), BuildInfo.TMDB_KEY)
     private val engine = DiscoverEngine(tmdb)
     private var built: CatalogIndex? = null
     private val links = HashMap<String, String?>()
