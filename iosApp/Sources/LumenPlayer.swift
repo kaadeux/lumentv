@@ -9,7 +9,10 @@ final class LumenPlayer: NSObject, VideoPlayer {
 
     func play(request: PlayRequest) {
         DispatchQueue.main.async {
-            guard let url = URL(string: request.url), let top = Self.topController() else { return }
+            // A downloaded file is named by the shared app; its folder is found here (it changes at each update).
+            let prefix = "lumen-download:"
+            let url = request.url.hasPrefix(prefix) ? LumenDownloader.file(String(request.url.dropFirst(prefix.count))) : URL(string: request.url)
+            guard let url, let top = Self.topController() else { return }
             let box = HostBox()
             let screen = PlayerScreen(request: request, url: url) { position, duration, step in
                 // The position is kept first; then the episode before / after opens in a new player.

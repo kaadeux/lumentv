@@ -87,6 +87,7 @@ internal fun MoreHome(open: (Route) -> Unit) = LazyColumn(contentPadding = Paddi
     item { Entry("★", "Favoris", "Films, séries et chaînes de Ma liste") { open(Route.Favorites) } }
     item { Entry("▦", "Guide TV", "Ce qui passe, ce qui vient, le rattrapage") { open(Route.Guide) } }
     item { Entry("⚽", "Sport", "Les matchs et les chaînes qui les diffusent") { open(Route.Sports) } }
+    item { Entry("⬇", "Téléchargements", "Films et épisodes à voir sans réseau") { open(Route.Downloads) } }
     item { Entry("⚙", "Réglages", "Profil en ligne, liste, lecture") { open(Route.Settings) } }
 }
 
@@ -336,3 +337,77 @@ private fun TeamSide(name: String, logo: String?, score: String?, modifier: Modi
     Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 6.dp))
     score?.let { Text(it, fontWeight = FontWeight.Bold, color = Palette.Accent, modifier = Modifier.padding(start = 4.dp)) }
 }
+
+// ---- Downloads --------------------------------------------------------------------------------------------------
+
+private fun size(bytes: Long): String = when {
+    bytes >= 1_000_000_000 -> com.lumentv.core.oneDecimal(bytes / 1e9) + " Go"
+    else -> (bytes / 1_000_000).toString() + " Mo"
+}
+
+/** Films and episodes kept on the iPhone: progress, play, cancel, try again, delete. */
+@Composable
+internal fun DownloadsPage(core: AppCore, player: VideoPlayer, back: () -> Unit) {
+    val downloads = LocalDownloads.current ?: return
+    val list by remember { downloads.observe() }.collectAsState(null)
+    val scope = rememberCoroutineScope()
+    var menu by remember { mutableStateOf<com.lumentv.data.db.TransferEntity?>(null) }
+    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+        item { Header("Téléchargements", back) }
+        val l = list
+        if (l != null && l.isEmpty()) item {
+            Text("Aucun téléchargement. Sur la page d'un film, « ⬇ Télécharger » ; pour un épisode, son menu ⋮. Les fichiers se lisent ensuite sans réseau.",
+                color = Palette.TextDim, modifier = Modifier.padding(16.dp))
+        }
+        items(l.orEmpty(), key = { it.id }) { t ->
+            val done = t.status == com.lumentv.data.db.TransferStatus.DONE
+            Row(Modifier.fillMaxWidth().clickable {
+                if (done) scope.launch {
+                    val key = com.lumentv.data.repo.LibraryRepository.key(if (t.refKind == "mv") com.lumentv.data.db.HistoryKind.MOVIE else com.lumentv.data.db.HistoryKind.EPISODE, t.playlistId, t.refUid)
+                    val h = core.library.history(key)
+                    val from = h?.takeIf { it.durationMs > 0 && it.positionMs < it.durationMs * 0.95 }?.positionMs ?: 0
+                    play(core, player, com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + t.filePath, null, null, false), Featured.shortTitle(t.title), t.subtitle, from) { pos, dur ->
+                        core.scope.launch {
+                            core.library.record(com.lumentv.data.db.HistoryEntity(key, if (t.refKind == "mv") com.lumentv.data.db.HistoryKind.MOVIE else com.lumentv.data.db.HistoryKind.EPISODE,
+                                t.playlistId, t.refUid, t.title, t.subtitle, null, t.seriesUid, nowMillis(), if (dur > 0 && pos > dur * 0.95) dur else pos, dur))
+                        }
+                    }
+                } else menu = t
+            }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(Featured.shortTitle(t.title), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    t.subtitle?.let { Text(it, color = Palette.TextDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    val line = when (t.status) {
+                        com.lumentv.data.db.TransferStatus.DONE -> "Téléchargé · " + size(t.bytes)
+                        com.lumentv.data.db.TransferStatus.RUNNING, com.lumentv.data.db.TransferStatus.SCHEDULED ->
+                            if (t.totalBytes > 0) "${t.bytes * 100 / t.totalBytes} % · ${size(t.bytes)} sur ${size(t.totalBytes)}" else "En cours…"
+                        com.lumentv.data.db.TransferStatus.CANCELLED -> "Annulé"
+                        else -> "Échec" + (t.error?.let { " · $it" } ?: "")
+                    }
+                    Text(line, color = if (t.status == com.lumentv.data.db.TransferStatus.FAILED) Palette.Danger else Palette.TextDim, fontSize = 12.sp, maxLines = 2)
+                    if (t.status == com.lumentv.data.db.TransferStatus.RUNNING && t.totalBytes > 0)
+                        ProgressLine(t.bytes.toFloat() / t.totalBytes, Modifier.fillMaxWidth().padding(top = 6.dp))
+                }
+                Text("⋮", fontSize = 22.sp, color = Palette.TextDim, modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable { menu = t }.padding(10.dp))
+            }
+        }
+    }
+    menu?.let { t ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { menu = null }, containerColor = Palette.Panel,
+            title = { Text(Featured.shortTitle(t.title), maxLines = 2) },
+            text = {
+                Column {
+                    val running = t.status == com.lumentv.data.db.TransferStatus.RUNNING || t.status == com.lumentv.data.db.TransferStatus.SCHEDULED
+                    val retry = t.status == com.lumentv.data.db.TransferStatus.FAILED || t.status == com.lumentv.data.db.TransferStatus.CANCELLED
+                    if (running) MenuLine("Annuler") { scope.launch { downloads.cancel(t.id) }; menu = null }
+                    if (retry) MenuLine("Réessayer") { scope.launch { downloads.retry(t.id) }; menu = null }
+                    MenuLine("Supprimer") { scope.launch { downloads.delete(t.id) }; menu = null }
+                }
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { menu = null }) { Text("Fermer") } })
+    }
+}
+
+@Composable
+private fun MenuLine(text: String, onClick: () -> Unit) =
+    Text(text, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 4.dp))

@@ -54,6 +54,8 @@ object IosApp {
             tmdbKey = plist("LumenTmdbKey"), syncUrl = plist("LumenSyncUrl"),
         ), scope).also { core -> core.profile.start() }
     }
+    /** Films and episodes kept on the iPhone; the Swift app downloads (background URLSession) and reports here. */
+    val downloads: DownloadManager by lazy { DownloadManager(core) }
 }
 
 @Composable
@@ -66,10 +68,18 @@ private fun Images() = setSingletonImageLoaderFactory { context ->
 }
 
 /** Called by the Swift app (iosApp/): the whole app as one view controller; [player] is KSPlayer, Swift side. */
-fun MainViewController(player: VideoPlayer): UIViewController = ComposeUIViewController {
-    Images()
-    LumenPhoneApp(IosApp.core, player)
+fun MainViewController(player: VideoPlayer, downloader: FileDownloader): UIViewController {
+    IosApp.downloads.downloader = downloader
+    return ComposeUIViewController {
+        Images()
+        androidx.compose.runtime.CompositionLocalProvider(LocalDownloads provides IosApp.downloads) {
+            LumenPhoneApp(IosApp.core, player)
+        }
+    }
 }
+
+/** For the Swift downloader: where it reports progress, the end or a failure. */
+fun downloads(): DownloadManager = IosApp.downloads
 
 /** The Swift app tells the shared app when it comes back to the foreground (profile sync). */
 fun appDidBecomeActive() {

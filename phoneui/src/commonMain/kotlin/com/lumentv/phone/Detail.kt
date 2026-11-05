@@ -62,6 +62,8 @@ import com.lumentv.data.db.PlaylistEntity
 import com.lumentv.data.db.PlaylistType
 import com.lumentv.data.db.PrefKind
 import com.lumentv.data.db.SeriesRow
+import com.lumentv.data.db.TransferEntity
+import com.lumentv.data.db.TransferStatus
 import com.lumentv.data.repo.LibraryRepository
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -119,8 +121,14 @@ internal fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer, back: 
     val t = tmdbInfo(core, m.name, false, info?.tmdb, year)
     var versionMenu by remember { mutableStateOf(false) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val downloads = LocalDownloads.current
+    val transfers by remember(downloads) { downloads?.observe() ?: kotlinx.coroutines.flow.flowOf(emptyList()) }.collectAsState(emptyList())
+    val dl = transfers.firstOrNull { it.playlistId == m.playlistId && it.refUid == m.uid }
+    // A downloaded film plays from its file: no network needed.
     fun start(fromMs: Long) = scope.launch {
-        play(core, player, core.resolver.movie(m), Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, fromMs) { pos, dur ->
+        val spec = dl?.takeIf { it.status == TransferStatus.DONE && it.filePath != null }
+            ?.let { com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + it.filePath, null, null, false) } ?: core.resolver.movie(m)
+        play(core, player, spec, Featured.shortTitle(m.name), Featured.versionLabel(m.name).takeIf { it != "Version" }, fromMs) { pos, dur ->
             core.scope.launch {
                 val done = dur > 0 && pos > dur * 0.95
                 core.library.record(HistoryEntity(key, HistoryKind.MOVIE, m.playlistId, m.uid, m.name, null, m.poster, null, nowMillis(), if (done) dur else pos, dur))
@@ -149,6 +157,16 @@ internal fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer, back: 
                 } else PhoneButton("▶  Lecture", primary = true, modifier = Modifier.fillMaxWidth()) { start(0) }
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     IconAction(if (current.isFavorite) "✓" else "+", "Ma liste") { scope.launch { core.library.toggleFavorite(m.playlistId, PrefKind.MOVIE, m.uid) } }
+                    if (downloads != null) DownloadAction(dl) {
+                        scope.launch {
+                            when (dl?.status) {
+                                TransferStatus.DONE -> start(0)
+                                TransferStatus.RUNNING, TransferStatus.SCHEDULED -> downloads.cancel(dl.id)
+                                TransferStatus.FAILED, TransferStatus.CANCELLED -> downloads.retry(dl.id)
+                                else -> downloads.downloadMovie(m)
+                            }
+                        }
+                    }
                     if (versions.size > 1) IconAction("⇄", Featured.versionLabel(m.name)) { versionMenu = true }
                 }
             }
@@ -211,6 +229,9 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
     val t = tmdbInfo(core, s.name, true, s.tmdb, Featured.year(s.year))
     var menu by remember { mutableStateOf<EpisodeEntity?>(null) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val downloads = LocalDownloads.current
+    val transfers by remember(downloads) { downloads?.observe() ?: kotlinx.coroutines.flow.flowOf(emptyList()) }.collectAsState(emptyList())
+    fun dlOf(e: EpisodeEntity) = transfers.firstOrNull { it.playlistId == e.playlistId && it.refUid == e.uid }
 
     // In the app's scope: the next episode still opens when this page has gone in the meantime.
     fun start(e: EpisodeEntity, fromMs: Long) {
@@ -221,7 +242,8 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
             val after = if (i >= 0) all.getOrNull(i + 1) else null
             val label = "S${e.season} E${e.episode}"
             val key = LibraryRepository.key(HistoryKind.EPISODE, e.playlistId, e.uid)
-            val spec = core.resolver.episode(e)
+            val file = downloads?.fileOf(e.playlistId, e.uid)?.filePath
+            val spec = file?.let { com.lumentv.data.repo.StreamSpec(DownloadManager.SCHEME + it, null, null, false) } ?: core.resolver.episode(e)
             player.play(PlayRequest(spec.url, spec.userAgent, spec.referer, Featured.shortTitle(s.name), "$label · ${e.title}", fromMs, false,
                 onFinish = { pos, dur ->
                     core.scope.launch {
@@ -312,7 +334,12 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text("${e.episode}. " + e.title.substringAfterLast(" - ").ifBlank { e.title }, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                             color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (e.durationSecs > 0) Text(duration(e.durationSecs), fontSize = 12.sp, color = Palette.TextDim)
+                        val d = dlOf(e)
+                        Text(listOfNotNull(e.durationSecs.takeIf { it > 0 }?.let { duration(it) }, when (d?.status) {
+                            TransferStatus.DONE -> "⬇ téléchargé"
+                            TransferStatus.RUNNING -> "⬇ " + (if (d.totalBytes > 0) "${d.bytes * 100 / d.totalBytes} %" else "en cours")
+                            else -> null
+                        }).joinToString(" · "), fontSize = 12.sp, color = Palette.TextDim)
                     }
                     Box(Modifier.size(40.dp).clip(CircleShape).clickable { menu = e }, contentAlignment = Alignment.Center) {
                         Text("⋮", fontSize = 22.sp, color = Palette.TextDim)
@@ -329,7 +356,15 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
             Option("Lire") { start(e, resumeOf(e)) },
             Option("Depuis le début") { start(e, 0) },
             if (watched(e)) Option("Marquer comme non vu") { markWatched(listOf(e), false) } else Option("Marquer comme vu") { markWatched(listOf(e), true) },
-        )) { menu = null }
+        ) + listOfNotNull(downloads?.let { d ->
+            val t = dlOf(e)
+            when (t?.status) {
+                TransferStatus.DONE -> Option("Supprimer le téléchargement") { scope.launch { d.delete(t.id) } }
+                TransferStatus.RUNNING, TransferStatus.SCHEDULED -> Option("Annuler le téléchargement") { scope.launch { d.cancel(t.id) } }
+                TransferStatus.FAILED, TransferStatus.CANCELLED -> Option("Réessayer le téléchargement") { scope.launch { d.retry(t.id) } }
+                else -> Option("Télécharger l'épisode") { scope.launch { d.downloadEpisode(e, s.name) } }
+            }
+        })) { menu = null }
     }
 }
 
@@ -391,6 +426,15 @@ private fun IconAction(icon: String, label: String, onClick: () -> Unit) {
         Text(icon, fontSize = 22.sp, color = Palette.Text)
         Text(label, fontSize = 11.sp, color = Palette.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(88.dp), textAlign = TextAlign.Center)
     }
+}
+
+/** "⬇ Télécharger", "⬇ 42 %", "▶ Téléchargé", "↻ Réessayer". */
+@Composable
+private fun DownloadAction(t: TransferEntity?, onClick: () -> Unit) = when (t?.status) {
+    TransferStatus.DONE -> IconAction("▶", "Téléchargé", onClick)
+    TransferStatus.RUNNING, TransferStatus.SCHEDULED -> IconAction("⏸", if (t.totalBytes > 0) "${t.bytes * 100 / t.totalBytes} % · annuler" else "Annuler", onClick)
+    TransferStatus.FAILED, TransferStatus.CANCELLED -> IconAction("↻", "Réessayer", onClick)
+    else -> IconAction("⬇", "Télécharger", onClick)
 }
 
 /** A glassy pill: seasons. */

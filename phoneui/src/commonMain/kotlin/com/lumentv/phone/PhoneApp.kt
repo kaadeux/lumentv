@@ -84,6 +84,7 @@ internal sealed interface Route {
     data class GuideChannel(val channel: ChannelRow) : Route
     data object Sports : Route
     data object Settings : Route
+    data object Downloads : Route
 }
 
 private enum class Tab(val label: String, val icon: String) { MOVIES("Films", "🎬"), SERIES("Séries", "📺"), LIVE("TV", "📡"), SEARCH("Recherche", "🔍"), MORE("Plus", "☰") }
@@ -206,6 +207,7 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
                 is Route.GuideChannel -> GuideChannelPage(core, r.channel, player, back)
                 Route.Sports -> SportsPage(core, p, player, back)
                 Route.Settings -> SettingsPage(core, p, back)
+                Route.Downloads -> DownloadsPage(core, player, back)
                 is Route.Categories -> if (r.series) SeriesCategories(core, p, open, back) else MovieCategories(core, p, open, back)
                 null -> when (tab) {
                     Tab.MOVIES -> MoviesHome(core, p, player, open)

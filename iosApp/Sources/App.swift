@@ -17,6 +17,8 @@ struct LumenTVApp: App {
         // KSPlayer would set the ProMotion screen to the video's rate (25 to 50 Hz for a 25 fps film): iOS then picks
         // 30, 40 or 60 Hz and repeats one frame in five or so, a steady stutter. At 120 Hz every rate plays evenly.
         KSOptions.preferredFrame = false
+        // Downloads left running when the app was closed report back to the shared app.
+        _ = LumenDownloader.shared.session
     }
 
     var body: some Scene {
@@ -35,10 +37,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         Orientation.landscapeOnly ? .landscape : .portrait
     }
+
+    /// iOS wakes the app when a background download ends.
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        LumenDownloader.shared.backgroundCompletion = completionHandler
+        _ = LumenDownloader.shared.session
+    }
 }
 
 /// The Kotlin app as a SwiftUI view.
 struct ComposeHost: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UIViewController { MainKt.MainViewController(player: LumenPlayer.shared) }
+    func makeUIViewController(context: Context) -> UIViewController { MainKt.MainViewController(player: LumenPlayer.shared, downloader: LumenDownloader.shared) }
     func updateUIViewController(_ controller: UIViewController, context: Context) {}
 }
