@@ -46,21 +46,7 @@ object PrivateNet {
     val secureHosts: List<String> get() = decisions.filterValues { it > 0 }.keys.sorted()
 
     /** For the settings: what the internet provider can still see. */
-    fun summary(): Pair<String, String> {
-        val clear = cleartextHosts.sorted()
-        val title = when {
-            clear.isNotEmpty() -> "Partielle"
-            secureHosts.isNotEmpty() -> "Protégée"
-            else -> "DNS chiffré"
-        }
-        val detail = listOfNotNull(
-            if (dnsFallbacks > 0) "DNS chiffré injoignable ($dnsFallbacks fois) : DNS de la box utilisé" else "Noms des sites chiffrés (Cloudflare)",
-            secureHosts.takeIf { it.isNotEmpty() }?.let { "HTTPS : ${it.joinToString(", ")}" },
-            clear.takeIf { it.isNotEmpty() }?.let { "en clair, sans HTTPS chez le fournisseur (un VPN seul le cacherait) : ${it.joinToString(", ")}" },
-            if (secureHosts.isEmpty() && clear.isEmpty()) "HTTPS vérifié à la prochaine connexion au fournisseur" else null,
-        ).joinToString(" · ")
-        return title to detail
-    }
+    fun summary(): Privacy = Privacy.of(secureHosts, cleartextHosts.sorted(), dnsFallbacks)
 
     /** Adds encrypted DNS and the HTTPS upgrade to a client builder. */
     fun OkHttpClient.Builder.private(): OkHttpClient.Builder = dns(dns).addInterceptor(Upgrade).addNetworkInterceptor(Watch)

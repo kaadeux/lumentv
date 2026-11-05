@@ -2,6 +2,9 @@
 
 package com.lumentv.ui.screens
 
+import androidx.compose.foundation.layout.Box
+import com.lumentv.data.repo.reEncrypted
+import com.lumentv.data.repo.secretsInClear
 import com.lumentv.ui.components.hint
 import com.lumentv.ui.components.ButtonRow
 import android.os.Build
@@ -92,7 +95,7 @@ fun SettingsScreen(vm: MainViewModel) {
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item { ScreenTitle("Paramètres") }
 
-        item { Group("Playlists") }
+        item { Group("Mes listes") }
         val list = playlists.orEmpty()
         if (list.isEmpty()) item {
             Text("Bienvenue ! Ajoutez votre playlist M3U ou votre compte Xtream Codes pour commencer. Lumen TV ne fournit aucune chaîne : " +
@@ -101,6 +104,8 @@ fun SettingsScreen(vm: MainViewModel) {
         items(list, key = { it.id }) { p ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PlaylistCard(p, p.id == active?.id, p.id in busy) { playlistMenu = p }
+                if (p.id == active?.id) com.lumentv.ui.kit.StatTiles(listOf("${p.channelCount}" to "chaînes", "${p.movieCount}" to "films", "${p.seriesCount}" to "séries"))
+                Box(Modifier.padding(start = 6.dp)) { com.lumentv.ui.kit.SecretsLine(p.secretsInClear()) }
                 ButtonRow {
                     val running = p.id in busy
                     TvButton(if (running) "Rechargement en cours…" else "Recharger la liste", { if (!running) vm.refresh(p.id) },
@@ -154,9 +159,10 @@ fun SettingsScreen(vm: MainViewModel) {
             }
         }
 
+        item { Group("Confidentialité vis-à-vis du FAI") }
         item {
-            val (title, detail) = remember { com.lumentv.core.PrivateNet.summary() }
-            SettingRow("Confidentialité : $title", detail, { vm.show("Votre fournisseur d'accès voit que vous utilisez internet et combien, pas ce que vous regardez quand la connexion est protégée.") })
+            val privacy = remember { com.lumentv.core.PrivateNet.summary() }
+            com.lumentv.ui.kit.SectionCard { com.lumentv.ui.kit.PrivacyLines(privacy.title, privacy.lines, privacy.partial, com.lumentv.core.Privacy.NOTE) }
         }
         item { Group("Lecture") }
         item { SettingRow("Mémoire tampon", if (settings.bufferMode == "stable") "Stable (connexion faible)" else "Normale (démarrage rapide)", {
@@ -200,8 +206,14 @@ fun SettingsScreen(vm: MainViewModel) {
         item { Text("Fichier : ${backupFile.absolutePath}", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.padding(start = 4.dp)) }
 
         item { Group("Stockage") }
-        item { SettingRow("Vider le cache des images", null, {
-            context.imageLoader.memoryCache?.clear(); context.imageLoader.diskCache?.clear(); vm.show("Cache des images vidé") }) }
+        item {
+            var cleared by remember { mutableStateOf(0) }
+            val bytes by produceState<Long?>(null, cleared) {
+                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { context.imageLoader.diskCache?.size }
+            }
+            SettingRow("Vider le cache des images", bytes?.let { "${it / 1_000_000} Mo" }, {
+                context.imageLoader.memoryCache?.clear(); context.imageLoader.diskCache?.clear(); cleared++; vm.show("Cache des images vidé") })
+        }
 
         item { Group("À propos et diagnostic") }
         item {
@@ -224,6 +236,13 @@ fun SettingsScreen(vm: MainViewModel) {
             add(MenuOption("Actualiser la liste et le guide") { vm.refresh(p.id) })
             add(MenuOption("Actualiser seulement le guide TV") { vm.refreshEpg(p.id) })
             add(MenuOption("Modifier") { vm.open(Screen.PlaylistEdit(p.id, p.type)) })
+            if (p.secretsInClear()) add(MenuOption("Chiffrer les identifiants") {
+                scope.launch {
+                    val again = p.reEncrypted()
+                    vm.graph.playlists.save(again)
+                    vm.show(if (again.secretsInClear()) "Le coffre de l'appareil refuse encore : identifiants non chiffrés" else "Identifiants chiffrés")
+                }
+            })
             add(MenuOption("Supprimer") { deleting = p })
         }, onDismiss = { playlistMenu = null }, subtitle = p.accountInfo)
     }
@@ -302,23 +321,24 @@ private suspend fun exportBackup(vm: MainViewModel, file: File, secrets: Boolean
 }
 
 @Composable
-private fun Group(title: String) =
-    Text(title, style = MaterialTheme.typography.titleMedium, color = Palette.Accent, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp, start = 4.dp))
+private fun Group(title: String) = com.lumentv.ui.kit.SectionTitle(title, Modifier.padding(top = 18.dp))
 
 @Composable
 private fun PlaylistCard(p: PlaylistEntity, active: Boolean, busy: Boolean, onClick: () -> Unit) {
     FocusSurface(onClick, Modifier.fillMaxWidth(), selected = active, focusedScale = 1.01f) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(p.name + if (active) "  · active" else "", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(p.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val counts = listOfNotNull("${p.channelCount} chaînes", p.movieCount.takeIf { it > 0 }?.let { "$it films" }, p.seriesCount.takeIf { it > 0 }?.let { "$it série" + if (it > 1) "s" else "" })
-                Text(when (p.type) { PlaylistType.XTREAM -> "Xtream · "; else -> "M3U · " } + counts.joinToString(" · ") +
+                // The active one's counts are in the tiles below it.
+                Text(when (p.type) { PlaylistType.XTREAM -> "Compte Xtream"; else -> "Playlist M3U" } + (if (active) "" else " · " + counts.joinToString(" · ")) +
                     (if (p.lastRefresh > 0) " · actualisée le " + SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(p.lastRefresh)) else ""),
                     style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 p.accountInfo?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1) }
                 p.lastError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Danger, maxLines = 2) }
             }
             if (busy) Text("Actualisation…", style = MaterialTheme.typography.bodySmall)
+            else if (active) com.lumentv.ui.kit.Badge("Active")
         }
     }
 }

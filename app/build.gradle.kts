@@ -17,8 +17,8 @@ android {
         minSdk = 23
         targetSdk = 34
         // Raise versionCode on every release: installed copies only accept a higher one as an update.
-        versionCode = 68
-        versionName = "2.6.1"
+        versionCode = 69
+        versionName = "2.6.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Family access code and update feed, from local.properties (never committed). Only the code's hash is built in.
         val code = localProp("lumen.accessCode").trim()
@@ -103,6 +103,7 @@ dependencies {
     // The database and what it reads (shared with the iPhone): module :appcore.
     val room = "2.7.2"
     implementation(project(":appcore"))
+    implementation(project(":uikit"))
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")

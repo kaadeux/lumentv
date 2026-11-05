@@ -99,20 +99,5 @@ object HttpsUpgrade {
     }
 
     /** For the settings: what the internet provider can still see. */
-    fun summary(): Pair<String, String> {
-        val c = cleartextHosts
-        val s = secureHosts
-        val title = when {
-            c.isNotEmpty() -> "Partielle"
-            s.isNotEmpty() -> "Protégée"
-            else -> "DNS chiffré"
-        }
-        val detail = listOfNotNull(
-            "Noms des sites chiffrés (Cloudflare)",
-            s.takeIf { it.isNotEmpty() }?.let { "HTTPS : ${it.joinToString(", ")}" },
-            c.takeIf { it.isNotEmpty() }?.let { "en clair, sans HTTPS chez le fournisseur (un VPN seul le cacherait) : ${it.joinToString(", ")}" },
-            if (s.isEmpty() && c.isEmpty()) "HTTPS vérifié à la prochaine connexion au fournisseur" else null,
-        ).joinToString(" · ")
-        return title to detail
-    }
+    fun summary(): Privacy = Privacy.of(secureHosts, cleartextHosts)
 }

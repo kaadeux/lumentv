@@ -298,11 +298,7 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
         item {
             Section("Liste active") {
                 Text(p.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Stat("${p.channelCount}", "chaînes", Modifier.weight(1f))
-                    Stat("${p.movieCount}", "films", Modifier.weight(1f))
-                    Stat("${p.seriesCount}", "séries", Modifier.weight(1f))
-                }
+                com.lumentv.ui.kit.StatTiles(listOf("${p.channelCount}" to "chaînes", "${p.movieCount}" to "films", "${p.seriesCount}" to "séries"))
                 if (p.lastRefresh > 0) Text("Actualisée le " + day(p.lastRefresh), color = Palette.TextDim, fontSize = 14.sp)
                 p.accountInfo?.let { Text(it, color = Palette.TextDim, fontSize = 14.sp) }
                 Text("Rechargement automatique", color = Palette.TextDim, fontSize = 14.sp)
@@ -320,12 +316,10 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity, open: (Route) -> Uni
         item { ParentalSection(core) }
         item {
             // What the internet provider can still see (as on the TV): encrypted names, HTTPS where the server allows it.
-            val (title, detail) = remember { com.lumentv.core.HttpsUpgrade.summary() }
+            val privacy = remember { com.lumentv.core.HttpsUpgrade.summary() }
             Section("Confidentialité vis-à-vis du FAI") {
-                Text((if (title == "Partielle") "⚠️  " else "🛡️  ") + title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                detail.split(" · ").forEach { Text("•  $it", color = Palette.TextDim, fontSize = 14.sp) }
-                Text("Le moteur vidéo FFmpeg (MKV, direct en TS) peut encore demander le nom du serveur au DNS de la box.",
-                    color = Palette.TextDim, fontSize = 13.sp)
+                com.lumentv.ui.kit.PrivacyLines(privacy.title, privacy.lines, privacy.partial,
+                    "Le moteur vidéo FFmpeg (MKV, direct en TS) peut encore demander le nom du serveur au DNS de la box.")
             }
         }
         item {
@@ -399,25 +393,5 @@ internal fun Toggle(title: String, subtitle: String, on: Boolean, onChange: (Boo
 }
 
 @Composable
-internal fun Section(title: String, content: @Composable () -> Unit) = Column(Modifier.fillMaxWidth()) {
-    Text(title.uppercase(), color = Palette.TextDim, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.8.sp,
-        modifier = Modifier.padding(start = 6.dp, bottom = 8.dp))
-    SectionCard(content)
-}
+internal fun Section(title: String, content: @Composable () -> Unit) = com.lumentv.ui.kit.SettingsSection(title, content = content)
 
-/** A big number and what it counts, side by side with the others. */
-@Composable
-private fun Stat(value: String, label: String, modifier: Modifier) = Column(
-    modifier.clip(RoundedCornerShape(12.dp)).background(Palette.PanelHigh).padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally,
-) {
-    Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-    Text(label, color = Palette.TextDim, fontSize = 12.sp)
-}
-
-@Composable
-private fun SectionCard(content: @Composable () -> Unit) = Column(
-    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Panel).padding(16.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp),
-) {
-    content()
-}

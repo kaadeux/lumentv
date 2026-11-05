@@ -49,7 +49,8 @@ fun SettingsScreen(state: AppState) {
     val scope = rememberCoroutineScope()
     var login by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf<String?>(null) }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    androidx.compose.runtime.CompositionLocalProvider(com.lumentv.ui.kit.LocalKitColors provides kitColors) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(22.dp)) {
         item { Text("Paramètres", style = MaterialTheme.typography.headlineSmall, color = Pal.text) }
 
         if (state.syncEnabled) item {
@@ -72,18 +73,19 @@ fun SettingsScreen(state: AppState) {
         }
 
         item {
-            Card("Playlists") {
+            Card("Mes listes") {
                 if (state.playlists.isEmpty()) Text("Aucune playlist sur ce PC.", color = Pal.dim)
                 state.playlists.forEach { (key, p) ->
+                    val isActive = key == state.activeKey || (state.activeKey == null && p == state.active)
+                    val catalog = state.catalog?.takeIf { p == state.active }
+                    com.lumentv.ui.kit.ListTile(p.name, (if (p.type == "xtream") "Compte Xtream" else "Playlist M3U") +
+                        (catalog?.let { " · chargée le " + SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(it.loadedAt)) } ?: ""), isActive) {
+                        // On the PC the login is kept by Windows (DPAPI), always encrypted.
+                        com.lumentv.ui.kit.SecretsLine(false, " par Windows")
+                        if (p == state.active) state.loadError?.let { Text(it, color = Pal.danger, style = MaterialTheme.typography.bodySmall) }
+                    }
+                    catalog?.let { c -> com.lumentv.ui.kit.StatTiles(listOf("${c.channels.size}" to "chaînes", "${c.movies.size}" to "films", "${c.series.size}" to "séries")) }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Column(Modifier.weight(1f)) {
-                            Text(p.name + if (key == state.activeKey || (state.activeKey == null && p == state.active)) "  · active" else "", color = Pal.text)
-                            Text((if (p.type == "xtream") "Xtream" else "M3U") + (state.catalog?.takeIf { p == state.active }?.let { c ->
-                                " · ${c.channels.size} chaînes · ${c.movies.size} films · ${c.series.size} séries · chargée le " +
-                                    SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(c.loadedAt))
-                            } ?: ""), color = Pal.dim, style = MaterialTheme.typography.bodySmall)
-                            if (p == state.active) state.loadError?.let { Text(it, color = Pal.danger, style = MaterialTheme.typography.bodySmall) }
-                        }
                         if (p != state.active) OutlinedButton({ state.open(key) }) { Text("Utiliser") }
                         OutlinedButton({ state.open(key, force = true) }, enabled = !state.loading) { Text(if (state.loading && p == state.active) "Chargement…" else "Recharger") }
                         TextButton({ state.removePlaylist(key) }) { Text("Supprimer", color = Pal.danger) }
@@ -124,15 +126,12 @@ fun SettingsScreen(state: AppState) {
         }
 
         item {
-            Card("Confidentialité") {
+            Card("Confidentialité vis-à-vis du FAI") {
                 // Read again every few seconds: servers are moved to HTTPS as the app reaches them.
                 val summary by androidx.compose.runtime.produceState(com.lumentv.core.PrivateNet.summary()) {
                     while (true) { kotlinx.coroutines.delay(5_000); value = com.lumentv.core.PrivateNet.summary() }
                 }
-                Text(summary.first, color = Pal.text, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                Text(summary.second, color = Pal.dim, style = MaterialTheme.typography.bodySmall)
-                Text("Votre fournisseur d'accès voit que vous utilisez internet et combien, pas ce que vous regardez quand la connexion est protégée.",
-                    color = Pal.dim, style = MaterialTheme.typography.bodySmall)
+                com.lumentv.ui.kit.PrivacyLines(summary.title, summary.lines, summary.partial, com.lumentv.core.Privacy.NOTE)
             }
         }
 
@@ -144,17 +143,19 @@ fun SettingsScreen(state: AppState) {
             }
         }
     }
+    }
     if (login) LoginDialog(state) { login = false }
     adding?.let { type -> PlaylistDialog(state, type) { adding = null } }
 }
 
 @Composable
-private fun Card(title: String, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Pal.panel).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, color = Pal.accent)
-        content()
-    }
-}
+private fun Card(title: String, content: @Composable () -> Unit) = com.lumentv.ui.kit.SettingsSection(title, content = content)
+
+/** The PC's colours for the shared settings pieces. */
+private val kitColors = com.lumentv.ui.kit.KitColors(
+    panel = Pal.panel, panelHigh = Pal.panelHigh, text = Pal.text, dim = Pal.dim,
+    accent = Pal.accent, accentSoft = Pal.accent.copy(alpha = 0.2f), danger = Pal.danger,
+)
 
 @Composable
 private fun Choice(label: String, value: String, options: List<Pair<String, String>>, onPick: (String) -> Unit) {

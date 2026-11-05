@@ -22,6 +22,7 @@ kotlin {
 
 dependencies {
     implementation(project(":shared"))
+    implementation(project(":uikit"))
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)

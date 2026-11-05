@@ -23,6 +23,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":appcore"))
+            implementation(project(":uikit"))
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material3)
