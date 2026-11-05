@@ -40,6 +40,16 @@ private val REFRESH_CHOICES = listOf(0 to "Jamais", 6 to "6 h", 12 to "12 h", 24
 
 private fun offsetLabel(minutes: Int) = if (minutes == 0) "Aucun" else (if (minutes > 0) "+" else "−") + "${kotlin.math.abs(minutes) / 60} h"
 
+/** The list's secrets as stored: "p:" means the Keychain refused and they are kept in clear. */
+private fun PlaylistEntity.secrets() = listOf(sourceEnc, passwordEnc, epgUrlEnc, autoEpgUrlEnc).filter { it.isNotEmpty() }
+private fun PlaylistEntity.inClear() = secrets().any { it.startsWith("p:") }
+
+/** The same list with its secrets encrypted again (once the Keychain works). */
+private fun PlaylistEntity.reEncrypted() = copy(
+    sourceEnc = SecretBox.encrypt(SecretBox.decrypt(sourceEnc)), passwordEnc = SecretBox.encrypt(SecretBox.decrypt(passwordEnc)),
+    epgUrlEnc = SecretBox.encrypt(SecretBox.decrypt(epgUrlEnc)), autoEpgUrlEnc = SecretBox.encrypt(SecretBox.decrypt(autoEpgUrlEnc)),
+)
+
 private fun typeLabel(type: String) = if (type == PlaylistType.XTREAM) "Compte Xtream" else "Playlist M3U"
 
 /** Adding or changing a list, from the Paramètres. */
@@ -167,6 +177,8 @@ internal fun PlaylistsSection(core: AppCore, active: PlaylistEntity, open: (Rout
                     Text(listOfNotNull(typeLabel(p.type), if (p.id in busy) "actualisation…" else null,
                         p.lastError?.takeIf { it.isNotBlank() }?.let { "erreur" }).joinToString(" · "),
                         color = Palette.TextDim, fontSize = 13.sp)
+                    if (p.inClear()) Text("⚠️  Identifiants non chiffrés", color = Palette.Danger, fontSize = 13.sp)
+                    else Text("🔒  Identifiants chiffrés", color = Palette.TextDim, fontSize = 13.sp)
                 }
                 if (p.id == active.id) Text("✓ Active", color = Palette.Accent, fontSize = 14.sp)
                 else Text("⋮", color = Palette.TextDim, fontSize = 18.sp)
@@ -182,6 +194,14 @@ internal fun PlaylistsSection(core: AppCore, active: PlaylistEntity, open: (Rout
             if (p.id != active.id) Option("Utiliser cette liste") { core.scope.launch { core.settings.set(Keys.activePlaylist, p.id) } } else null,
             Option("Actualiser") { core.scope.launch { if (core.playlists.refresh(p.id).ok) core.epg.refresh(p.id) } },
             Option("Modifier") { open(Route.PlaylistEdit(p.id, p.type)) },
+            if (p.inClear()) Option("Chiffrer les identifiants") {
+                core.scope.launch {
+                    val again = p.reEncrypted()
+                    core.playlists.save(again)
+                    Parental.notice = if (again.inClear()) "Le trousseau de l'iPhone refuse encore : les identifiants restent non chiffrés."
+                        else "Identifiants chiffrés."
+                }
+            } else null,
             Option("Supprimer") { deleting = p },
         )) { menu = null }
     }
