@@ -15,7 +15,8 @@ targets:
   LumenTV:
     type: application
     platform: iOS
-    sources: [Sources]
+    # Resources: the app icon (Assets.xcassets, one 1024 px image: iOS makes the other sizes).
+    sources: [Sources, Resources]
     dependencies:
       - package: KSPlayer
       # Built by Gradle before Xcode runs: ./gradlew :phoneui:linkReleaseFrameworkIosArm64
@@ -25,8 +26,8 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: Lumen TV
-        CFBundleShortVersionString: "0.14.0"
-        CFBundleVersion: "21"
+        CFBundleShortVersionString: "0.14.1"
+        CFBundleVersion: "22"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
@@ -50,6 +51,7 @@ targets:
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_IDENTITY: ""
         ENABLE_BITCODE: "NO"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         FRAMEWORK_SEARCH_PATHS: ["$(inherited)", "$(PROJECT_DIR)/../phoneui/build/bin/iosArm64/releaseFramework"]
         LUMEN_TMDB_KEY: ""
         LUMEN_SYNC_URL: ""
