@@ -120,7 +120,7 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
             val films = oneEach(h.movies, { it.m.name }, { it.m.category })
             val shows = oneEach(h.series, { it.s.name }, { it.s.category })
             if (films.isEmpty() && shows.isEmpty()) return@forEach
-            item(key = "pt:" + h.key) { SectionTitle("Avec ${h.title}") }
+            item(key = "pt:" + h.key) { SectionTitle(h.title) }
             item(key = "pr:" + h.key) {
                 LazyRow(state = rememberList("s:p:${h.key}"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(films, key = { "m" + it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } } }

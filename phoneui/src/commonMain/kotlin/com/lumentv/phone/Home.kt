@@ -21,13 +21,10 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -241,176 +238,12 @@ private fun Banner(core: AppCore, heroes: List<Hero>) {
 
 // ---- Profile ----------------------------------------------------------------------------------------------------
 
-private fun clock(t: Long): String = Instant.fromEpochMilliseconds(t).toLocalDateTime(TimeZone.currentSystemDefault()).let {
+internal fun clock(t: Long): String = Instant.fromEpochMilliseconds(t).toLocalDateTime(TimeZone.currentSystemDefault()).let {
     it.hour.toString().padStart(2, '0') + ":" + it.minute.toString().padStart(2, '0')
 }
 
-private fun day(t: Long): String = Instant.fromEpochMilliseconds(t).toLocalDateTime(TimeZone.currentSystemDefault()).let {
+internal fun day(t: Long): String = Instant.fromEpochMilliseconds(t).toLocalDateTime(TimeZone.currentSystemDefault()).let {
     it.dayOfMonth.toString().padStart(2, '0') + "/" + it.monthNumber.toString().padStart(2, '0') + " " + clock(t)
-}
-
-/** The online profile (favourites, history, resume, ratings shared with the TV, the phone and the PC) and the list. */
-@Composable
-internal fun SettingsPage(core: AppCore, p: PlaylistEntity?, open: (Route) -> Unit, extras: SettingsExtras = SettingsExtras(), modifier: Modifier = Modifier) {
-    val settings by core.settings.flow.collectAsState(null)
-    val state by core.profile.state.collectAsState()
-    val busy by core.playlists.busy.collectAsState()
-    var name by remember { mutableStateOf("") }
-    var pass by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    var signing by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    LazyColumn(modifier, state = rememberList("settings"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-        item {
-            Section("Profil en ligne") {
-                when {
-                    !core.profile.enabled -> Text("Le profil en ligne n'est pas encore activé dans cette version de l'app.", color = Palette.TextDim)
-                    state.name == null && p == null -> Text(com.lumentv.core.ProfileGate.NEEDS_LIST, color = Palette.TextDim, fontSize = 14.sp)
-                    state.name == null -> {
-                        Text("Le même profil que sur la TV : favoris, historique, reprise et notes suivent d'un appareil à l'autre. Chiffré sur l'iPhone avant l'envoi.",
-                            color = Palette.TextDim, fontSize = 14.sp)
-                        ExactField(name, { name = it }, "Nom du profil")
-                        ExactField(pass, { pass = it }, "Phrase secrète", secret = true)
-                        error?.let { Text(it, color = Palette.Danger) }
-                        PhoneButton(if (signing) "Connexion…" else "Se connecter", primary = true, modifier = Modifier.fillMaxWidth()) {
-                            if (signing || name.isBlank() || pass.isBlank()) return@PhoneButton
-                            signing = true; error = null
-                            scope.launch {
-                                core.profile.signIn(name.trim(), pass).onFailure { error = it.message ?: "Connexion impossible." }
-                                signing = false
-                            }
-                        }
-                    }
-                    else -> {
-                        Text(state.name.orEmpty(), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                        Text(when {
-                            state.syncing -> "Synchronisation…"
-                            state.error != null -> state.error!!
-                            state.lastSync > 0 -> "Synchronisé à " + clock(state.lastSync)
-                            else -> "Pas encore synchronisé"
-                        }, color = if (state.error != null) Palette.Danger else Palette.TextDim)
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            PhoneButton("Synchroniser", primary = true, modifier = Modifier.weight(1f)) { scope.launch { core.profile.syncNow() } }
-                            PhoneButton("Se déconnecter", modifier = Modifier.weight(1f)) { core.profile.signOut() }
-                        }
-                    }
-                }
-            }
-        }
-        if (p != null) item {
-            Section("Liste active") {
-                Text(p.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                com.lumentv.ui.kit.StatTiles(listOf("${p.channelCount}" to "chaînes", "${p.movieCount}" to "films", "${p.seriesCount}" to "séries"))
-                if (p.lastRefresh > 0) Text("Actualisée le " + day(p.lastRefresh), color = Palette.TextDim, fontSize = 14.sp)
-                p.accountInfo?.let { Text(it, color = Palette.TextDim, fontSize = 14.sp) }
-                Text("Rechargement automatique", color = Palette.TextDim, fontSize = 14.sp)
-                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Choices.reloadHours.forEach { (h, label) ->
-                        item { PhoneChip(label, selected = p.refreshHours == h) { core.scope.launch { core.playlists.save(p.copy(refreshHours = h)) } } }
-                    }
-                }
-                PhoneButton(if (p.id in busy) "Actualisation…" else "Recharger la liste", modifier = Modifier.fillMaxWidth()) {
-                    if (p.id !in busy) core.scope.launch { if (core.playlists.refresh(p.id).ok) core.epg.refresh(p.id) }
-                }
-            }
-        }
-        item { PlaylistsSection(core, p, open) }
-        // The device's own sections (Android: updates, playback on the TV…).
-        extras.afterLists.forEach { e -> item { Section(e.title) { e.content() } } }
-        item { ParentalSection(core, extras.parentalHint) }
-        item {
-            // What the internet provider can still see (as on the TV): encrypted names, HTTPS where the server allows it.
-            val privacy = remember { extras.privacy() }
-            Section("Confidentialité vis-à-vis du FAI") {
-                com.lumentv.ui.kit.PrivacyLines(privacy.title, privacy.lines, privacy.partial,
-                    extras.privacyNote ?: com.lumentv.core.Privacy.NOTE)
-            }
-        }
-        item {
-            val keys = com.lumentv.data.settings.Keys
-            var testing by remember { mutableStateOf(false) }
-            var agents by remember { mutableStateOf(false) }
-            Section("Réseau") {
-                Text("Internet et le serveur du fournisseur, chronométrés, puis la cause probable d'une coupure.", color = Palette.TextDim, fontSize = 14.sp)
-                PhoneButton("Tester ma connexion", modifier = Modifier.fillMaxWidth()) { extras.onNetworkTest?.invoke() ?: run { testing = true } }
-                PhoneButton("User-Agent : " + Choices.userAgentLabel(settings?.defaultUserAgent.orEmpty()) + "  ▾", modifier = Modifier.fillMaxWidth()) { agents = true }
-            }
-            if (testing) NetworkDialog(core) { testing = false }
-            if (agents) Options("User-Agent par défaut", "Certains fournisseurs n'acceptent que certains lecteurs.", Choices.userAgents.map { (v, label) ->
-                Option(label, v == settings?.defaultUserAgent.orEmpty()) { core.scope.launch { core.settings.set(keys.userAgent, v) } }
-            }) { agents = false }
-        }
-        item {
-            val keys = com.lumentv.data.settings.Keys
-            var menu by remember { mutableStateOf<String?>(null) }
-            Section("Lecture") {
-                Toggle("Épisode suivant automatique", "À la fin d'un épisode, le suivant se lance.", settings?.autoNext ?: true) { on ->
-                    core.scope.launch { core.settings.set(keys.autoNext, on) }
-                }
-                Toggle("Qualité auto en direct", "Si l'image coupe, la même chaîne en qualité plus basse (FHD → HD → SD).", settings?.autoQuality ?: true) { on ->
-                    core.scope.launch { core.settings.set(keys.autoQuality, on) }
-                }
-                Toggle("Mémoire tampon stable", "Pour une connexion faible : démarre un peu plus lentement, coupe moins.", settings?.bufferMode == "stable") { on ->
-                    core.scope.launch { core.settings.set(keys.buffer, if (on) "stable" else "normal") }
-                }
-                Toggle("Sous-titres activés", "Sinon, seulement les sous-titres forcés.", settings?.subtitlesOn ?: false) { on ->
-                    core.scope.launch { core.settings.set(keys.subsOn, on) }
-                }
-                PhoneButton("Langue audio : " + Choices.languageLabel(settings?.audioLang.orEmpty()) + "  ▾", modifier = Modifier.fillMaxWidth()) { menu = "audio" }
-                PhoneButton("Sous-titres : " + Choices.languageLabel(settings?.subtitleLang.orEmpty()) + "  ▾", modifier = Modifier.fillMaxWidth()) { menu = "subs" }
-                Text("Format d'image", color = Palette.TextDim, fontSize = 14.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Choices.resizeModes.forEach { (m, label) ->
-                        PhoneChip(label, selected = (settings?.resizeMode ?: 0) == m) { core.scope.launch { core.settings.set(keys.resize, m) } }
-                    }
-                }
-                Text("Au lancement", color = Palette.TextDim, fontSize = 14.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Choices.startups.forEach { (v, label) ->
-                        PhoneChip(label, selected = (settings?.startup ?: "home") == v) { core.scope.launch { core.settings.set(keys.startup, v) } }
-                    }
-                }
-            }
-            menu?.let { m ->
-                val audio = m == "audio"
-                val current = if (audio) settings?.audioLang.orEmpty() else settings?.subtitleLang.orEmpty()
-                Options(if (audio) "Langue audio" else "Langue des sous-titres", null, Choices.languages.map { (code, label) ->
-                    Option(label, code == current) { core.scope.launch { core.settings.set(if (audio) keys.audioLang else keys.subLang, code) } }
-                }) { menu = null }
-            }
-        }
-        item {
-            val keys = com.lumentv.data.settings.Keys
-            var clearing by remember { mutableStateOf(false) }
-            Section("Guide TV") {
-                Text("Jours de programmes gardés", color = Palette.TextDim, fontSize = 14.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Choices.epgDays.forEach { d ->
-                        PhoneChip("$d j", selected = settings?.epgDays == d) { core.scope.launch { core.settings.set(keys.epgDays, d) } }
-                    }
-                }
-                if (p != null) PhoneButton("Recharger le guide", modifier = Modifier.fillMaxWidth()) { core.scope.launch { core.epg.refresh(p.id) } }
-                PhoneButton("Effacer le guide enregistré", modifier = Modifier.fillMaxWidth()) { clearing = true }
-            }
-            if (clearing) com.lumentv.ui.kit.KitConfirm("Effacer le guide TV ?", "Il sera de nouveau téléchargé à la prochaine actualisation.", "Effacer",
-                onConfirm = { core.scope.launch { core.epg.clearAll() } }, onDismiss = { clearing = false }, danger = true)
-        }
-        item {
-            val context = coil3.compose.LocalPlatformContext.current
-            var bytes by remember { mutableStateOf<Long?>(null) }
-            var refresh by remember { mutableStateOf(0) }
-            LaunchedEffect(refresh) { bytes = withContext(IoDispatcher) { extras.cache?.sizeBytes?.invoke() ?: cacheBytes(context) } }
-            Section("Stockage") {
-                Text("Cache des images et de TMDB : " + (bytes?.let { "${it / 1_000_000} Mo" } ?: "…"), color = Palette.TextDim, fontSize = 14.sp)
-                Text("Les téléchargements, la liste et le guide ne sont pas touchés.", color = Palette.TextDim, fontSize = 12.sp)
-                PhoneButton("Vider le cache", modifier = Modifier.fillMaxWidth()) {
-                    core.scope.launch { withContext(IoDispatcher) { extras.cache?.clear?.invoke() ?: clearCaches(context); core.logos.forget() }; refresh++ }
-                }
-            }
-        }
-        extras.atEnd.forEach { e -> item { Section(e.title) { e.content() } } }
-        item { Text(extras.footer, color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
-    }
 }
 
 @Composable

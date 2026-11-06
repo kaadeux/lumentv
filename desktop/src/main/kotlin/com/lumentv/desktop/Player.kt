@@ -304,10 +304,12 @@ class PlayerWindow private constructor(private val state: AppState) {
             if (it.startMs > 5_000) add(":start-time=${it.startMs / 1000}")
             // A connection the server drops is reopened by VLC itself (from the same byte for files).
             if (it.url.startsWith("http")) add(":http-reconnect")
+            // Setting "Mémoire tampon stable", live: a longer wait, fewer stops on a weak connection.
+            if (it.live && it.url.startsWith("http") && PcSettings.read("buffer", "normal") == "stable") { add(":network-caching=8000"); add(":live-caching=8000") }
             // Films and episodes: 5 s before the picture, then about a minute read ahead (32 MB, then only at the pace
             // of playback) to ride over the pauses of provider servers. The former 190 MB read in one go was too much.
             if (!it.live && it.url.startsWith("http")) {
-                add(":network-caching=${System.getenv("LUMEN_VOD_CACHING") ?: "5000"}")
+                add(":network-caching=${System.getenv("LUMEN_VOD_CACHING") ?: if (PcSettings.read("buffer", "normal") == "stable") "10000" else "5000"}")
                 add(":stream-filter=prefetch"); add(":prefetch-buffer-size=${System.getenv("LUMEN_VOD_AHEAD_KB") ?: "32768"}")
             }
             PlaybackLog.line("lecture ${it.kind} « ${it.title}${it.subtitle?.let { s -> " · $s" }.orEmpty()} »" + if (it.startMs > 0) " à ${fmt(it.startMs)}" else "")
@@ -583,7 +585,7 @@ class PlayerWindow private constructor(private val state: AppState) {
                 val others = key?.let { runBlocking { kotlinx.coroutines.withTimeoutOrNull(1_500) { state.presence.others(it) } } }.orEmpty()
                 val warning = if (others.isNotEmpty()) Presence.warning(others) else if (p.type != "xtream" || ScreenGuard.ownStreamCounted()) null else runCatching {
                     val http = state.http.newBuilder().callTimeout(1500, java.util.concurrent.TimeUnit.MILLISECONDS).build()
-                    ScreenGuard.warning(XtreamApi(http.asHttp(), XtreamCredentials(p.source, p.username, p.password), p.userAgent.ifBlank { null }).authenticate())
+                    ScreenGuard.warning(XtreamApi(http.asHttp(), XtreamCredentials(p.source, p.username, p.password), p.ua.ifBlank { null }).authenticate())
                 }.getOrNull()
                 SwingUtilities.invokeLater {
                     if (warning == null) return@invokeLater show(state, item)

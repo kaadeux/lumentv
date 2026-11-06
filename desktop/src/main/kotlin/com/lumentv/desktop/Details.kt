@@ -152,7 +152,7 @@ fun MovieDetail(state: AppState, m0: Mv, onBack: () -> Unit) {
     val resumable = h != null && h.positionMs > 60_000 && !state.isWatched(Kind.MOVIE, m.uid)
     fun item(fromStart: Boolean = false): PlayItem {
         val start = if (fromStart || !resumable) 0 else h!!.positionMs
-        return PlayItem(Kind.MOVIE, m.uid, m.name, m.year, m.poster, null, state.library.movieUrl(p, m), live = false, startMs = start, userAgent = p.userAgent)
+        return PlayItem(Kind.MOVIE, m.uid, m.name, m.year, m.poster, null, state.library.movieUrl(p, m), live = false, startMs = start, userAgent = p.ua)
     }
     Box(Modifier.fillMaxSize()) {
         BannerPicture(details?.backdrop ?: m.poster, 480.dp)

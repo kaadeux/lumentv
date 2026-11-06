@@ -67,13 +67,14 @@ private val hm = SimpleDateFormat("HH:mm", Locale.FRANCE)
 
 fun AppState.playChannel(c: Ch) {
     val p = active ?: return
-    PlayerWindow.open(this, PlayItem(Kind.CHANNEL, c.uid, c.name, c.group, c.logo, null, library.channelUrl(p, c), live = true, userAgent = p.userAgent))
+    rememberChannel(c.uid)
+    PlayerWindow.open(this, PlayItem(Kind.CHANNEL, c.uid, c.name, c.group, c.logo, null, library.channelUrl(p, c), live = true, userAgent = p.ua))
 }
 
 fun AppState.playMovie(m: Mv, fromStart: Boolean = false) {
     val p = active ?: return
     val start = if (fromStart) 0 else progress(Kind.MOVIE, m.uid)?.let { if (it.durationMs > 0 && it.positionMs > it.durationMs - 120_000) 0 else it.positionMs } ?: 0
-    PlayerWindow.open(this, PlayItem(Kind.MOVIE, m.uid, m.name, m.year, m.poster, null, library.movieUrl(p, m), live = false, startMs = start, userAgent = p.userAgent))
+    PlayerWindow.open(this, PlayItem(Kind.MOVIE, m.uid, m.name, m.year, m.poster, null, library.movieUrl(p, m), live = false, startMs = start, userAgent = p.ua))
 }
 
 fun AppState.episodeItem(s: Se, eps: List<Ep>, i: Int, fromStart: Boolean = false): PlayItem {
@@ -82,7 +83,7 @@ fun AppState.episodeItem(s: Se, eps: List<Ep>, i: Int, fromStart: Boolean = fals
     val e = eps[i]
     val start = if (fromStart) 0 else progress(Kind.EPISODE, e.uid)?.let { if (it.durationMs > 0 && it.positionMs > it.durationMs - 120_000) 0 else it.positionMs } ?: 0
     return PlayItem(Kind.EPISODE, e.uid, s.name, "S${e.season} E${e.episode} · ${e.title}", s.cover, s.uid, library.episodeUrl(p, e), live = false,
-        startMs = start, userAgent = p.userAgent, tmdb = tmdb, season = e.season, episode = e.episode, next = if (i + 1 < eps.size) ({ episodeItem(s, eps, i + 1, fromStart = true) }) else null)
+        startMs = start, userAgent = p.ua, tmdb = tmdb, season = e.season, episode = e.episode, next = if (i + 1 < eps.size) ({ episodeItem(s, eps, i + 1, fromStart = true) }) else null)
 }
 
 /** Resumes a history entry: finds the channel / film / episode in the current playlist. */

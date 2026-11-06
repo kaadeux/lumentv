@@ -14,7 +14,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -22,8 +21,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.background
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -33,9 +30,8 @@ import com.lumentv.core.SecretBox
 import com.lumentv.data.db.PlaylistEntity
 import com.lumentv.data.db.PlaylistType
 import com.lumentv.data.settings.Keys
-import com.lumentv.data.repo.reEncrypted
-import com.lumentv.data.repo.secretsInClear
 import com.lumentv.data.xtream.XtreamApi
+import com.lumentv.ui.kit.ExactField
 import kotlinx.coroutines.launch
 
 private fun offsetLabel(minutes: Int) = if (minutes == 0) "Aucun" else (if (minutes > 0) "+" else "−") + "${kotlin.math.abs(minutes) / 60} h"
@@ -152,52 +148,3 @@ internal fun PlaylistForm(core: AppCore, existing: PlaylistEntity?, startType: S
     }
 }
 
-/** The Paramètres' lists: the one in use, the others, and adding one. */
-@Composable
-internal fun PlaylistsSection(core: AppCore, active: PlaylistEntity?, open: (Route) -> Unit) {
-    val list by core.playlists.observe().collectAsState(emptyList())
-    val busy by core.playlists.busy.collectAsState()
-    var menu by remember { mutableStateOf<PlaylistEntity?>(null) }
-    var deleting by remember { mutableStateOf<PlaylistEntity?>(null) }
-    Section("Mes listes") {
-        if (list.isEmpty()) Text("Bienvenue ! Ajoute ta playlist M3U ou ton compte Xtream pour commencer. Lumen TV ne fournit aucune chaîne : " +
-            "utilise les listes de ton propre abonnement.", color = Palette.TextDim, fontSize = 14.sp)
-        list.forEach { p ->
-            com.lumentv.ui.kit.ListTile(p.name, listOfNotNull(typeLabel(p.type), if (p.id in busy) "actualisation…" else null,
-                p.lastError?.takeIf { it.isNotBlank() }?.let { "erreur" }).joinToString(" · "), p.id == active?.id, onClick = { menu = p }) {
-                com.lumentv.ui.kit.SecretsLine(p.secretsInClear())
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PhoneChip("+ Playlist M3U") { open(Route.PlaylistEdit(0, PlaylistType.M3U)) }
-            PhoneChip("+ Compte Xtream") { open(Route.PlaylistEdit(0, PlaylistType.XTREAM)) }
-        }
-    }
-    menu?.let { p ->
-        Options(p.name, typeLabel(p.type), listOfNotNull(
-            if (p.id != active?.id) Option("Utiliser cette liste") { core.scope.launch { core.settings.set(Keys.activePlaylist, p.id) } } else null,
-            Option("Actualiser") { core.scope.launch { if (core.playlists.refresh(p.id).ok) core.epg.refresh(p.id) } },
-            Option("Modifier") { open(Route.PlaylistEdit(p.id, p.type)) },
-            if (p.secretsInClear()) Option("Chiffrer les identifiants") {
-                core.scope.launch {
-                    val again = p.reEncrypted()
-                    core.playlists.save(again)
-                    Parental.notice = if (again.secretsInClear()) "Le trousseau de l'iPhone refuse encore : les identifiants restent non chiffrés."
-                        else "Identifiants chiffrés."
-                }
-            } else null,
-            Option("Supprimer", danger = true) { deleting = p },
-        )) { menu = null }
-    }
-    deleting?.let { p ->
-        com.lumentv.ui.kit.KitConfirm("Supprimer « ${p.name} » ?", "Ses chaînes, films, séries, son guide et son historique sont retirés de cet appareil.",
-            "Supprimer", danger = true, onDismiss = { deleting = null }, onConfirm = {
-                core.scope.launch {
-                    val next = list.firstOrNull { it.id != p.id }
-                    if (p.id == active?.id && next != null) core.settings.set(Keys.activePlaylist, next.id)
-                    core.playlists.delete(p.id)
-                    core.resolver.forget()
-                }
-            })
-    }
-}

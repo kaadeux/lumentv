@@ -44,7 +44,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,7 +59,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import coil3.compose.AsyncImage
 import com.lumentv.AppCore
 import com.lumentv.core.Featured
-import com.lumentv.core.SecretBox
 import com.lumentv.core.nowMillis
 import com.lumentv.data.db.ChannelRow
 import com.lumentv.data.db.HistoryEntity
@@ -71,7 +69,6 @@ import com.lumentv.data.db.SeriesRow
 import com.lumentv.data.repo.Groups
 import com.lumentv.data.repo.StreamSpec
 import com.lumentv.data.settings.Keys
-import com.lumentv.data.xtream.XtreamApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -222,7 +219,7 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
                 Route.Guide -> GuidePage(core, p, player, open)
                 is Route.GuideChannel -> GuideChannelPage(core, r.channel, player)
                 Route.Sports -> SportsPage(core, p, player)
-                Route.Settings -> SettingsPage(core, p, open)
+                Route.Settings -> SharedSettings(core, { id, type -> open(Route.PlaylistEdit(id, type)) }, remember { SettingsExtras() }, pinHost = false)
                 is Route.PlaylistEdit -> PlaylistEditPage(core, r.id, r.type, back)
                 Route.Downloads -> DownloadsPage(core, player)
                 Route.History -> HistoryPage(core, player, open)

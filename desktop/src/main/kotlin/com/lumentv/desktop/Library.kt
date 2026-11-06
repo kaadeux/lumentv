@@ -68,7 +68,7 @@ const val NO_GROUP = "Sans catégorie"
 
 /** Downloads playlists and guides. */
 class Library(private val http: OkHttpClient) {
-    private fun xtream(p: SyncPlaylist) = XtreamApi(http.asHttp(), XtreamCredentials(p.source, p.username, p.password), p.userAgent.ifBlank { null })
+    private fun xtream(p: SyncPlaylist) = XtreamApi(http.asHttp(), XtreamCredentials(p.source, p.username, p.password), p.ua.ifBlank { null })
 
     suspend fun load(p: SyncPlaylist): Catalog = withContext(Dispatchers.IO) { if (p.type == "xtream") loadXtream(p) else loadM3u(p) }
 
@@ -98,7 +98,7 @@ class Library(private val http: OkHttpClient) {
         fun unique(base: String): String { val n = (seen[base] ?: 0) + 1; seen[base] = n; return if (n == 1) base else "$base#$n" }
         val seenUrls = HashSet<String>()
         var epgUrl: String? = null
-        open(p.source, p.userAgent).use { input ->
+        open(p.source, p.ua).use { input ->
             M3uParser.parse(BufferedReader(InputStreamReader(input, Charsets.UTF_8))::readLine, onHeader = { h -> if (epgUrl == null) epgUrl = h.epgUrl }) { e ->
                 if (p.dedupe && !seenUrls.add(e.url)) return@parse
                 val group = e.group.ifBlank { NO_GROUP }
@@ -173,7 +173,7 @@ class Library(private val http: OkHttpClient) {
     private fun getJson(p: SyncPlaylist, action: String): kotlinx.serialization.json.JsonElement {
         fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
         val url = XtreamApi.normalizeServer(p.source) + "/player_api.php?username=${enc(p.username)}&password=${enc(p.password)}&action=$action"
-        open(url, p.userAgent).use { return kotlinx.serialization.json.Json.parseToJsonElement(it.reader().readText()) }
+        open(url, p.ua).use { return kotlinx.serialization.json.Json.parseToJsonElement(it.reader().readText()) }
     }
 
     private fun kotlinx.serialization.json.JsonObject.s(k: String): String? =
@@ -188,11 +188,11 @@ class Library(private val http: OkHttpClient) {
     /** Recap / intro / credits of an episode (TheIntroDB). */
     suspend fun segments(tmdb: String, season: Int, episode: Int): Segments? = introDb.segments(tmdb, season, episode)
 
-    /** Programmes from 6 h ago to 7 days ahead (what the guide offers), by channel uid. */
-    suspend fun guide(c: Catalog, offsetMinutes: Int, userAgent: String): Map<String, List<Prog>> = withContext(Dispatchers.IO) {
+    /** Programmes from 6 h ago to [days] days ahead (setting "Jours de programmes gardés"), by channel uid. */
+    suspend fun guide(c: Catalog, offsetMinutes: Int, userAgent: String, days: Int = 3): Map<String, List<Prog>> = withContext(Dispatchers.IO) {
         val url = c.epgUrl ?: return@withContext emptyMap()
         val from = System.currentTimeMillis() - 6 * 3_600_000L
-        val to = System.currentTimeMillis() + 7 * 86_400_000L
+        val to = System.currentTimeMillis() + days * 86_400_000L
         val shift = offsetMinutes * 60_000L
         val names = HashMap<String, String>() // channelKeyName(display name) -> lowercase XMLTV id
         val progs = HashMap<String, MutableList<Prog>>()

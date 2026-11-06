@@ -101,6 +101,11 @@ class AppState(private val scope: CoroutineScope) {
     fun setting(key: String, default: String = "") = doc.settings[key]?.value ?: default
     fun setSetting(key: String, value: String) = change { it.copy(settings = it.settings + (key to SyncValue(value, now()))) }
 
+    init { PcSettings.read = { key, default -> setting(key, default) } }
+
+    /** Remembered for "Au lancement": on this PC only (a channel is not the same on another device's list). */
+    fun rememberChannel(uid: String) = prefs.put("last_channel", uid)
+
     fun show(msg: String) { toast = msg; scope.launch { delay(3500); if (toast == msg) toast = null } }
 
     // ---- Playlists ------------------------------------------------------------------------------------------
@@ -119,6 +124,37 @@ class AppState(private val scope: CoroutineScope) {
         val key = ProfileMerge.playlistKey(p.type, p.source, p.username)
         change { it.copy(playlists = it.playlists + (key to p.copy(at = now()))) }
         open(key, force = true)
+    }
+
+    /** A list changed: its key follows its server and user name. [reload]: read again (not for a mere reload interval). */
+    fun replacePlaylist(key: String, p: SyncPlaylist, reload: Boolean = true) {
+        val newKey = ProfileMerge.playlistKey(p.type, p.source, p.username)
+        change { d ->
+            val gone = if (newKey != key) d.playlists[key]?.let { mapOf(key to it.copy(deleted = true, at = now())) }.orEmpty() else emptyMap()
+            d.copy(playlists = d.playlists + gone + (newKey to p.copy(at = now())))
+        }
+        if (reload) open(newKey, force = true) else if (activeKey == key && newKey != key) activeKey = newKey
+    }
+
+    /** The guide read again ("epg_days" days ahead). */
+    fun reloadGuide() {
+        val c = catalog ?: return
+        val p = active ?: return
+        scope.launch { runCatching { library.guide(c, p.epgOffsetMinutes, p.ua, guideDays) }.onSuccess { guide = it } }
+    }
+
+    fun clearGuide() { guide = emptyMap() }
+
+    private val guideDays get() = setting("epg_days", "3").toIntOrNull() ?: 3
+
+    /** Setting "Au lancement": the last channel, once, when the list is in. */
+    private var startupChannelPending = setting("startup") == "last"
+
+    private fun playStartupChannel(c: Catalog) {
+        if (!startupChannelPending) return
+        startupChannelPending = false
+        val uid = prefs.get("last_channel", null) ?: return
+        c.channels.firstOrNull { it.uid == uid }?.let { playChannel(it) }
     }
 
     fun removePlaylist(key: String) {
@@ -146,7 +182,7 @@ class AppState(private val scope: CoroutineScope) {
                     .onFailure { loadError = userMessage(it) }
             }
             loading = false
-            catalog?.let { c -> runCatching { library.guide(c, p.epgOffsetMinutes, p.userAgent) }.onSuccess { guide = it } }
+            catalog?.let { c -> playStartupChannel(c); runCatching { library.guide(c, p.epgOffsetMinutes, p.ua, guideDays) }.onSuccess { guide = it } }
         }
     }
 

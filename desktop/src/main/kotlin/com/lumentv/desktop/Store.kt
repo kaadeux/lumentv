@@ -67,3 +67,9 @@ object Store {
         runCatching { Crypt32Util.cryptUnprotectData(Base64.getDecoder().decode(f.readText())).decodeToString() }.getOrNull()
     }
 }
+
+/** The profile's settings where there is no AppState at hand (the player, a list's requests). */
+object PcSettings { var read: (String, String) -> String = { _, default -> default } }
+
+/** A list's user-agent, else the settings' default. */
+val com.lumentv.sync.SyncPlaylist.ua: String get() = userAgent.ifBlank { PcSettings.read("user_agent", "") }
