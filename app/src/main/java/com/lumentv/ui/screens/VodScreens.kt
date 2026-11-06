@@ -158,7 +158,7 @@ fun MoviesScreen(vm: MainViewModel) {
     val lastMovie = remember(history, p.id) { history.firstOrNull { it.kind == HistoryKind.MOVIE && it.playlistId == p.id }?.uid }
     // TMDB's lists and recommendations from what was watched (playlist-only rows without the key); again when a film is watched.
     val ratings by vm.ratings.collectAsStateWithLifecycle()
-    val shelves = memoFlow(vm, "shelves:m:${p.id}", p.id, changes, lastMovie, ratings) { vm.graph.discover.movies(p.id, history, ratings) }
+    val shelves = memoFlow(vm, "shelves:m:${p.id}", p.id, p.lastRefresh, changes, lastMovie, ratings) { vm.graph.discover.movies(p.id, history, ratings) }
     val featured = cat == RECENT && filter.isBlank()
     val phone = com.lumentv.ui.LocalPhone.current
     // TV: a category's grid goes back to the home with Back.
@@ -174,7 +174,7 @@ fun MoviesScreen(vm: MainViewModel) {
             if (resume.isNotEmpty()) add(HomeRow("resume", "Reprendre la lecture", resume.map { r -> resumeTile(vm, r, false) { forget = r } }))
             shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { movieTile(vm, "f:" + sh.title, it, progress[it.m.uid]?.takeIf { h -> h.durationMs > 0 && com.lumentv.core.Resume.movieToResume(h.positionMs, h.durationMs) }?.let { h -> h.positionMs.toFloat() / h.durationMs }) })) }
             catRows.forEach { c ->
-                val items = memoState(vm, "cat:m:${p.id}:${c.category}", p.id, changes, c.category) { vm.graph.library.categoryMovies(p.id, c.category) }
+                val items = memoState(vm, "cat:m:${p.id}:${c.category}", p.id, p.lastRefresh, changes, c.category) { vm.graph.library.categoryMovies(p.id, c.category) }
                 add(HomeRow("cat:" + c.category, c.category, items.map { movieTile(vm, "c:" + c.category, it, null) }))
             }
         }
@@ -246,7 +246,7 @@ fun SeriesScreen(vm: MainViewModel) {
     // Put forward above "Toutes les séries": new or with new episodes, best rated, more of the last series watched.
     val lastSeries = remember(history, p.id) { history.firstOrNull { it.kind == HistoryKind.EPISODE && it.playlistId == p.id }?.parentUid }
     val ratings by vm.ratings.collectAsStateWithLifecycle()
-    val shelves = memoFlow(vm, "shelves:s:${p.id}", p.id, changes, lastSeries, ratings) { vm.graph.discover.series(p.id, history, ratings) }
+    val shelves = memoFlow(vm, "shelves:s:${p.id}", p.id, p.lastRefresh, changes, lastSeries, ratings) { vm.graph.discover.series(p.id, history, ratings) }
     val featured = cat == ALL && filter.isBlank()
     val phone = com.lumentv.ui.LocalPhone.current
     androidx.compose.runtime.DisposableEffect(phone, cat) {
@@ -261,7 +261,7 @@ fun SeriesScreen(vm: MainViewModel) {
             if (resume.isNotEmpty()) add(HomeRow("resume", "Reprendre la lecture", resume.map { r -> resumeTile(vm, r, true) { forget = r } }))
             shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { seriesTile(vm, "f:" + sh.title, it) })) }
             catRows.forEach { c ->
-                val items = memoState(vm, "cat:s:${p.id}:${c.category}", p.id, changes, c.category) { vm.graph.library.categorySeries(p.id, c.category) }
+                val items = memoState(vm, "cat:s:${p.id}:${c.category}", p.id, p.lastRefresh, changes, c.category) { vm.graph.library.categorySeries(p.id, c.category) }
                 add(HomeRow("cat:" + c.category, c.category, items.map { seriesTile(vm, "c:" + c.category, it) }))
             }
         }

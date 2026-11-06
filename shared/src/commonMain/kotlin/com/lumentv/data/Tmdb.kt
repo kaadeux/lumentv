@@ -31,6 +31,8 @@ class Tmdb(private val http: Http, private val key: String) {
     )
 
     private val json = Json { ignoreUnknownKeys = true }
+    /** Calls that got no usable answer (no network, TMDB busy…): whoever needs them can ask again. */
+    @kotlin.concurrent.Volatile var failures = 0; private set
     /** Title of the playlist → TMDB id (null: TMDB does not know it), for the session. */
     private val ids = Lru<String, String?>(5000)
 
@@ -160,9 +162,13 @@ class Tmdb(private val http: Http, private val key: String) {
     private fun get(url: String, vararg params: Pair<String, String>): JsonObject? = runCatching {
         val u = "$url?${query("api_key" to key, *params)}"
         inFlight.get(u) {
-            http.execute(HttpRequest(u, timeoutMs = 10_000)).use { r -> if (!r.isSuccessful) null else json.parseToJsonElement(r.text()) as? JsonObject }
+            http.execute(HttpRequest(u, timeoutMs = 10_000)).use { r ->
+                // An unknown title (404) is an answer; a busy or failing server is not.
+                if (r.code == 429 || r.code >= 500) failures++
+                if (!r.isSuccessful) null else json.parseToJsonElement(r.text()) as? JsonObject
+            }
         }
-    }.getOrNull()
+    }.onFailure { failures++ }.getOrNull()
 
     private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.contentOrNull
 

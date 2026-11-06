@@ -7,6 +7,7 @@ import kotlinx.coroutines.async
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -49,7 +50,7 @@ class DiscoverInput(
  * their genres, actors and directors weigh on every candidate; disliked ones push their genres down. Watched or rated
  * titles are never proposed, and a title appears once per row.
  */
-class DiscoverEngine(private val tmdb: Tmdb) {
+class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000) {
     private val gate = Semaphore(6)
     private suspend fun <T> limited(block: () -> T): T = gate.withPermit { block() }
 
@@ -68,97 +69,105 @@ class DiscoverEngine(private val tmdb: Tmdb) {
         emit(local)
         if (!tmdb.enabled) return@flow
 
-        // 2. TMDB and the taste
-        val seen = HashSet<String>() // uids watched or rated: never proposed
-        val seeds = seeds(input, byUid, seen)
-        val type = if (series) "tv" else "movie"
-        val region = if (series) emptyArray() else arrayOf("region" to "FR")
-        val today = isoDay(com.lumentv.core.nowMillis())
-        fun pick(items: List<Tmdb.Item>, skip: Set<Long> = emptySet()) =
-            one(items.mapNotNull { idx.find(series, it) }.filter { ok(it) && it.uid !in seen && it.id !in skip })
+        // TMDB out of reach for a moment (a TV just out of sleep, say) must not leave the home without its rows until
+        // the app restarts: the calls that failed are asked again.
+        var attempt = 0
+        while (true) {
+            val failed = tmdb.failures
+            // 2. TMDB and the taste
+            val seen = HashSet<String>() // uids watched or rated: never proposed
+            val seeds = seeds(input, byUid, seen)
+            val type = if (series) "tv" else "movie"
+            val region = if (series) emptyArray() else arrayOf("region" to "FR")
+            val today = isoDay(com.lumentv.core.nowMillis())
+            fun pick(items: List<Tmdb.Item>, skip: Set<Long> = emptySet()) =
+                one(items.mapNotNull { idx.find(series, it) }.filter { ok(it) && it.uid !in seen && it.id !in skip })
 
-        val taste = coroutineScope {
-            val trending = async { limited { tmdb.list("trending/$type/week", 5) } }
-            val fresh = async { limited { tmdb.list(if (series) "tv/on_the_air" else "movie/now_playing", 5, *region) } }
-            val popular = async { limited { tmdb.list("$type/popular", 5, *region) } }
-            val top = async { limited { tmdb.list("$type/top_rated", 6) } }
-            val details = seeds.map { s -> async { s to limited { tmdb.details(series, s.tmdbId) } } }.awaitAll()
-                .mapNotNull { (s, d) -> d?.let { s to it } }
-            val profile = Profile(details)
-            // The people the viewer likes most: their other titles join the candidates.
-            val people = profile.topPeople(3).map { (person, w) -> async { limited { tmdb.credits(series, person) } to w } }
-            val genres = profile.topGenres(2)
-            val genreLists = genres.map { g -> async { limited { tmdb.list("discover/$type", 3, "with_genres" to "$g", "sort_by" to "popularity.desc", "vote_count.gte" to "150") } } }
-            val gems = if (genres.isEmpty()) null else async {
-                limited { tmdb.list("discover/$type", 3, "with_genres" to genres.joinToString("|"), "sort_by" to "vote_average.desc", "vote_count.gte" to "200", "vote_count.lte" to "4000") }
-            }
-
-            // Candidates: recommendations and similar titles of what was liked, the liked people's titles, the favourite genres.
-            val score = HashMap<String, Double>()
-            val items = HashMap<String, Tmdb.Item>()
-            fun add(list: List<Tmdb.Item>, weight: Double) = list.forEachIndexed { pos, it ->
-                if (it.id in profile.seenIds) return@forEachIndexed
-                if (it.id !in items) items[it.id] = it
-                score[it.id] = (score[it.id] ?: 0.0) + weight * (1.0 - pos / 50.0)
-            }
-            details.forEach { (s, d) -> if (s.weight > 0) { add(d.recommendations, s.weight); add(d.similar, s.weight * 0.6) } }
-            people.awaitAll().forEach { (list, w) -> add(list.take(30), w * 0.5) }
-            val genreItems = genreLists.awaitAll()
-            genreItems.forEach { add(it, 0.25) }
-            val trendingList = trending.await()
-            if (details.none { it.first.weight > 0 }) add(trendingList, 0.3) // nothing known of the viewer yet: what everyone watches
-            val ranked = score.entries.mapNotNull { (id, base) ->
-                val it = items.getValue(id)
-                val fit = profile.genreFit(it.genres)
-                if (fit < -0.6) null // mostly genres the viewer rates low
-                else id to base + fit * 0.8 + kotlin.math.ln(1 + it.popularity) * 0.04 + (it.rating - 6.5) * 0.08
-            }.sortedByDescending { it.second }.map { items.getValue(it.first) }
-            val forYou = pick(ranked)
-            val shown = forYou.take(ROW).map { it.id }.toSet()
-            val because = profile.favourite()?.let { (s, d) ->
-                Row((if (s.rated) "Parce que vous avez aimé " else "Parce que vous avez regardé ") + s.title, pick(d.recommendations + d.similar, shown))
-            }
-            val genreNames = genres.mapNotNull { Tmdb.GENRE_NAMES[it] }
-            listOfNotNull(
-                Row("Recommandé pour vous", forYou.take(ROW)),
-                Row("Tendances du moment", pick(trendingList)),
-                because,
-                Row(if (series) "Nouveautés séries" else "Nouveautés cinéma", pick(fresh.await())),
-                if (genreNames.isEmpty()) null else Row("Dans vos genres préférés · " + genreNames.joinToString(", "),
-                    pick(genreItems.flatten().filter { profile.genreFit(it.genres) >= 0 }.sortedByDescending { it.popularity }, shown)),
-                Row(if (series) "Séries populaires" else "Films populaires", pick(popular.await())),
-                gems?.let { g -> Row("À découvrir", pick(g.await().filter { profile.genreFit(it.genres) >= 0 }, shown)) },
-                Row(if (series) "Séries les mieux notées" else "Films les mieux notés", pick(top.await())),
-                Row("Vous pourriez aussi aimer", forYou.drop(ROW)),
-            )
-        }
-        emit(local + taste)
-
-        // 3. Genres and streaming services
-        val releaseKey = if (series) "first_air_date" else "primary_release_date"
-        val extra = coroutineScope {
-            val g = (if (series) Tmdb.TV_GENRES else Tmdb.MOVIE_GENRES).map { (name, id) ->
-                async { Row(name, pick(limited { tmdb.list("discover/$type", 4, "with_genres" to "$id", "sort_by" to "popularity.desc", "vote_count.gte" to "50") })) }
-            }
-            // TMDB knows where a title can be watched in France, not since when. Films: the latest released ("sorties
-            // récentes"). Series: those with an episode aired in the last 60 days, most popular first, so a new season of
-            // an older series (Lupin) counts; daily shows (news, reality, soaps, talk shows) left out.
-            val since = isoDay(com.lumentv.core.nowMillis() - 60 * 86_400_000L)
-            val p = Tmdb.PLATFORMS.map { (name, id) ->
-                async {
-                    val where = arrayOf("with_watch_providers" to "$id", "watch_region" to "FR", "with_watch_monetization_types" to "flatrate", "vote_count.gte" to "10")
-                    if (series) Row("Nouveaux épisodes sur $name", pick(limited {
-                        tmdb.list("discover/tv", 5, *where, "air_date.gte" to since, "air_date.lte" to today, "sort_by" to "popularity.desc",
-                            "without_genres" to "10763,10764,10766,10767")
-                    }))
-                    else Row("Sur $name · sorties récentes", pick(limited {
-                        tmdb.list("discover/movie", 5, *where, "sort_by" to "$releaseKey.desc", "$releaseKey.lte" to today)
-                    }))
+            val taste = coroutineScope {
+                val trending = async { limited { tmdb.list("trending/$type/week", 5) } }
+                val fresh = async { limited { tmdb.list(if (series) "tv/on_the_air" else "movie/now_playing", 5, *region) } }
+                val popular = async { limited { tmdb.list("$type/popular", 5, *region) } }
+                val top = async { limited { tmdb.list("$type/top_rated", 6) } }
+                val details = seeds.map { s -> async { s to limited { tmdb.details(series, s.tmdbId) } } }.awaitAll()
+                    .mapNotNull { (s, d) -> d?.let { s to it } }
+                val profile = Profile(details)
+                // The people the viewer likes most: their other titles join the candidates.
+                val people = profile.topPeople(3).map { (person, w) -> async { limited { tmdb.credits(series, person) } to w } }
+                val genres = profile.topGenres(2)
+                val genreLists = genres.map { g -> async { limited { tmdb.list("discover/$type", 3, "with_genres" to "$g", "sort_by" to "popularity.desc", "vote_count.gte" to "150") } } }
+                val gems = if (genres.isEmpty()) null else async {
+                    limited { tmdb.list("discover/$type", 3, "with_genres" to genres.joinToString("|"), "sort_by" to "vote_average.desc", "vote_count.gte" to "200", "vote_count.lte" to "4000") }
                 }
+
+                // Candidates: recommendations and similar titles of what was liked, the liked people's titles, the favourite genres.
+                val score = HashMap<String, Double>()
+                val items = HashMap<String, Tmdb.Item>()
+                fun add(list: List<Tmdb.Item>, weight: Double) = list.forEachIndexed { pos, it ->
+                    if (it.id in profile.seenIds) return@forEachIndexed
+                    if (it.id !in items) items[it.id] = it
+                    score[it.id] = (score[it.id] ?: 0.0) + weight * (1.0 - pos / 50.0)
+                }
+                details.forEach { (s, d) -> if (s.weight > 0) { add(d.recommendations, s.weight); add(d.similar, s.weight * 0.6) } }
+                people.awaitAll().forEach { (list, w) -> add(list.take(30), w * 0.5) }
+                val genreItems = genreLists.awaitAll()
+                genreItems.forEach { add(it, 0.25) }
+                val trendingList = trending.await()
+                if (details.none { it.first.weight > 0 }) add(trendingList, 0.3) // nothing known of the viewer yet: what everyone watches
+                val ranked = score.entries.mapNotNull { (id, base) ->
+                    val it = items.getValue(id)
+                    val fit = profile.genreFit(it.genres)
+                    if (fit < -0.6) null // mostly genres the viewer rates low
+                    else id to base + fit * 0.8 + kotlin.math.ln(1 + it.popularity) * 0.04 + (it.rating - 6.5) * 0.08
+                }.sortedByDescending { it.second }.map { items.getValue(it.first) }
+                val forYou = pick(ranked)
+                val shown = forYou.take(ROW).map { it.id }.toSet()
+                val because = profile.favourite()?.let { (s, d) ->
+                    Row((if (s.rated) "Parce que vous avez aimé " else "Parce que vous avez regardé ") + s.title, pick(d.recommendations + d.similar, shown))
+                }
+                val genreNames = genres.mapNotNull { Tmdb.GENRE_NAMES[it] }
+                listOfNotNull(
+                    Row("Recommandé pour vous", forYou.take(ROW)),
+                    Row("Tendances du moment", pick(trendingList)),
+                    because,
+                    Row(if (series) "Nouveautés séries" else "Nouveautés cinéma", pick(fresh.await())),
+                    if (genreNames.isEmpty()) null else Row("Dans vos genres préférés · " + genreNames.joinToString(", "),
+                        pick(genreItems.flatten().filter { profile.genreFit(it.genres) >= 0 }.sortedByDescending { it.popularity }, shown)),
+                    Row(if (series) "Séries populaires" else "Films populaires", pick(popular.await())),
+                    gems?.let { g -> Row("À découvrir", pick(g.await().filter { profile.genreFit(it.genres) >= 0 }, shown)) },
+                    Row(if (series) "Séries les mieux notées" else "Films les mieux notés", pick(top.await())),
+                    Row("Vous pourriez aussi aimer", forYou.drop(ROW)),
+                )
             }
-            (g + p).awaitAll()
+            emit(local + taste)
+
+            // 3. Genres and streaming services
+            val releaseKey = if (series) "first_air_date" else "primary_release_date"
+            val extra = coroutineScope {
+                val g = (if (series) Tmdb.TV_GENRES else Tmdb.MOVIE_GENRES).map { (name, id) ->
+                    async { Row(name, pick(limited { tmdb.list("discover/$type", 4, "with_genres" to "$id", "sort_by" to "popularity.desc", "vote_count.gte" to "50") })) }
+                }
+                // TMDB knows where a title can be watched in France, not since when. Films: the latest released ("sorties
+                // récentes"). Series: those with an episode aired in the last 60 days, most popular first, so a new season of
+                // an older series (Lupin) counts; daily shows (news, reality, soaps, talk shows) left out.
+                val since = isoDay(com.lumentv.core.nowMillis() - 60 * 86_400_000L)
+                val p = Tmdb.PLATFORMS.map { (name, id) ->
+                    async {
+                        val where = arrayOf("with_watch_providers" to "$id", "watch_region" to "FR", "with_watch_monetization_types" to "flatrate", "vote_count.gte" to "10")
+                        if (series) Row("Nouveaux épisodes sur $name", pick(limited {
+                            tmdb.list("discover/tv", 5, *where, "air_date.gte" to since, "air_date.lte" to today, "sort_by" to "popularity.desc",
+                                "without_genres" to "10763,10764,10766,10767")
+                        }))
+                        else Row("Sur $name · sorties récentes", pick(limited {
+                            tmdb.list("discover/movie", 5, *where, "sort_by" to "$releaseKey.desc", "$releaseKey.lte" to today)
+                        }))
+                    }
+                }
+                (g + p).awaitAll()
+            }
+            emit(local + taste + extra)
+            if (tmdb.failures == failed || ++attempt > RETRIES) break
+            delay(retryMs)
         }
-        emit(local + taste + extra)
     }.flowOn(IoDispatcher)
 
     /** One copy per title. */
@@ -210,6 +219,8 @@ class DiscoverEngine(private val tmdb: Tmdb) {
         /** Titles per row (at most): enough to browse, rows stay quick (posters are loaded as they come into view). */
         const val ROW = 40
         const val MIN_ROW = 3
+        /** TMDB asked again this many times when a call failed. */
+        const val RETRIES = 6
         /** Shown from the first rating. */
         const val MY_RATINGS = "Vos notes"
         const val MAX_SEEDS = 12
