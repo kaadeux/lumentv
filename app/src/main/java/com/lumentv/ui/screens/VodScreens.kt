@@ -642,7 +642,7 @@ private fun RowScroller(focus: HomeFocus, list: androidx.compose.foundation.lazy
 @Composable
 private fun Hero(vm: MainViewModel, h: HeroItem, info: XVodInfo?, actions: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().height(232.dp).padding(start = 4.dp, top = 8.dp), verticalArrangement = Arrangement.Bottom) {
-        val t = tmdbInfo(vm, h.title, h.series, h.tmdb ?: info?.tmdb, h.year)
+        val t = tmdbInfo(vm, h.title, h.series, h.tmdb ?: info?.tmdb, h.year ?: com.lumentv.core.Featured.yearOf(info?.releaseDate, h.title))
         TitleArt(h.title, t?.logo, 30.sp, 84.dp)
         val meta = listOfNotNull(ratingText(t, h.rating ?: info?.rating)) + h.meta + listOfNotNull(info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(2)?.joinToString(" • ") { it.trim() })
         if (meta.isNotEmpty()) Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.85f),
@@ -707,7 +707,7 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
 
     // No scrolling: the page fits the screen, so moving between the buttons and the stars never shifts it.
     Column(Modifier.fillMaxSize().padding(start = 4.dp, top = 28.dp)) {
-        val t = tmdbInfo(vm, m.m.name, false, info?.tmdb, com.lumentv.core.Featured.yearOf(m.m.year, m.m.name))
+        val t = tmdbInfo(vm, m.m.name, false, info?.tmdb, com.lumentv.core.Featured.yearOf(m.m.year ?: info?.releaseDate, m.m.name))
         TitleArt(m.m.name, t?.logo, 36.sp, 110.dp)
         val meta = listOfNotNull(ratingText(t, m.m.rating)) + metaOf(null, com.lumentv.core.Featured.yearOf(m.m.year ?: info?.releaseDate, m.m.name)?.toString(),
             info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(3)?.joinToString(" • ") { it.trim() })
@@ -851,7 +851,7 @@ private fun SeriesDetailTv(
 /** What TMDB says of a title (logo, rating), asked in the background and kept for the session. */
 @Composable
 internal fun tmdbInfo(vm: MainViewModel, title: String, series: Boolean, tmdb: String?, year: Int?): com.lumentv.data.TitleLogos.Info? {
-    val clean = title.substringBefore(" (").substringBefore(" [").trim()
+    val clean = com.lumentv.core.Featured.shortTitle(title)
     val info by produceState(vm.graph.logos.cached(series, tmdb, clean, year), series, tmdb, clean, year) {
         value = withContext(Dispatchers.IO) { vm.graph.logos.info(series, tmdb, clean, year) }
     }

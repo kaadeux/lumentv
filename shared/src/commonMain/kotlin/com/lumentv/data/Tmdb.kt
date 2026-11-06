@@ -128,8 +128,11 @@ class Tmdb(private val http: Http, private val key: String) {
         val k = (if (series) "tv|" else "mv|") + title + "|" + year
         if (k in ids) return ids[k]
         val kind = if (series) "tv" else "movie"
-        val params = listOfNotNull("query" to title, "language" to "fr-FR", year?.let { (if (series) "first_air_date_year" else "year") to it.toString() })
-        val found = get("https://api.themoviedb.org/3/search/$kind", *params.toTypedArray())?.let { items(it) }?.firstOrNull()?.id
+        // Only a result that is this title, never just the first one (see TmdbMatch).
+        val found = TmdbMatch.find(title, year, { y ->
+            val params = listOfNotNull("query" to title, "language" to "fr-FR", y?.let { (if (series) "first_air_date_year" else "year") to it.toString() })
+            get("https://api.themoviedb.org/3/search/$kind", *params.toTypedArray())?.let { items(it) }.orEmpty()
+        }, { listOf(it.title, it.original) })?.id
         ids[k] = found
         return found
     }

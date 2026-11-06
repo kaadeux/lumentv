@@ -64,11 +64,13 @@ class TitleLogos(private val http: Http, private val key: String) {
         const val CAST = 6
     }
 
+    /** The title's TMDB id: only a result that is this title (see [TmdbMatch]), never just the first one. */
     private fun search(kind: String, title: String, year: Int?): String? {
-        val params = listOfNotNull("query" to title, "language" to "fr-FR", year?.let { (if (kind == "tv") "first_air_date_year" else "year") to it.toString() })
-        val r = get("https://api.themoviedb.org/3/search/$kind", *params.toTypedArray()) ?: return null
-        val first = (r["results"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return null
-        return first["id"]?.let { (it as? JsonPrimitive)?.contentOrNull }
+        val found = TmdbMatch.find(title, year, { y ->
+            val params = listOfNotNull("query" to title, "language" to "fr-FR", y?.let { (if (kind == "tv") "first_air_date_year" else "year") to it.toString() })
+            (get("https://api.themoviedb.org/3/search/$kind", *params.toTypedArray())?.get("results") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+        }, { r -> listOfNotNull(r.s("title"), r.s("name"), r.s("original_title"), r.s("original_name")) })
+        return found?.s("id")
     }
 
     private fun get(url: String, vararg params: Pair<String, String>): JsonObject? {
