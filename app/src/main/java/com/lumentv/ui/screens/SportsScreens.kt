@@ -226,7 +226,7 @@ private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: (
             if (f.home != null && f.away != null) Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TeamSide(f.home!!, Modifier.weight(1f), end = true, phone = true)
                 Text(if (f.live && f.homeScore != null) "${f.homeScore} – ${f.awayScore}" else "vs", style = MaterialTheme.typography.titleMedium,
-                    color = if (f.live) Palette.Text else Palette.TextDim, modifier = Modifier.padding(horizontal = 10.dp))
+                    color = if (f.live) androidx.compose.ui.graphics.Color.Unspecified else Palette.TextDim, modifier = Modifier.padding(horizontal = 10.dp))
                 TeamSide(f.away!!, Modifier.weight(1f), end = false, phone = true)
             } else Text(f.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp))
         } else Row(verticalAlignment = Alignment.CenterVertically) {
@@ -239,7 +239,7 @@ private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: (
             if (f.home != null && f.away != null) {
                 TeamSide(f.home!!, Modifier.weight(1f), end = true)
                 Text(if (f.live && f.homeScore != null) "${f.homeScore} – ${f.awayScore}" else "vs", style = MaterialTheme.typography.titleLarge,
-                    color = if (f.live) Palette.Text else Palette.TextDim, modifier = Modifier.padding(horizontal = 18.dp))
+                    color = if (f.live) androidx.compose.ui.graphics.Color.Unspecified else Palette.TextDim, modifier = Modifier.padding(horizontal = 18.dp))
                 TeamSide(f.away!!, Modifier.weight(1f), end = false)
             } else Text(f.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(2f))
             Column(Modifier.width(250.dp), horizontalAlignment = Alignment.End) {
