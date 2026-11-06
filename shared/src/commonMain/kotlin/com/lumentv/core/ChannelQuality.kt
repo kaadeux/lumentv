@@ -23,6 +23,9 @@ object ChannelQuality {
         }
     }
 
+    /** An H265 copy: not every device decodes it, so a change of quality takes it only when there is no other. */
+    fun isHevc(name: String) = Regex("\\b(hevc|h265|h 265)\\b").containsMatchIn(normalize(name))
+
     /** "FHD", "HD", "SD", "4K". */
     fun label(name: String) = when (rank(name)) { 4 -> "4K"; 3 -> "FHD"; 1 -> "SD"; else -> "HD" }
 

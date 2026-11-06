@@ -277,6 +277,7 @@ class PlayerViewModel(val graph: AppGraph) : ViewModel() {
         val base = com.lumentv.core.ChannelQuality.base(row.ch.name)
         variants = if (base.length < 2) emptyList() else graph.library.channelsNamed(row.ch.playlistId, base)
             .filter { com.lumentv.core.ChannelQuality.base(it.ch.name) == base }
+            .sortedBy { com.lumentv.core.ChannelQuality.isHevc(it.ch.name) }
             .distinctBy { com.lumentv.core.ChannelQuality.rank(it.ch.name) }
             .sortedByDescending { com.lumentv.core.ChannelQuality.rank(it.ch.name) }
     }
@@ -299,7 +300,8 @@ class PlayerViewModel(val graph: AppGraph) : ViewModel() {
         val cur = com.lumentv.core.ChannelQuality.rank(v.ch.name)
         val top = com.lumentv.core.ChannelQuality.rank(chosen.ch.name)
         val up = variants.lastOrNull { com.lumentv.core.ChannelQuality.rank(it.ch.name) in (cur + 1)..top } ?: return false
-        variant = up.takeIf { it.ch.id != chosen.ch.id }
+        // Back at the rank chosen: the channel chosen itself, not another copy of that quality.
+        variant = up.takeIf { com.lumentv.core.ChannelQuality.rank(it.ch.name) < top }
         toast = "Connexion rétablie : retour en ${com.lumentv.core.ChannelQuality.label(up.ch.name)}"
         controller?.let { start(it) }
         return true

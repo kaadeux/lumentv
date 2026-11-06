@@ -66,6 +66,7 @@ object Playback {
         val rank = ChannelQuality.rank(c.ch.name)
         return core.library.channelsNamed(c.ch.playlistId, base)
             .filter { ChannelQuality.base(it.ch.name) == base && ChannelQuality.rank(it.ch.name) < rank && !it.isHidden }
+            .sortedBy { ChannelQuality.isHevc(it.ch.name) }
             .distinctBy { ChannelQuality.rank(it.ch.name) }
             .sortedByDescending { ChannelQuality.rank(it.ch.name) }
             .mapNotNull { v -> runCatching { PlayVariant(core.resolver.channel(v.ch).url, ChannelQuality.label(v.ch.name)) }.getOrNull() }

@@ -79,7 +79,7 @@ private fun AppState.lowerVariants(p: com.lumentv.sync.SyncPlaylist, c: Ch): Lis
     if (base.length < 2 || setting("auto_quality", "true") == "false") return emptyList()
     val rank = q.rank(c.name)
     val hidden = parental.hiddenNow()
-    return all.filter { q.base(it.name) == base && q.rank(it.name) < rank && "c:" + it.uid !in hidden }.distinctBy { q.rank(it.name) }
+    return all.filter { q.base(it.name) == base && q.rank(it.name) < rank && "c:" + it.uid !in hidden }.sortedBy { q.isHevc(it.name) }.distinctBy { q.rank(it.name) }
         .sortedByDescending { q.rank(it.name) }.map { q.label(it.name) to library.channelUrl(p, it) }
 }
 
