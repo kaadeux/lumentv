@@ -17,7 +17,16 @@ enum Lumen {
 /// The words that name a language in track names ("VFF", "English", "[fr]"), by the settings' code ("fr", "en").
 enum Lang {
     static func words(_ code: String) -> Set<String> {
-        code == "en" ? ["en", "eng", "english", "anglais", "vo"] : ["fr", "fre", "fra", "french", "français", "francais", "vf", "vff", "vfq"]
+        switch code {
+        case "en": return ["en", "eng", "english", "anglais", "vo"]
+        case "es": return ["es", "spa", "esp", "español", "espanol", "spanish", "espagnol"]
+        case "de": return ["de", "ger", "deu", "deutsch", "german", "allemand"]
+        case "it": return ["it", "ita", "italiano", "italian", "italien"]
+        case "pt": return ["pt", "por", "português", "portugues", "portuguese", "portugais"]
+        case "ar": return ["ar", "ara", "arabic", "arabe"]
+        case "nl": return ["nl", "dut", "nld", "nederlands", "dutch", "néerlandais"]
+        default: return ["fr", "fre", "fra", "french", "français", "francais", "vf", "vff", "vfq"]
+        }
     }
 
     static func matches(_ name: String, code: String?, lang: String) -> Bool {
@@ -62,6 +71,8 @@ struct PlayerScreen: View {
         self.request = request
         self.onClose = onClose
         _url = State(initialValue: url)
+        // The settings' format, changed in the player's menu for this film only.
+        _fit = State(initialValue: request.resizeMode == 1 ? Fit.fill : request.resizeMode == 2 ? Fit.stretch : Fit.fit)
     }
 
     @StateObject private var player = KSVideoPlayer.Coordinator()
@@ -101,7 +112,8 @@ struct PlayerScreen: View {
         o.userAgent = request.userAgent ?? "Lumen TV"
         if let referer = request.referer { o.appendHeader(["Referer": referer]) }
         if request.startMs > 0 { o.startPlayTime = TimeInterval(request.startMs) / 1000 }
-        o.preferredForwardBufferDuration = request.live ? 3 : 5
+        // Setting "Mémoire tampon stable": starts a little later, stops less on a weak connection.
+        o.preferredForwardBufferDuration = request.stableBuffer ? (request.live ? 8 : 12) : (request.live ? 3 : 5)
         // Live: a minute kept, so a pause picks up where it stopped.
         o.maxBufferDuration = 60
         return o

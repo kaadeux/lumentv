@@ -27,8 +27,8 @@ class SettingsExtras(
     val parentalHint: String = "Verrouille un groupe de chaînes avec le ⋮ à côté de son nom dans l'onglet TV. Masque une chaîne, un groupe ou une catégorie de la même façon.",
     /** The pictures' cache: its size and emptying it (the device's image loader). Null: the shared one. */
     val cache: CacheOps? = null,
-    /** The shared "État du réseau" section (Android has its own panel, with the playing stream's figures). */
-    val networkTest: Boolean = true,
+    /** The connection test's own panel (Android's knows the Wi-Fi signal). Null: the shared one. */
+    val onNetworkTest: (() -> Unit)? = null,
 )
 
 class CacheOps(val sizeBytes: suspend () -> Long, val clear: suspend () -> Unit)
@@ -53,14 +53,7 @@ fun SharedSettings(core: AppCore, onEditList: (id: Long, type: String) -> Unit, 
 fun SettingsButton(text: String, primary: Boolean = false, onClick: () -> Unit) = PhoneButton(text, primary, Modifier.fillMaxWidth(), onClick)
 
 @Composable
-fun SettingsChoice(label: String, selected: Boolean, onClick: () -> Unit) = PhoneChip(label, selected, onClick)
-
-@Composable
 fun SettingsToggle(title: String, subtitle: String, on: Boolean, onChange: (Boolean) -> Unit) = Toggle(title, subtitle, on, onChange)
 
 @Composable
 fun SettingsNote(text: String) = androidx.compose.material3.Text(text, color = Palette.TextDim, fontSize = androidx.compose.ui.unit.TextUnit(14f, androidx.compose.ui.unit.TextUnitType.Sp))
-
-@Composable
-fun SettingsMenu(title: String, subtitle: String?, options: List<Pair<String, Boolean>>, onPick: (Int) -> Unit, onDismiss: () -> Unit) =
-    Options(title, subtitle, options.mapIndexed { i, (label, checked) -> Option(label, checked) { onPick(i) } }, onDismiss)

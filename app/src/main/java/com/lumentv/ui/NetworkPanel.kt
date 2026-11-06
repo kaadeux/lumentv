@@ -5,16 +5,6 @@ package com.lumentv.ui
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,24 +13,18 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.Text
 import com.lumentv.AppGraph
 import com.lumentv.player.PlayerController
 import com.lumentv.ui.components.ignoreHeldOk
-import com.lumentv.ui.theme.Palette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import com.lumentv.core.NetCheck
 import com.lumentv.core.NetReport
 import com.lumentv.core.NetworkCheck
+import com.lumentv.core.networkCheck
 
 /**
  * "État du réseau": the box's connection (Wi-Fi signal or cable), internet, the provider's server and, while a stream
@@ -54,34 +38,11 @@ fun NetworkPanel(graph: AppGraph, c: PlayerController?, onDismiss: () -> Unit) {
     // The stream's figures change all the time: read again every 2 s.
     var tick by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(2_000); tick++ } }
-    val close = remember { FocusRequester() }
-    com.lumentv.ui.kit.KitDialog("État du réseau", onDismiss, rootModifier = Modifier.ignoreHeldOk(), buttons = {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            com.lumentv.ui.kit.KitButton("Fermer", primary = true, modifier = Modifier.weight(1f).focusRequester(close), onClick = onDismiss)
-            com.lumentv.ui.kit.KitButton("Relancer le test", modifier = Modifier.weight(1f)) { run++ }
-        }
-    }) {
-        val r = report
-        if (r == null) Text("Test en cours…", style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim)
-        else Column {
-            r.checks.forEach { line(it) }
-            if (c != null) { tick.let { streamLines(context, c).forEach { line(it) } } }
-            Spacer(Modifier.height(12.dp))
-            Text(r.diagnosis ?: NetworkCheck.ALL_GOOD, style = MaterialTheme.typography.titleMedium, color = Palette.Text,
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Palette.PanelHigh).padding(14.dp))
-        }
-    }
-    LaunchedEffect(Unit) { runCatching { close.requestFocus() } }
-}
-
-@Composable
-private fun line(ch: NetCheck) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(when (ch.level) { 0 -> "●"; 1 -> "●"; else -> "●" }, color = when (ch.level) { 0 -> Palette.Good; 1 -> Palette.Gold; else -> Palette.Danger },
-            style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(24.dp))
-        Text(ch.what, style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim, modifier = Modifier.width(150.dp))
-        Text(ch.result, style = MaterialTheme.typography.bodyLarge, color = Palette.Text)
-    }
+    val r = report
+    com.lumentv.ui.kit.NetworkReportDialog(
+        r?.let { rep -> (rep.checks + (if (c != null) tick.let { streamLines(context, c) } else emptyList())).map { com.lumentv.ui.kit.NetLine(it.what, it.result, it.level) } },
+        r?.let { it.diagnosis ?: com.lumentv.core.NetworkCheck.ALL_GOOD }, { run++ }, onDismiss, rootModifier = Modifier.ignoreHeldOk(),
+    )
 }
 
 /** The device's link here (Wi-Fi signal or cable), then the shared check (internet, provider), then the stream. */
@@ -106,7 +67,7 @@ private suspend fun check(context: Context, graph: AppGraph, c: PlayerController
         }
         else -> link = NetCheck("Connexion", "autre", 0)
     }
-    val shared = NetworkCheck.run(graph.core, link, linkDiagnosis)
+    val shared = graph.core.networkCheck(link, linkDiagnosis)
     var diagnosis = shared.diagnosis
     // The stream (figures read on the player's thread)
     if (diagnosis == null && c != null) {

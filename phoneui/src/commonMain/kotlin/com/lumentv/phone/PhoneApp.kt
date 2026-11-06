@@ -91,6 +91,8 @@ internal sealed interface Route {
     data class PlaylistEdit(val id: Long, val type: String) : Route
 }
 
+private object StartupChannel { var done = false }
+
 private enum class Tab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     MOVIES("Films", androidx.compose.material.icons.Icons.Filled.PlayArrow),
     SERIES("Séries", androidx.compose.material.icons.Icons.AutoMirrored.Filled.List),
@@ -194,6 +196,16 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
     val back: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.size - 1) }
     // Where each list was: kept while going into a title and back, emptied when another tab is opened (it starts at the top).
     val memory = remember { ScrollMemory() }
+    // Setting "Au lancement": the last channel, once, when the app opens.
+    LaunchedEffect(Unit) {
+        if (StartupChannel.done) return@LaunchedEffect
+        StartupChannel.done = true
+        val s = core.settings.current()
+        if (s.startup == "last" && s.lastChannelId > 0) {
+            kotlinx.coroutines.delay(600) // the window has to be there to show the player
+            core.library.channel(s.lastChannelId)?.let { playChannel(core, player, it, null) }
+        }
+    }
     androidx.compose.runtime.CompositionLocalProvider(LocalScroll provides memory) {
     // The Android phone's frame: its title bar (lumenTV and the tab, or ← and the page) and its tabs at the bottom.
     Column(Modifier.fillMaxSize().background(Palette.Background).windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(

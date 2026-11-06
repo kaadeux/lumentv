@@ -84,6 +84,7 @@ import com.lumentv.ui.components.TvButton
 import com.lumentv.ui.screens.clock
 import com.lumentv.ui.screens.dayLabel
 import com.lumentv.ui.screens.progressOf
+import com.lumentv.core.explainFailure
 import com.lumentv.ui.screens.resizeLabel
 import com.lumentv.ui.screens.timeRange
 import com.lumentv.ui.theme.LumenTheme
@@ -397,7 +398,7 @@ private fun PlayerScreen(vm: PlayerViewModel, c: PlayerController, inPip: Boolea
         if (state.error != null) {
             // The network's fault, the provider's server's or the stream's (shared check, as on the iPhone and the PC).
             val why by androidx.compose.runtime.produceState<String?>(null, state.error) {
-                value = runCatching { com.lumentv.core.NetworkCheck.explainFailure(vm.graph.core) }.getOrNull()
+                value = runCatching { vm.graph.core.explainFailure() }.getOrNull()
             }
             CenterCard(
                 state.error!!,

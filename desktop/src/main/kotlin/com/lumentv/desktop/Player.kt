@@ -537,9 +537,7 @@ class PlayerWindow private constructor(private val state: AppState) {
 
     private fun matches(description: String?, lang: String): Boolean {
         val d = description?.lowercase() ?: return false
-        val names = mapOf("fr" to listOf("fr", "fre", "fra", "français", "french"), "en" to listOf("en", "eng", "english", "anglais"),
-            "es" to listOf("es", "spa", "español", "spanish"), "de" to listOf("de", "ger", "deu", "deutsch", "german"), "it" to listOf("it", "ita", "italian"))
-        return names[lang].orEmpty().any { Regex("\\b${Regex.escape(it)}\\b").containsMatchIn(d) }
+        return com.lumentv.core.SettingChoices.languageWords[lang].orEmpty().any { Regex("\\b${Regex.escape(it)}\\b").containsMatchIn(d) }
     }
 
     private fun tracksMenu(anchor: JComponent, audio: Boolean) {

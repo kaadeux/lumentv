@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.lumentv.AppCore
 import com.lumentv.core.Featured
+import com.lumentv.core.SettingChoices as Choices
 import com.lumentv.core.IoDispatcher
 import com.lumentv.core.nowMillis
 import com.lumentv.data.db.HistoryEntity
@@ -303,9 +304,9 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity?, open: (Route) -> Un
                 if (p.lastRefresh > 0) Text("Actualisée le " + day(p.lastRefresh), color = Palette.TextDim, fontSize = 14.sp)
                 p.accountInfo?.let { Text(it, color = Palette.TextDim, fontSize = 14.sp) }
                 Text("Rechargement automatique", color = Palette.TextDim, fontSize = 14.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(0 to "Jamais", 12 to "12 h", 24 to "24 h", 48 to "48 h").forEach { (h, label) ->
-                        PhoneChip(label, selected = p.refreshHours == h) { core.scope.launch { core.playlists.save(p.copy(refreshHours = h)) } }
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Choices.reloadHours.forEach { (h, label) ->
+                        item { PhoneChip(label, selected = p.refreshHours == h) { core.scope.launch { core.playlists.save(p.copy(refreshHours = h)) } } }
                     }
                 }
                 PhoneButton(if (p.id in busy) "Actualisation…" else "Recharger la liste", modifier = Modifier.fillMaxWidth()) {
@@ -325,57 +326,74 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity?, open: (Route) -> Un
                     extras.privacyNote ?: com.lumentv.core.Privacy.NOTE)
             }
         }
-        if (extras.networkTest) item {
+        item {
+            val keys = com.lumentv.data.settings.Keys
             var testing by remember { mutableStateOf(false) }
-            Section("État du réseau") {
+            var agents by remember { mutableStateOf(false) }
+            Section("Réseau") {
                 Text("Internet et le serveur du fournisseur, chronométrés, puis la cause probable d'une coupure.", color = Palette.TextDim, fontSize = 14.sp)
-                PhoneButton("Tester ma connexion", modifier = Modifier.fillMaxWidth()) { testing = true }
+                PhoneButton("Tester ma connexion", modifier = Modifier.fillMaxWidth()) { extras.onNetworkTest?.invoke() ?: run { testing = true } }
+                PhoneButton("User-Agent : " + Choices.userAgentLabel(settings?.defaultUserAgent.orEmpty()) + "  ▾", modifier = Modifier.fillMaxWidth()) { agents = true }
             }
             if (testing) NetworkDialog(core) { testing = false }
+            if (agents) Options("User-Agent par défaut", "Certains fournisseurs n'acceptent que certains lecteurs.", Choices.userAgents.map { (v, label) ->
+                Option(label, v == settings?.defaultUserAgent.orEmpty()) { core.scope.launch { core.settings.set(keys.userAgent, v) } }
+            }) { agents = false }
         }
         item {
+            val keys = com.lumentv.data.settings.Keys
+            var menu by remember { mutableStateOf<String?>(null) }
             Section("Lecture") {
                 Toggle("Épisode suivant automatique", "À la fin d'un épisode, le suivant se lance.", settings?.autoNext ?: true) { on ->
-                    core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.autoNext, on) }
+                    core.scope.launch { core.settings.set(keys.autoNext, on) }
                 }
                 Toggle("Qualité auto en direct", "Si l'image coupe, la même chaîne en qualité plus basse (FHD → HD → SD).", settings?.autoQuality ?: true) { on ->
-                    core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.autoQuality, on) }
+                    core.scope.launch { core.settings.set(keys.autoQuality, on) }
                 }
-                Text("Langue audio", color = Palette.TextDim, fontSize = 14.sp)
+                Toggle("Mémoire tampon stable", "Pour une connexion faible : démarre un peu plus lentement, coupe moins.", settings?.bufferMode == "stable") { on ->
+                    core.scope.launch { core.settings.set(keys.buffer, if (on) "stable" else "normal") }
+                }
+                Toggle("Sous-titres activés", "Sinon, seulement les sous-titres forcés.", settings?.subtitlesOn ?: false) { on ->
+                    core.scope.launch { core.settings.set(keys.subsOn, on) }
+                }
+                PhoneButton("Langue audio : " + Choices.languageLabel(settings?.audioLang.orEmpty()) + "  ▾", modifier = Modifier.fillMaxWidth()) { menu = "audio" }
+                PhoneButton("Sous-titres : " + Choices.languageLabel(settings?.subtitleLang.orEmpty()) + "  ▾", modifier = Modifier.fillMaxWidth()) { menu = "subs" }
+                Text("Format d'image", color = Palette.TextDim, fontSize = 14.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("fr" to "Français", "en" to "Anglais").forEach { (code, label) ->
-                        PhoneChip(label, selected = (settings?.audioLang?.ifBlank { "fr" } ?: "fr") == code) {
-                            core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.audioLang, code) }
-                        }
+                    Choices.resizeModes.forEach { (m, label) ->
+                        PhoneChip(label, selected = (settings?.resizeMode ?: 0) == m) { core.scope.launch { core.settings.set(keys.resize, m) } }
                     }
                 }
-                Text("Sous-titres", color = Palette.TextDim, fontSize = 14.sp)
+                Text("Au lancement", color = Palette.TextDim, fontSize = 14.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val on = settings?.subtitlesOn ?: false
-                    val lang = settings?.subtitleLang?.ifBlank { "fr" } ?: "fr"
-                    listOf(Triple(false, "fr", "Forcés seuls"), Triple(true, "fr", "Français"), Triple(true, "en", "Anglais")).forEach { (wantOn, code, label) ->
-                        PhoneChip(label, selected = on == wantOn && (!wantOn || lang == code)) {
-                            core.scope.launch {
-                                core.settings.set(com.lumentv.data.settings.Keys.subsOn, wantOn)
-                                if (wantOn) core.settings.set(com.lumentv.data.settings.Keys.subLang, code)
-                            }
-                        }
+                    Choices.startups.forEach { (v, label) ->
+                        PhoneChip(label, selected = (settings?.startup ?: "home") == v) { core.scope.launch { core.settings.set(keys.startup, v) } }
                     }
                 }
             }
+            menu?.let { m ->
+                val audio = m == "audio"
+                val current = if (audio) settings?.audioLang.orEmpty() else settings?.subtitleLang.orEmpty()
+                Options(if (audio) "Langue audio" else "Langue des sous-titres", null, Choices.languages.map { (code, label) ->
+                    Option(label, code == current) { core.scope.launch { core.settings.set(if (audio) keys.audioLang else keys.subLang, code) } }
+                }) { menu = null }
+            }
         }
         item {
+            val keys = com.lumentv.data.settings.Keys
+            var clearing by remember { mutableStateOf(false) }
             Section("Guide TV") {
                 Text("Jours de programmes gardés", color = Palette.TextDim, fontSize = 14.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(1, 3, 7).forEach { d ->
-                        PhoneChip("$d jour" + if (d > 1) "s" else "", selected = settings?.epgDays == d) {
-                            core.scope.launch { core.settings.set(com.lumentv.data.settings.Keys.epgDays, d) }
-                        }
+                    Choices.epgDays.forEach { d ->
+                        PhoneChip("$d j", selected = settings?.epgDays == d) { core.scope.launch { core.settings.set(keys.epgDays, d) } }
                     }
                 }
                 if (p != null) PhoneButton("Recharger le guide", modifier = Modifier.fillMaxWidth()) { core.scope.launch { core.epg.refresh(p.id) } }
+                PhoneButton("Effacer le guide enregistré", modifier = Modifier.fillMaxWidth()) { clearing = true }
             }
+            if (clearing) com.lumentv.ui.kit.KitConfirm("Effacer le guide TV ?", "Il sera de nouveau téléchargé à la prochaine actualisation.", "Effacer",
+                onConfirm = { core.scope.launch { core.epg.clearAll() } }, onDismiss = { clearing = false }, danger = true)
         }
         item {
             val context = coil3.compose.LocalPlatformContext.current

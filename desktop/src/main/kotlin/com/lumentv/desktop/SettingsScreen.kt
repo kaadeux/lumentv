@@ -32,8 +32,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumentv.core.NetReport
+import com.lumentv.core.asHttp
+import com.lumentv.core.NetworkCheck
+import com.lumentv.core.SettingChoices
 import com.lumentv.core.userMessage
 import com.lumentv.data.xtream.XtreamApi
+import com.lumentv.data.xtream.XtreamCredentials
 import com.lumentv.sync.ProfileKeys
 import com.lumentv.sync.SyncPlaylist
 import com.lumentv.sync.WrongPassphraseException
@@ -44,6 +49,8 @@ import com.lumentv.ui.kit.KitOption
 import com.lumentv.ui.kit.KitChip
 import com.lumentv.ui.kit.KitToggle
 import com.lumentv.ui.kit.ListTile
+import com.lumentv.ui.kit.NetLine
+import com.lumentv.ui.kit.NetworkReportDialog
 import com.lumentv.ui.kit.PrivacyLines
 import com.lumentv.ui.kit.SecretsLine
 import com.lumentv.ui.kit.SettingsSection
@@ -52,8 +59,6 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-private val languages = listOf("" to "Automatique", "fr" to "Français", "en" to "Anglais", "es" to "Espagnol", "de" to "Allemand", "it" to "Italien")
 
 
 private fun hm(t: Long) = SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(t))
@@ -67,6 +72,8 @@ fun SettingsScreen(state: AppState) {
     var login by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf<String?>(null) }
+    var langMenu by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     LazyColumn(Modifier.widthIn(max = 760.dp).fillMaxWidth(), contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         item { Text("Paramètres", style = MaterialTheme.typography.headlineSmall, color = Pal.text) }
@@ -136,19 +143,20 @@ fun SettingsScreen(state: AppState) {
         }
 
         item {
+            SettingsSection("Réseau") {
+                Text("Internet et le serveur du fournisseur, chronométrés, puis la cause probable d'une coupure.", color = Pal.dim, fontSize = 14.sp)
+                KitButton("Tester ma connexion", modifier = Modifier.fillMaxWidth()) { testing = true }
+            }
+        }
+
+        item {
             SettingsSection("Lecture") {
                 KitToggle("Épisode suivant automatique", "À la fin d'un épisode, le suivant se lance.", state.setting("auto_next", "true") != "false") {
                     state.setSetting("auto_next", it.toString())
                 }
                 KitToggle("Sous-titres activés", "Sinon, seulement les sous-titres forcés.", state.setting("subs_on") == "true") { state.setSetting("subs_on", it.toString()) }
-                Text("Langue audio", color = Pal.dim, fontSize = 14.sp)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    languages.forEach { (code, label) -> KitChip(label, state.setting("audio_lang") == code) { state.setSetting("audio_lang", code) } }
-                }
-                Text("Langue des sous-titres", color = Pal.dim, fontSize = 14.sp)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    languages.forEach { (code, label) -> KitChip(label, state.setting("sub_lang") == code) { state.setSetting("sub_lang", code) } }
-                }
+                KitButton("Langue audio : " + SettingChoices.languageLabel(state.setting("audio_lang")) + "  ▾", modifier = Modifier.fillMaxWidth()) { langMenu = "audio_lang" }
+                KitButton("Sous-titres : " + SettingChoices.languageLabel(state.setting("sub_lang")) + "  ▾", modifier = Modifier.fillMaxWidth()) { langMenu = "sub_lang" }
                 Text("Partagés avec la TV par le profil.", color = Pal.dim, fontSize = 13.sp)
             }
         }
@@ -191,6 +199,22 @@ fun SettingsScreen(state: AppState) {
             KitOption("Recharger") { state.open(key, force = true) },
             KitOption("Supprimer", danger = true) { state.removePlaylist(key) },
         ), onDismiss = { menu = null }, subtitle = if (p.type == "xtream") "Compte Xtream" else "Playlist M3U")
+    }
+    langMenu?.let { key ->
+        KitMenu(if (key == "audio_lang") "Langue audio" else "Langue des sous-titres", SettingChoices.languages.map { (code, label) ->
+            KitOption(label, state.setting(key) == code) { state.setSetting(key, code) }
+        }, onDismiss = { langMenu = null })
+    }
+    if (testing) {
+        var run by remember { mutableStateOf(0) }
+        val report by androidx.compose.runtime.produceState<NetReport?>(null, run) {
+            value = null
+            val p = state.active
+            value = NetworkCheck.run(state.http.asHttp(), p?.takeIf { it.type == "xtream" }?.let { list ->
+                { XtreamApi(state.http.asHttp(), XtreamCredentials(list.source, list.username, list.password), list.userAgent.ifBlank { null }).authenticate() }
+            })
+        }
+        NetworkReportDialog(report?.checks?.map { NetLine(it.what, it.result, it.level) }, report?.let { it.diagnosis ?: NetworkCheck.ALL_GOOD }, { run++ }, { testing = false })
     }
     if (login) LoginDialog(state) { login = false }
     adding?.let { type -> PlaylistDialog(state, type) { adding = null } }

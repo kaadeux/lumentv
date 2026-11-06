@@ -38,8 +38,6 @@ import com.lumentv.data.repo.secretsInClear
 import com.lumentv.data.xtream.XtreamApi
 import kotlinx.coroutines.launch
 
-private val REFRESH_CHOICES = listOf(0 to "Jamais", 6 to "6 h", 12 to "12 h", 24 to "24 h", 48 to "48 h", 168 to "7 j")
-
 private fun offsetLabel(minutes: Int) = if (minutes == 0) "Aucun" else (if (minutes > 0) "+" else "−") + "${kotlin.math.abs(minutes) / 60} h"
 
 private fun typeLabel(type: String) = if (type == PlaylistType.XTREAM) "Compte Xtream" else "Playlist M3U"
@@ -115,7 +113,7 @@ internal fun PlaylistForm(core: AppCore, existing: PlaylistEntity?, startType: S
         }
         Text("Rechargement automatique", color = Palette.TextDim, fontSize = 14.sp)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            REFRESH_CHOICES.forEach { (h, label) -> item { PhoneChip(label, selected = refreshHours == h) { refreshHours = h } } }
+            com.lumentv.core.SettingChoices.reloadHours.forEach { (h, label) -> item { PhoneChip(label, selected = refreshHours == h) { refreshHours = h } } }
         }
         ExactField(userAgent, { userAgent = it }, "User-Agent (facultatif)")
         error?.let { Text(it, color = Palette.Danger) }

@@ -40,6 +40,9 @@ class PlayRequest(
     var variants: List<PlayVariant> = emptyList()
     /** The plain HTTP address when [url] is its HTTPS twin (the server answered there): tried if HTTPS fails. */
     var fallbackUrl: String? = null
+    /** Settings: a longer buffer (a weak connection), and the picture's format, 0 fit / 1 zoom / 2 stretch. */
+    var stableBuffer: Boolean = false
+    var resizeMode: Int = 0
     /** Why it failed (the network, the provider's server or the stream itself), given to the callback; set by Playback. */
     var explain: ((String) -> Unit) -> Unit = {}
 

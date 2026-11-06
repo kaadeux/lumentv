@@ -3,6 +3,7 @@ package com.lumentv.phone
 import com.lumentv.AppCore
 import com.lumentv.core.ChannelQuality
 import com.lumentv.core.SecretBox
+import com.lumentv.core.explainFailure
 import com.lumentv.data.db.ChannelRow
 import com.lumentv.data.xtream.Presence
 import kotlinx.coroutines.Job
@@ -27,6 +28,8 @@ object Playback {
         request.audioLang = s.audioLang.ifBlank { "fr" }
         request.subtitleLang = s.subtitleLang.ifBlank { "fr" }
         request.subtitlesOn = s.subtitlesOn
+        request.stableBuffer = s.bufferMode == "stable"
+        request.resizeMode = s.resizeMode
         val p = playlistId?.let { core.playlists.get(it) }
         val key = p?.takeIf { core.presence.enabled && !request.url.startsWith(DownloadManager.SCHEME) }?.let {
             Presence.key(it.type, SecretBox.decrypt(it.sourceEnc), it.username, SecretBox.decrypt(it.passwordEnc))
@@ -35,7 +38,7 @@ object Playback {
             var beat: Job? = null
             if (key != null) beat = core.scope.launch { while (true) { core.presence.beat(key); delay(Presence.BEAT_MS) } }
             request.onClosed = { beat?.cancel(); if (key != null) core.scope.launch { core.presence.leave(key) } }
-            request.explain = { done -> core.scope.launch { done(runCatching { com.lumentv.core.NetworkCheck.explainFailure(core) }.getOrDefault("")) } }
+            request.explain = { done -> core.scope.launch { done(runCatching { core.explainFailure() }.getOrDefault("")) } }
             player.play(request)
         }
         val others = key?.let { core.presence.others(it) }.orEmpty()

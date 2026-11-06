@@ -164,6 +164,7 @@ private fun at(t: Long): String = Instant.fromEpochMilliseconds(t).toLocalDateTi
 
 internal suspend fun playChannel(core: AppCore, player: VideoPlayer, c: ChannelRow, now: String?) {
     if (!Parental.allow(core, c)) return
+    core.settings.set(com.lumentv.data.settings.Keys.lastChannel, c.ch.id)
     val spec = core.resolver.channel(c.ch)
     core.library.record(HistoryEntity(LibraryRepository.key(HistoryKind.CHANNEL, c.ch.playlistId, c.ch.uid), HistoryKind.CHANNEL,
         c.ch.playlistId, c.ch.uid, c.ch.name, c.ch.groupName, c.ch.logo, watchedAt = nowMillis()))

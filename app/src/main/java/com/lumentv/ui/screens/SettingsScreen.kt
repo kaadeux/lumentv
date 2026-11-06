@@ -1,8 +1,6 @@
 package com.lumentv.ui.screens
 
 import android.os.Build
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -20,16 +18,13 @@ import com.lumentv.core.userMessage
 import com.lumentv.data.settings.Keys
 import com.lumentv.phone.CacheOps
 import com.lumentv.phone.SettingsButton
-import com.lumentv.phone.SettingsChoice
 import com.lumentv.phone.SettingsExtra
 import com.lumentv.phone.SettingsExtras
-import com.lumentv.phone.SettingsMenu
 import com.lumentv.phone.SettingsNote
 import com.lumentv.phone.SettingsToggle
 import com.lumentv.phone.SharedSettings
 import com.lumentv.ui.MainViewModel
 import com.lumentv.ui.Screen
-import com.lumentv.ui.components.ConfirmDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -38,8 +33,8 @@ import java.io.File
 
 /**
  * The settings: the iPhone's page (phoneui, shared with the phone and the TV: profile, lists, parental control,
- * privacy, playback, guide, storage), with what only Android has as sections of its own (updates, the TV's picture,
- * the connection test, backup, diagnostics).
+ * privacy, network, playback, guide, storage), with what only Android has as sections of its own (updates, the TV's
+ * screen rate, backup, diagnostics) and its connection panel (Wi-Fi signal, the playing stream's figures).
  */
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
@@ -49,7 +44,6 @@ fun SettingsScreen(vm: MainViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     var network by remember { mutableStateOf(false) }
-    var menu by remember { mutableStateOf<String?>(null) }
     var restorePicker by remember { mutableStateOf(false) }
     val backupFile = remember { File(context.getExternalFilesDir(null), "lumen-sauvegarde.json") }
     // The background reload follows each list's choice (set in the shared page).
@@ -74,27 +68,12 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
             } else null,
         ),
-        atEnd = listOf(
-            SettingsExtra(if (phoneDevice) "Sur ce téléphone" else "Sur cette TV") {
-                SettingsToggle("Mémoire tampon stable", "Pour une connexion faible : démarre un peu plus lentement, coupe moins.",
-                    settings.bufferMode == "stable") { on -> scope.launch { vm.graph.settings.set(Keys.buffer, if (on) "stable" else "normal") } }
-                if (!phoneDevice) SettingsToggle("Fréquence de l'écran adaptée", "L'écran suit la vidéo (25 ou 50 images par seconde) : image fluide.",
+        atEnd = listOfNotNull(
+            // The rest is in the shared page; the screen's rate only exists on a TV.
+            if (!phoneDevice) SettingsExtra("Sur cette TV") {
+                SettingsToggle("Fréquence de l'écran adaptée", "L'écran suit la vidéo (25 ou 50 images par seconde) : image fluide.",
                     settings.matchFrameRate) { on -> scope.launch { vm.graph.settings.set(Keys.matchFrameRate, on) } }
-                SettingsNote("Format d'image")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(0 to "Adapter", 1 to "Zoom", 2 to "Étirer").forEach { (m, label) ->
-                        SettingsChoice(label, settings.resizeMode == m) { scope.launch { vm.graph.settings.set(Keys.resize, m) } }
-                    }
-                }
-                SettingsNote("Au lancement")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SettingsChoice("L'accueil", settings.startup != "last") { scope.launch { vm.graph.settings.set(Keys.startup, "home") } }
-                    SettingsChoice("La dernière chaîne", settings.startup == "last") { scope.launch { vm.graph.settings.set(Keys.startup, "last") } }
-                }
-                SettingsButton("User-Agent : " + (userAgents.firstOrNull { it.first == settings.defaultUserAgent }?.second ?: "personnalisé")) { menu = "ua" }
-                SettingsButton("Tester ma connexion") { network = true }
-                SettingsButton("Effacer le guide TV enregistré") { menu = "clearepg" }
-            },
+            } else null,
             SettingsExtra("Sauvegarde") {
                 SettingsButton("Exporter (sans identifiants)") { scope.launch { exportBackup(vm, backupFile, false) } }
                 SettingsButton("Exporter avec identifiants et adresses") { scope.launch { exportBackup(vm, backupFile, true) } }
@@ -112,7 +91,7 @@ fun SettingsScreen(vm: MainViewModel) {
         footer = "Lumen TV ${BuildConfig.VERSION_NAME}",
         privacy = { com.lumentv.core.PrivateNet.summary() },
         privacyNote = null,
-        networkTest = false,
+        onNetworkTest = { network = true },
         parentalHint = if (phoneDevice) "Verrouille un groupe de chaînes : appui long sur le groupe dans l'onglet Direct. Masque une chaîne ou un groupe de la même façon."
             else "Verrouille un groupe de chaînes : maintiens OK sur le groupe dans l'écran Direct. Masque une chaîne ou un groupe de la même façon.",
         cache = CacheOps(
@@ -124,14 +103,6 @@ fun SettingsScreen(vm: MainViewModel) {
         maxWidth = if (phoneDevice) androidx.compose.ui.unit.Dp.Unspecified else 820.dp)
 
     if (network) com.lumentv.ui.NetworkPanel(vm.graph, null, onDismiss = { network = false })
-    when (menu) {
-        "ua" -> SettingsMenu("User-Agent par défaut", "Certains fournisseurs n'acceptent que certains lecteurs.",
-            userAgents.map { (v, l) -> l to (v == settings.defaultUserAgent) }, onPick = { i ->
-                scope.launch { vm.graph.settings.set(Keys.userAgent, userAgents[i].first) }
-            }) { menu = null }
-        "clearepg" -> ConfirmDialog("Effacer le guide TV ?", "Il sera de nouveau téléchargé à la prochaine actualisation.", "Effacer",
-            onConfirm = { scope.launch { vm.graph.epg.clearAll(); vm.show("Guide TV effacé") } }, onDismiss = { menu = null })
-    }
     if (restorePicker) {
         FileBrowserDialog("Choisir une sauvegarde", setOf("json"), onPick = { f ->
             restorePicker = false
@@ -143,11 +114,6 @@ fun SettingsScreen(vm: MainViewModel) {
         }, onDismiss = { restorePicker = false })
     }
 }
-
-private val userAgents = listOf(
-    "" to "Automatique (Lumen TV)", "VLC/3.0.20 LibVLC/3.0.20" to "VLC", "IPTVSmarters/1.0" to "IPTV Smarters",
-    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" to "Navigateur Chrome",
-)
 
 private suspend fun exportBackup(vm: MainViewModel, file: File, secrets: Boolean) {
     runCatching { vm.graph.backup.export(file, secrets) }
