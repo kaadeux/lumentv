@@ -11,19 +11,10 @@ import androidx.work.WorkerParameters
 import com.lumentv.LumenApp
 import java.util.concurrent.TimeUnit
 
-/** Hourly check: refreshes each playlist whose own interval has elapsed, then its guide. */
+/** Hourly check, with the app closed: the lists and guides that are due (AutoRefresh). */
 class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val g = (applicationContext as LumenApp).graph
-        val now = System.currentTimeMillis()
-        for (p in g.playlists.all()) {
-            if (p.refreshHours <= 0) continue
-            if (now - p.lastRefresh >= p.refreshHours * 3_600_000L) {
-                val r = g.playlists.refresh(p.id)
-                if (r.ok) g.epg.refresh(p.id)
-            }
-        }
-        g.epg.prune()
+        com.lumentv.phone.AutoRefresh.check((applicationContext as LumenApp).graph.core)
         return Result.success()
     }
 

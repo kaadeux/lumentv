@@ -7,9 +7,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 
 /**
- * The periodic reload of the TV and the phone (RefreshWorker on Android): the list once its period has passed (its
- * "Rechargement auto", every 24 h by default), the guide when it is older than [GUIDE_MS] or empty. Asked at start,
- * when the app comes back to the foreground, and every half hour while it stays open.
+ * The periodic reload, on every Android device and the iPhone: the list once its period has passed (its
+ * "Rechargement auto", every 24 h by default), the guide when it is older than [GUIDE_MS] or was cleared. Asked at
+ * start, when the app comes back to the foreground, every half hour while it stays open, and by RefreshWorker on
+ * Android. The guide has its own date: a list reloaded alone, or a guide that failed, does not leave it out of date.
  */
 object AutoRefresh {
     private const val HOUR = 3_600_000L
@@ -25,7 +26,7 @@ object AutoRefresh {
 
     fun checkNow(core: AppCore) { core.scope.launch { check(core) } }
 
-    private suspend fun check(core: AppCore) {
+    suspend fun check(core: AppCore) {
         if (!running.tryLock()) return
         try {
             val now = nowMillis()

@@ -115,6 +115,7 @@ class LumenApp : Application(), ImageLoaderFactory {
         graph.appScope.launch {
             val auto = graph.playlists.all().any { it.refreshHours > 0 }
             RefreshWorker.sync(this@LumenApp, auto)
+            com.lumentv.phone.AutoRefresh.start(graph.core)
             graph.transfers.resumePending()
             val s = graph.settings.current()
             (s.activePlaylistId.takeIf { it > 0 } ?: graph.playlists.all().firstOrNull()?.id)?.let {

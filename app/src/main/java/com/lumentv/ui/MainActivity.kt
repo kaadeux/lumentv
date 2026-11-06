@@ -88,6 +88,12 @@ class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels { MainViewModel.Factory((application as LumenApp).graph) }
     private val notificationPermission = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
 
+    /** Back in the app: the list and the guide if they are due (a guide left out of date shows nothing). */
+    override fun onStart() {
+        super.onStart()
+        com.lumentv.phone.AutoRefresh.checkNow(vm.graph.core)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val firstLaunch = savedInstanceState == null

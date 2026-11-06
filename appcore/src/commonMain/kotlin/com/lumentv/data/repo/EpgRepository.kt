@@ -109,7 +109,8 @@ class EpgRepository(
             db.epg().deletePrograms(p.id)
             db.epg().deleteChannels(p.id)
             epgChannels.distinctBy { it.epgKey to it.nameKey }.chunked(500).forEach { db.epg().insertChannels(it) }
-            programs.chunked(1000).forEach { db.epg().insertPrograms(it) }
+            // A guide can list a channel twice (two sources): one programme per start.
+            programs.distinctBy { it.epgKey to it.start }.chunked(1000).forEach { db.epg().insertPrograms(it) }
             db.playlists().update(db.playlists().get(p.id)!!.copy(lastEpgRefresh = nowMillis()))
         }
         val matched = db.channels().inGroup(p.id, null).count { matcher(p.id).keyFor(it.epgOverride, it.ch.epgId, it.ch.name) != null }
@@ -159,7 +160,11 @@ class EpgRepository(
         db.epg().channels(playlistId).distinctBy { it.epgKey }.sortedBy { it.displayName.lowercase() }
 
     suspend fun clearAll() = withContext(IoDispatcher) {
-        db.transaction { db.epg().clearPrograms(); db.epg().clearChannels() }
+        db.transaction {
+            db.epg().clearPrograms(); db.epg().clearChannels()
+            // Read again at the next start, as the setting says.
+            db.playlists().all().forEach { db.playlists().update(it.copy(lastEpgRefresh = 0)) }
+        }
         matchers.clear(); _version.value++
     }
 
