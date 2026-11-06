@@ -83,6 +83,17 @@ fun KitMenu(
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
 }
 
+/** A long text in full (a summary cut on the page), "Fermer" below. */
+@Composable
+fun KitTextDialog(title: String, text: String, onDismiss: () -> Unit, rootModifier: Modifier = Modifier) {
+    val close = remember { FocusRequester() }
+    KitDialog(title, onDismiss, rootModifier = rootModifier,
+        buttons = { KitButton("Fermer", primary = true, modifier = Modifier.fillMaxWidth().focusRequester(close), onClick = onDismiss) }) {
+        Text(text, color = LocalKitColors.current.text, fontSize = 15.sp, modifier = Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState()))
+    }
+    LaunchedEffect(Unit) { runCatching { close.requestFocus() } }
+}
+
 /** A question with its answer: [confirm] (white, or red when [danger]) and "Annuler". */
 @Composable
 fun KitConfirm(title: String, message: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit,

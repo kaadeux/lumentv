@@ -5,6 +5,7 @@ package com.lumentv.ui.screens
 import com.lumentv.ui.glassPill
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.lumentv.ui.components.remembered
+import com.lumentv.ui.components.ignoreHeldOk
 import com.lumentv.ui.components.focusMemory
 import com.lumentv.ui.ScreenBackdrop
 import kotlinx.coroutines.delay
@@ -705,6 +706,9 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
     val myStars = ratings.firstOrNull { it.key == LibraryRepository.key(HistoryKind.MOVIE, playlistId, uid) }?.stars ?: 0
     val buttons = com.lumentv.ui.components.rememberFocusMemory()
 
+    // The summary is cut to fit: a button shows it in full, only when it is cut.
+    var summaryCut by remember(m.m.id) { mutableStateOf(false) }
+    var summaryOpen by remember { mutableStateOf(false) }
     // No scrolling: the page fits the screen, so moving between the buttons and the stars never shifts it.
     Column(Modifier.fillMaxSize().padding(start = 4.dp, top = 28.dp)) {
         val t = tmdbInfo(vm, m.m.name, false, info?.tmdb, com.lumentv.core.Featured.yearOf(m.m.year ?: info?.releaseDate, m.m.name))
@@ -712,8 +716,10 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
         val meta = listOfNotNull(ratingText(t, m.m.rating)) + metaOf(null, com.lumentv.core.Featured.yearOf(m.m.year ?: info?.releaseDate, m.m.name)?.toString(),
             info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(3)?.joinToString(" • ") { it.trim() })
         Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
-        Text(t?.overview ?: info?.plot ?: "Aucun résumé disponible.", style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 3,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 10.dp))
+        val summary = t?.overview ?: info?.plot ?: "Aucun résumé disponible."
+        Text(summary, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 3,
+            overflow = TextOverflow.Ellipsis, onTextLayout = { summaryCut = it.hasVisualOverflow }, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 10.dp))
+        if (summaryOpen) com.lumentv.ui.kit.KitTextDialog(m.m.name.substringBefore(" (").trim(), summary, { summaryOpen = false }, Modifier.ignoreHeldOk())
         if (resumable) Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             ProgressLine(h!!.positionMs.toFloat() / h.durationMs.coerceAtLeast(1), Modifier.width(220.dp))
             Text("  " + (com.lumentv.core.Resume.remaining(h.positionMs, h.durationMs) ?: ""), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
@@ -739,6 +745,7 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
                     }
                 }
             }
+            if (summaryCut) HeroButton("Résumé", modifier = Modifier.remembered(buttons)) { summaryOpen = true }
         }
         // A film started or watched can be rated (and the rating changed at any time).
         if (h != null || myStars > 0) com.lumentv.ui.components.StarRating(myStars, if (myStars > 0) "Votre note" else "Notez ce film",
@@ -777,6 +784,9 @@ private fun SeriesDetailTv(
     val next = nextEpisode(eps, progress, watched)
     var low by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(start = 4.dp, top = 12.dp)) {
+        // The summary is cut to fit: a button shows it in full, only when it is cut.
+        var summaryCut by remember(s.s.id) { mutableStateOf(false) }
+        var summaryOpen by remember { mutableStateOf(false) }
         val t = tmdbInfo(vm, s.s.name, true, s.s.tmdb, com.lumentv.core.Featured.year(s.s.year))
         TitleArt(s.s.name, t?.logo, if (low) 24.sp else 34.sp, if (low) 52.dp else 92.dp)
         Text((listOfNotNull(ratingText(t, s.s.rating)) + metaOf(null, s.s.year, if (seasons.isNotEmpty()) "${seasons.size} saison" + if (seasons.size > 1) "s" else "" else null, s.s.category)).joinToString("  ·  "),
@@ -787,8 +797,10 @@ private fun SeriesDetailTv(
             Text(it, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(0.95f).padding(top = 6.dp))
         }
-        if (!low) (t?.overview ?: s.s.plot)?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 2,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 8.dp)) }
+        val summary = (t?.overview ?: s.s.plot)?.takeIf { it.isNotBlank() }
+        if (!low) summary?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 2,
+            overflow = TextOverflow.Ellipsis, onTextLayout = { l -> summaryCut = l.hasVisualOverflow }, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 8.dp)) }
+        if (summaryOpen && summary != null) com.lumentv.ui.kit.KitTextDialog(s.s.name.substringBefore(" (").trim(), summary, { summaryOpen = false }, Modifier.ignoreHeldOk())
         Row(Modifier.padding(top = 12.dp).focusMemory(buttons), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             next?.let { (e, resume) ->
                 HeroButton("▶  " + (if (resume) "Reprendre" else "Lecture") + " S${e.season} E${e.episode}", primary = true,
@@ -804,6 +816,7 @@ private fun SeriesDetailTv(
                 val all = list.all { watched(it) }
                 HeroButton(if (all) "Saison $season : non vue" else "Saison $season vue", modifier = Modifier.remembered(buttons)) { markWatched(list, !all) }
             }
+            if (summaryCut) HeroButton("Résumé", modifier = Modifier.remembered(buttons)) { summaryOpen = true }
         }
         // A series of which an episode was watched can be rated.
         if (!low && (progress.isNotEmpty() || myStars > 0)) com.lumentv.ui.components.StarRating(myStars, if (myStars > 0) "Votre note" else "Notez cette série",
