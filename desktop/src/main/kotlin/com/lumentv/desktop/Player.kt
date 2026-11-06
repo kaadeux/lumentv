@@ -150,6 +150,8 @@ class PlayerWindow private constructor(private val state: AppState) {
     private val subtitle = JLabel().apply { font = Ui.font(13); foreground = Ui.dim }
     private val badge = JLabel().apply { font = Ui.font(12, true); foreground = Ui.dim }
     private val message = JLabel("").apply { font = Ui.font(13); foreground = Ui.dim }
+    /** Until when a notice ("Connexion lente…") stays up, over the buffering percentage and with the controls shown. */
+    private var noticeUntil = 0L
     private val timeNow = JLabel("").apply { font = Ui.font(12); foreground = Ui.dim }
     private val timeEnd = JLabel("").apply { font = Ui.font(12); foreground = Ui.dim }
     private val seek = SeekBar { f -> val len = player.status().length(); if (len > 0) player.controls().setTime((len * f).toLong()) }
@@ -220,7 +222,7 @@ class PlayerWindow private constructor(private val state: AppState) {
                 message.text = "Lecture impossible : le flux ne répond pas, ou l'abonnement est déjà utilisé sur un autre écran."
             }
             override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) { if (newCount > 0) { trace("image"); SwingUtilities.invokeLater { applyFormat() } } }
-            override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { player.audio().setVolume(volume.value); message.foreground = Ui.dim; message.text = ""; playPause.set(icon = Ui.PAUSE); if (!languagesApplied) { languagesApplied = true; applyLanguages() }; describeVideo() }
+            override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { player.audio().setVolume(volume.value); if (System.currentTimeMillis() >= noticeUntil) { message.foreground = Ui.dim; message.text = "" }; playPause.set(icon = Ui.PAUSE); if (!languagesApplied) { languagesApplied = true; applyLanguages() }; describeVideo() }
             override fun paused(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { playPause.set(icon = Ui.PLAY) }
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = SwingUtilities.invokeLater {
                 // Buffering after the start is a stall: its length goes to the log.
@@ -229,7 +231,7 @@ class PlayerWindow private constructor(private val state: AppState) {
                     if (item?.live == true) { addLag(System.currentTimeMillis() - stallSince); onStall(System.currentTimeMillis() - stallSince) }
                     PlaybackLog.line("mise en mémoire à ${fmt(liveTime)} : ${(System.currentTimeMillis() - stallSince) / 100 / 10.0} s"); stallSince = 0
                 }
-                if (message.foreground == Ui.danger) return@invokeLater
+                if (message.foreground == Ui.danger || System.currentTimeMillis() < noticeUntil) return@invokeLater
                 message.text = if (newCache < 100f) "Mise en mémoire… ${newCache.toInt()} %" else ""
             }
         })
@@ -295,6 +297,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         title.text = it.title
         subtitle.text = it.subtitle ?: if (it.live) "En direct" else ""
         badge.text = ""
+        noticeUntil = 0
         message.foreground = Ui.dim; message.text = "Chargement…"
         seekRow.isVisible = !it.live
         listOf(restart, back10, fwd30, speedBtn).forEach { b -> b.isVisible = !it.live }
@@ -460,6 +463,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         play(it.copy(url = url, variants = it.variants.drop(1)))
         message.foreground = Color.WHITE
         message.text = "Connexion lente : passage en $label"
+        noticeUntil = System.currentTimeMillis() + 6_000
         return true
     }
 
@@ -520,6 +524,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         val it = item ?: return
         if (!frame.isVisible) return
         watchStream(it)
+        if (noticeUntil in 1..System.currentTimeMillis()) { noticeUntil = 0; if (message.foreground == Color.WHITE) { message.foreground = Ui.dim; message.text = "" } }
         val pos = player.status().time(); val len = player.status().length()
         if (!it.live && len > 0) {
             if (!seek.isDragging) { seek.played = pos.toFloat() / len; seek.repaint() }
@@ -527,7 +532,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         }
         refreshActions()
         if (learnIntroAt in 1..System.currentTimeMillis()) { seriesKey()?.let { Markers.setIntroEnd(it, player.status().time() - 15_000) }; learnIntroAt = 0 }
-        if (top.isVisible && System.currentTimeMillis() - lastMove > 3_000 && player.status().isPlaying && !TrackMenu.isOpen) { // an open menu keeps them
+        if (top.isVisible && System.currentTimeMillis() - lastMove > 3_000 && noticeUntil == 0L && player.status().isPlaying && !TrackMenu.isOpen) { // an open menu keeps them
             top.isVisible = false; bottom.isVisible = false; overlay.repaint()
             component.videoSurfaceComponent().cursor = Toolkit.getDefaultToolkit().createCustomCursor(BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), Point(0, 0), "none")
         }
