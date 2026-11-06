@@ -102,5 +102,5 @@ object HttpsUpgrade {
     }
 
     /** For the settings: what the internet provider can still see. */
-    fun summary(): Privacy = Privacy.of(secureHosts, cleartextHosts)
+    fun summary(): Privacy = Privacy.of(secureHosts, cleartextHosts, videoUnchecked = true)
 }

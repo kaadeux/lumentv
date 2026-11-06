@@ -13,6 +13,15 @@ class SharedTextTest {
         assertEquals("2e8b09703b9ae0b09f9ea615137d9fa695e1a2be100c61b4d30a257ee70103ea", AccessCode.hash(" 123456 "))
     }
 
+    /** Never "Protégée" when the video's server could not be checked. */
+    @Test fun privacy() {
+        assertEquals("Protégée", Privacy.of(listOf("a.site"), emptyList()).title)
+        assertEquals(Privacy.PARTIAL, Privacy.of(listOf("a.site"), listOf("1.2.3.4")).title)
+        val unchecked = Privacy.of(listOf("a.site"), emptyList(), videoUnchecked = true)
+        assertEquals(Privacy.PARTIAL, unchecked.title)
+        assertTrue(unchecked.lines.any { it.startsWith("Vidéo non contrôlée") })
+    }
+
     @Test fun rating() {
         assertEquals("★ 7,3", ratingText(TitleLogos.Info(null, 7.26, 10), null))
         assertNull(ratingText(null, null))

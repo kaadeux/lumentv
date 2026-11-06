@@ -11,9 +11,10 @@ data class Privacy(val title: String, val lines: List<String>) {
     companion object {
         const val PARTIAL = "Partielle"
 
-        fun of(secure: List<String>, clear: List<String>, dnsFallbacks: Int = 0) = Privacy(
+        /** [videoUnchecked]: the player follows redirects by itself (iPhone), so a video server in clear would not be listed. */
+        fun of(secure: List<String>, clear: List<String>, dnsFallbacks: Int = 0, videoUnchecked: Boolean = false) = Privacy(
             when {
-                clear.isNotEmpty() -> PARTIAL
+                clear.isNotEmpty() || videoUnchecked -> PARTIAL
                 secure.isNotEmpty() -> "Protégée"
                 else -> "DNS chiffré"
             },
@@ -22,6 +23,7 @@ data class Privacy(val title: String, val lines: List<String>) {
                 secure.takeIf { it.isNotEmpty() }?.let { "HTTPS : ${it.joinToString(", ")}" },
                 clear.takeIf { it.isNotEmpty() }?.let { "En clair, sans HTTPS chez le fournisseur (un VPN seul le cacherait) : ${it.joinToString(", ")}" },
                 if (secure.isEmpty() && clear.isEmpty()) "HTTPS vérifié à la prochaine connexion au fournisseur" else null,
+                if (videoUnchecked) "Vidéo non contrôlée ici : le fournisseur peut l'envoyer depuis un serveur sans HTTPS (un VPN seul le cacherait)" else null,
             ),
         )
 
