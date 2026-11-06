@@ -33,14 +33,14 @@ data class DownloadTask(
  * Films and episodes saved to Vidéos\Lumen TV, one at a time (a download uses the subscription's screen too, so
  * it announces itself like a player). Interrupted downloads resume where they stopped.
  */
-class Downloads(private val scope: CoroutineScope, http: OkHttpClient, private val presence: Presence, private val presenceKeyOf: (String) -> String?) {
+class Downloads(private val scope: CoroutineScope, http: OkHttpClient, private val presence: Presence, private val listFile: File = File(Store.dir, "downloads.json"),
+                val folder: File = File(System.getProperty("user.home"), "Videos/Lumen TV"), private val presenceKeyOf: (String) -> String?) {
     private val http = http.newBuilder().readTimeout(60, java.util.concurrent.TimeUnit.SECONDS).build()
-    private val listFile = File(Store.dir, "downloads.json")
-    val folder = File(System.getProperty("user.home"), "Videos/Lumen TV").apply { mkdirs() }
     val tasks = mutableStateListOf<DownloadTask>()
     private var worker: Job? = null
 
     init {
+        folder.mkdirs()
         runCatching { Store.json.decodeFromString<List<DownloadTask>>(listFile.readText()) }.getOrNull()?.let { saved ->
             tasks.addAll(saved.map { if (it.status == DlStatus.RUNNING) it.copy(status = DlStatus.QUEUED, speed = 0) else it })
         }
@@ -85,7 +85,8 @@ class Downloads(private val scope: CoroutineScope, http: OkHttpClient, private v
                 val t = tasks.firstOrNull { it.status == DlStatus.QUEUED } ?: break
                 update(t.id) { it.copy(status = DlStatus.RUNNING, error = null) }
                 val result = runCatching { withContext(Dispatchers.IO) { download(t) } }
-                val cur = tasks.firstOrNull { it.id == t.id } ?: continue
+                // Removed meanwhile: Windows refuses to delete a file still open, so it goes now that it is closed.
+                val cur = tasks.firstOrNull { it.id == t.id } ?: run { File(t.file).delete(); null } ?: continue
                 if (cur.status != DlStatus.RUNNING) continue // paused or removed meanwhile
                 result.onSuccess { update(t.id) { it.copy(status = DlStatus.DONE, speed = 0) } }
                     .onFailure { e -> if (e !is kotlinx.coroutines.CancellationException) update(t.id) { it.copy(status = DlStatus.FAILED, error = userMessage(e), speed = 0) } }
