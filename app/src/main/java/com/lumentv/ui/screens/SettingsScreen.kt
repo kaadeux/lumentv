@@ -95,8 +95,8 @@ fun SettingsScreen(vm: MainViewModel) {
         parentalHint = if (phoneDevice) "Verrouille un groupe de chaînes : appui long sur le groupe dans l'onglet Direct. Masque une chaîne ou un groupe de la même façon."
             else "Verrouille un groupe de chaînes : maintiens OK sur le groupe dans l'écran Direct. Masque une chaîne ou un groupe de la même façon.",
         cache = CacheOps(
-            sizeBytes = { withContext(Dispatchers.IO) { context.imageLoader.diskCache?.size ?: 0L } },
-            clear = { context.imageLoader.memoryCache?.clear(); context.imageLoader.diskCache?.clear() },
+            sizeBytes = { withContext(Dispatchers.IO) { (context.imageLoader.diskCache?.size ?: 0L) + (vm.graph.tmdbHttp.cache?.size() ?: 0L) } },
+            clear = { context.imageLoader.memoryCache?.clear(); context.imageLoader.diskCache?.clear(); vm.graph.tmdbHttp.cache?.evictAll() },
         ),
     )
     SharedSettings(vm.graph.core, onEditList = { id, type -> vm.open(Screen.PlaylistEdit(id, type)) }, extras,

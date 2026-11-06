@@ -30,6 +30,9 @@ class TitleLogos(private val http: Http, private val key: String) {
 
     val enabled get() = key.isNotBlank()
 
+    /** What this session has read ("Vider le cache"). */
+    fun forget() = cache.clear()
+
     fun cached(series: Boolean, tmdb: String?, title: String, year: Int?): Info? = cache.peek(keyOf(series, tmdb, title, year))
 
     /** Logo, rating, summary and cast (one request: the details with their images and credits), null when TMDB does not know the title. Blocking. */

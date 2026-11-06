@@ -404,7 +404,7 @@ internal fun SettingsPage(core: AppCore, p: PlaylistEntity?, open: (Route) -> Un
                 Text("Cache des images et de TMDB : " + (bytes?.let { "${it / 1_000_000} Mo" } ?: "…"), color = Palette.TextDim, fontSize = 14.sp)
                 Text("Les téléchargements, la liste et le guide ne sont pas touchés.", color = Palette.TextDim, fontSize = 12.sp)
                 PhoneButton("Vider le cache", modifier = Modifier.fillMaxWidth()) {
-                    core.scope.launch { withContext(IoDispatcher) { extras.cache?.clear?.invoke() ?: clearCaches(context) }; refresh++ }
+                    core.scope.launch { withContext(IoDispatcher) { extras.cache?.clear?.invoke() ?: clearCaches(context); core.logos.forget() }; refresh++ }
                 }
             }
         }
