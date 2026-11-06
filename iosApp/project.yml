@@ -26,8 +26,8 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: Lumen TV
-        CFBundleShortVersionString: "0.16.4"
-        CFBundleVersion: "36"
+        CFBundleShortVersionString: "0.16.5"
+        CFBundleVersion: "37"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
