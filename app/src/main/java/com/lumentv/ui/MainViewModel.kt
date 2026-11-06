@@ -132,12 +132,6 @@ class MainViewModel(val graph: AppGraph) : ViewModel() {
         syncWorker()
     }
 
-    fun refreshEpg(id: Long) = viewModelScope.launch {
-        show("Téléchargement du guide TV…")
-        val e = graph.epg.refresh(id)
-        show(if (e.ok) "Guide TV : ${e.message}" else "Guide TV : ${e.message}")
-    }
-
     fun syncWorker() = viewModelScope.launch {
         RefreshWorker.sync(graph.appContext, graph.playlists.all().any { it.refreshHours > 0 })
     }

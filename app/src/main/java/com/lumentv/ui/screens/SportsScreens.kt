@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.core.dayLabel
 import androidx.compose.foundation.layout.height
 import com.lumentv.ui.glassPill
 
@@ -184,10 +185,6 @@ private fun PickDialog(title: String, subtitle: String, items: List<Pair<String,
         items.map { (id, label) -> com.lumentv.ui.kit.KitOption(label, id in selected) { onToggle(id) } },
         onDismiss, subtitle, closeOnPick = false, rootModifier = Modifier.ignoreHeldOk())
 }
-
-@Composable
-private fun FilterLabel(text: String) =
-    Text(text, style = MaterialTheme.typography.titleSmall, color = Palette.Accent, modifier = Modifier.padding(top = 6.dp))
 
 @Composable
 private fun GameRow(g: com.lumentv.data.sports.SportsRepository.Game, onClick: () -> Unit) {

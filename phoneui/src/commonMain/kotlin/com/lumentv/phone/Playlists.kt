@@ -36,8 +36,6 @@ import kotlinx.coroutines.launch
 
 private fun offsetLabel(minutes: Int) = if (minutes == 0) "Aucun" else (if (minutes > 0) "+" else "−") + "${kotlin.math.abs(minutes) / 60} h"
 
-private fun typeLabel(type: String) = if (type == PlaylistType.XTREAM) "Compte Xtream" else "Playlist M3U"
-
 /** Adding or changing a list, from the Paramètres. */
 @Composable
 internal fun PlaylistEditPage(core: AppCore, id: Long, type: String, back: () -> Unit) {

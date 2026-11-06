@@ -25,13 +25,4 @@ object LumenIcons {
             moveTo(4f, 20f); lineTo(20f, 20f)
         }
     }.build()
-
-    val Record: ImageVector = ImageVector.Builder("record", 24.dp, 24.dp, 24f, 24f).apply {
-        path(stroke = SolidColor(Color.Black), strokeLineWidth = 2f) {
-            moveTo(12f, 2f); arcToRelative(10f, 10f, 0f, true, true, 0f, 20f); arcToRelative(10f, 10f, 0f, true, true, 0f, -20f); close()
-        }
-        path(fill = SolidColor(Color.Black)) {
-            moveTo(12f, 7f); arcToRelative(5f, 5f, 0f, true, true, 0f, 10f); arcToRelative(5f, 5f, 0f, true, true, 0f, -10f); close()
-        }
-    }.build()
 }

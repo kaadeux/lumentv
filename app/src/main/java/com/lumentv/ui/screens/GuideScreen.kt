@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.core.dayLabel
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -320,13 +321,3 @@ private fun Cell(
 
 private fun floorTo30(t: Long) = t - t % (30 * 60_000L)
 private fun hhmm(t: Long) = SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(t))
-fun dayLabel(t: Long): String {
-    val today = SimpleDateFormat("yyyyMMdd", Locale.FRANCE)
-    val now = System.currentTimeMillis()
-    return when (today.format(Date(t))) {
-        today.format(Date(now)) -> "Aujourd'hui"
-        today.format(Date(now - 86_400_000L)) -> "Hier"
-        today.format(Date(now + 86_400_000L)) -> "Demain"
-        else -> SimpleDateFormat("EEE d MMM", Locale.FRANCE).format(Date(t))
-    }
-}

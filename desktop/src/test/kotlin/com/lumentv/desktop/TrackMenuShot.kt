@@ -2,7 +2,6 @@ package com.lumentv.desktop
 
 import org.junit.Assume.assumeTrue
 import org.junit.Test
-import java.awt.image.BufferedImage
 import javax.swing.JFrame
 import javax.swing.JPanel
 import javax.swing.SwingUtilities

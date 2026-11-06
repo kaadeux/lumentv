@@ -3,11 +3,9 @@
 package com.lumentv.ui.screens
 
 import com.lumentv.ui.glassPill
-import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.foundation.border
 import com.lumentv.ui.components.enterHere
 import com.lumentv.ui.components.enterOn
 import com.lumentv.ui.components.hint

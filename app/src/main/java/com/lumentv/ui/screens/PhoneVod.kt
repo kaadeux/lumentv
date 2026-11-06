@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.data.ratingText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -61,7 +62,6 @@ import com.lumentv.data.db.SeriesRow
 import com.lumentv.data.db.TransferKind
 import com.lumentv.data.db.TransferStatus
 import com.lumentv.data.repo.LibraryRepository
-import com.lumentv.data.xtream.XVodInfo
 import com.lumentv.ui.MainViewModel
 import com.lumentv.ui.Screen
 import com.lumentv.ui.components.EmptyState

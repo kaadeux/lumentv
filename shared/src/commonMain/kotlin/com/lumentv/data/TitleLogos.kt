@@ -89,3 +89,7 @@ class TitleLogos(private val http: Http, private val key: String) {
     private fun clean(title: String) = com.lumentv.core.Featured.searchTitle(title)
     private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.contentOrNull
 }
+
+/** "★ 7,3" from TMDB when it knows the title, else the provider's rating. */
+fun ratingText(tmdb: TitleLogos.Info?, provider: String?): String? =
+    (tmdb?.rating ?: com.lumentv.core.Featured.rating(provider))?.let { "★ " + com.lumentv.core.oneDecimal(it) }

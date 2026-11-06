@@ -1,11 +1,12 @@
 package com.lumentv.phone
 
+import com.lumentv.core.dateOf
+import com.lumentv.core.dayLabel
 import com.lumentv.data.sports.SportsCatalog
 import com.lumentv.data.sports.FixtureClient
 import com.lumentv.data.sports.Fixture
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.border
@@ -27,7 +28,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +61,6 @@ import com.lumentv.data.sports.SportsFunnel
 import com.lumentv.data.sports.SportsRepository
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
-import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
@@ -71,22 +70,7 @@ private val zone get() = TimeZone.currentSystemDefault()
 internal fun hm(t: Long): String = Instant.fromEpochMilliseconds(t).toLocalDateTime(zone).let {
     it.hour.toString().padStart(2, '0') + ":" + it.minute.toString().padStart(2, '0')
 }
-private fun dateOf(t: Long): LocalDate = Instant.fromEpochMilliseconds(t).toLocalDateTime(zone).date
-private val weekDays = listOf("Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche")
-private val months = listOf("janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc.")
 
-/** "Aujourd'hui", "Demain", "Hier", "Samedi 8 nov.". */
-internal fun dayLabel(t: Long): String {
-    val d = dateOf(t)
-    val today = dateOf(nowMillis())
-    val diff = d.toEpochDays() - today.toEpochDays()
-    return when (diff) {
-        0 -> "Aujourd'hui"
-        1 -> "Demain"
-        -1 -> "Hier"
-        else -> weekDays[d.dayOfWeek.ordinal] + " " + d.dayOfMonth + " " + months[d.monthNumber - 1]
-    }
-}
 
 // ---- "Plus": the destinations that are not tabs ------------------------------------------------------------------
 

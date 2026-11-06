@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.lumentv.AppCore
 import com.lumentv.core.Featured
-import com.lumentv.core.SettingChoices as Choices
 import com.lumentv.core.IoDispatcher
 import com.lumentv.core.nowMillis
 import com.lumentv.data.db.HistoryEntity

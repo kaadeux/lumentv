@@ -8,12 +8,6 @@ import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.lumentv.data.backup.BackupManager
-import com.lumentv.data.db.AppDatabase
-import com.lumentv.data.repo.EpgRepository
-import com.lumentv.data.repo.LibraryRepository
-import com.lumentv.data.repo.PlaylistRepository
-import com.lumentv.data.repo.StreamResolver
-import com.lumentv.data.settings.SettingsStore
 import com.lumentv.work.RefreshWorker
 import com.lumentv.sync.startWithAppLifecycle
 import kotlinx.coroutines.CoroutineScope

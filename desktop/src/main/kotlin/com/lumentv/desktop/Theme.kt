@@ -8,7 +8,6 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import java.security.MessageDigest
 import kotlinx.coroutines.launch
 import androidx.compose.ui.node.invalidateDraw
 import java.util.prefs.Preferences
@@ -74,10 +73,9 @@ fun LumenTheme(content: @Composable () -> Unit) = MaterialTheme(
 /** Family access code, as on the TV: asked once per Windows account, only its hash is in the app. */
 object Access {
     private val prefs = Preferences.userRoot().node("lumentv")
-    private fun hash(code: String) = MessageDigest.getInstance("SHA-256").digest("lumen-access:${code.trim()}".toByteArray()).joinToString("") { "%02x".format(it) }
     fun isUnlocked() = BuildInfo.ACCESS_HASH.isEmpty() || prefs.get("unlocked", "") == BuildInfo.ACCESS_HASH
     fun unlock(code: String): Boolean {
-        if (hash(code) != BuildInfo.ACCESS_HASH) return false
+        if (com.lumentv.core.AccessCode.hash(code) != BuildInfo.ACCESS_HASH) return false
         prefs.put("unlocked", BuildInfo.ACCESS_HASH); return true
     }
 }

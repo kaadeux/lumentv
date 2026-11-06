@@ -228,8 +228,6 @@ interface PrefDao {
     suspend fun deleteFor(pid: Long)
 }
 
-data class ProgramWithKey(val epgKey: String, val start: Long, val stop: Long, val title: String, val description: String?)
-
 @Dao
 interface EpgDao {
     @Query("SELECT * FROM programs WHERE playlistId = :pid AND epgKey = :key AND stop > :from AND start < :to ORDER BY start")
@@ -273,9 +271,6 @@ interface HistoryDao {
 
     @Query("SELECT * FROM history WHERE key = :key")
     suspend fun get(key: String): HistoryEntity?
-
-    @Query("SELECT * FROM history WHERE kind = 'ep' AND playlistId = :pid AND parentUid = :seriesUid")
-    suspend fun episodesOf(pid: Long, seriesUid: String): List<HistoryEntity>
 
     @Upsert
     suspend fun upsert(h: HistoryEntity)
@@ -322,9 +317,6 @@ interface TransferDao {
 
 @Dao
 interface ReminderDao {
-    @Query("SELECT * FROM reminders WHERE stop > :now ORDER BY start")
-    fun observeUpcoming(now: Long): Flow<List<ReminderEntity>>
-
     @Query("SELECT * FROM reminders WHERE stop > :now ORDER BY start")
     suspend fun upcoming(now: Long): List<ReminderEntity>
 

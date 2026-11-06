@@ -2,6 +2,7 @@
 
 package com.lumentv.desktop
 
+import com.lumentv.core.dayLabel
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,7 +57,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -259,13 +259,4 @@ private suspend fun load(state: AppState, c: Catalog, chosen: Set<String>, days:
     }
 }
 
-private fun dayLabel(t: Long): String {
-    val d = Calendar.getInstance().apply { timeInMillis = t }
-    val today = Calendar.getInstance()
-    fun same(a: Calendar, b: Calendar) = a.get(Calendar.YEAR) == b.get(Calendar.YEAR) && a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
-    if (same(d, today)) return "Aujourd'hui"
-    today.add(Calendar.DAY_OF_YEAR, 1)
-    if (same(d, today)) return "Demain"
-    return SimpleDateFormat("EEEE d MMMM", Locale.FRANCE).format(Date(t)).replaceFirstChar { it.uppercase() }
-}
 

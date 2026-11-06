@@ -4,7 +4,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.lumentv.core.Crypto
 import com.lumentv.core.KeyValues
 
 /**
@@ -17,16 +16,10 @@ class AccessGate(private val hash: String, private val store: KeyValues) {
 
     /** True when [code] is right; the iPhone then stays unlocked. */
     fun unlock(code: String): Boolean {
-        if (hash(code) != hash) return false
+        if (com.lumentv.core.AccessCode.hash(code) != hash) return false
         store.put("unlocked", hash)
         unlocked = true
         return true
-    }
-
-    companion object {
-        /** The same hash as Android's (Access.hash). */
-        fun hash(code: String): String =
-            Crypto.sha256("lumen-access:${code.trim()}".encodeToByteArray()).joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
     }
 }
 

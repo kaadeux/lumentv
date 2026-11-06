@@ -2,6 +2,7 @@
 
 package com.lumentv.ui.screens
 
+import com.lumentv.data.ratingText
 import com.lumentv.ui.glassPill
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.lumentv.ui.components.remembered
@@ -13,18 +14,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.focus.onFocusChanged
-import com.lumentv.ui.components.enterHere
-import com.lumentv.ui.components.enterOn
-import com.lumentv.ui.components.ButtonRow
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -80,7 +74,6 @@ import com.lumentv.ui.components.OptionsDialog
 import com.lumentv.ui.components.Poster
 import com.lumentv.ui.components.ProgressLine
 import com.lumentv.ui.components.returnFocus
-import com.lumentv.ui.components.TvButton
 import com.lumentv.ui.player.PlayerLauncher
 import com.lumentv.ui.theme.Palette
 import kotlinx.coroutines.Dispatchers
@@ -870,10 +863,6 @@ internal fun tmdbInfo(vm: MainViewModel, title: String, series: Boolean, tmdb: S
     }
     return info
 }
-
-/** "★ 7,3" from TMDB when it knows the title, else the provider's rating. */
-internal fun ratingText(tmdb: com.lumentv.data.TitleLogos.Info?, provider: String?): String? =
-    (tmdb?.rating ?: com.lumentv.core.Featured.rating(provider))?.let { "★ " + "%.1f".format(java.util.Locale.FRANCE, it) }
 
 /**
  * The title as its poster writes it (the logo, from TMDB) when there is one, else in big letters. The text shows

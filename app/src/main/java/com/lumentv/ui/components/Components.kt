@@ -340,5 +340,3 @@ fun Scrim(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Uni
 
 fun initials(name: String): String =
     name.split(' ', '-', '|', ':').filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "?" }
-
-val columnGap = Arrangement.spacedBy(8.dp)

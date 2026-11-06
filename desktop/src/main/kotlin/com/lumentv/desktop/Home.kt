@@ -2,6 +2,7 @@
 
 package com.lumentv.desktop
 
+import com.lumentv.data.ratingText
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -29,16 +30,11 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -86,10 +82,6 @@ fun rememberInfo(state: AppState, series: Boolean, name: String, tmdb: String?, 
     }
     return info
 }
-
-/** "★ 7,3" from TMDB when it knows the title, else the provider's rating. */
-fun ratingText(tmdb: TitleLogos.Info?, provider: String?): String? =
-    (tmdb?.rating ?: Featured.rating(provider))?.let { "★ " + "%.1f".format(java.util.Locale.FRANCE, it) }
 
 /** The title as its poster writes it (TMDB's logo) when there is one, else in big letters. */
 @Composable

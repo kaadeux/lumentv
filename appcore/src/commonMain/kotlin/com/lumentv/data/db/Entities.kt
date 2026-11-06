@@ -197,7 +197,6 @@ data class HistoryEntity(
 )
 
 object TransferKind {
-    const val RECORDING = "rec"
     const val DOWNLOAD = "dl"
 }
 

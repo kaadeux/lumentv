@@ -1,7 +1,7 @@
 package com.lumentv.phone
 
+import com.lumentv.data.ratingText
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,7 +33,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.lumentv.ui.kit.pressable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
@@ -51,7 +50,6 @@ import com.lumentv.core.Featured
 import com.lumentv.core.IoDispatcher
 import com.lumentv.core.Resume
 import com.lumentv.core.nowMillis
-import com.lumentv.core.oneDecimal
 import com.lumentv.data.TitleLogos
 import com.lumentv.data.db.EpisodeEntity
 import com.lumentv.data.db.HistoryEntity
@@ -78,10 +76,6 @@ private fun tmdbInfo(core: AppCore, title: String, series: Boolean, tmdb: String
     }
     return info
 }
-
-/** "★ 7,3" from TMDB when it knows the title, else the provider's rating. */
-private fun ratingText(t: TitleLogos.Info?, provider: String?): String? =
-    (t?.rating ?: Featured.rating(provider))?.let { "★ " + oneDecimal(it) }
 
 private fun duration(secs: Int): String = if (secs >= 3600) "${secs / 3600} h ${((secs % 3600) / 60).toString().padStart(2, '0')}" else "${secs / 60} min"
 

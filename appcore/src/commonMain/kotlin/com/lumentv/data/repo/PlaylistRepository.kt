@@ -16,9 +16,7 @@ import com.lumentv.core.Redact
 import com.lumentv.core.SecretBox
 import com.lumentv.core.userMessage
 import com.lumentv.data.db.AppDatabase
-import com.lumentv.data.db.ChannelEntity
 import com.lumentv.data.db.EpisodeEntity
-import com.lumentv.data.db.MovieEntity
 import com.lumentv.data.db.PlaylistEntity
 import com.lumentv.data.db.PlaylistType
 import com.lumentv.data.xtream.XLive

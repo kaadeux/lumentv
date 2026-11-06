@@ -80,7 +80,7 @@ fun PhoneShell(vm: MainViewModel, firstLaunch: Boolean, screen: @Composable (Scr
         if (hasGuide) add(Dest(Screen.Sports, "Sport", LumenIcons.Sports, "Les matchs à venir et en direct, sur vos chaînes"))
         if (p != null) add(Dest(Screen.Favorites, "Favoris", Icons.Filled.Star, "Vos chaînes, films et séries préférés"))
         if (p != null) add(Dest(Screen.History, "Historique", Icons.Filled.Refresh, "Reprendre là où vous en étiez"))
-        if (p != null) add(Dest(Screen.Recordings, "Téléchargés", LumenIcons.Download, "Films, épisodes et enregistrements sur ce téléphone"))
+        if (p != null) add(Dest(Screen.Recordings, "Téléchargés", LumenIcons.Download, "Films et épisodes sur ce téléphone"))
         add(Dest(Screen.Settings, "Paramètres", Icons.Filled.Settings, "Playlists, profil, lecture, contrôle parental"))
     }
 

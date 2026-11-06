@@ -2,13 +2,11 @@ package com.lumentv.data.repo
 
 import com.lumentv.core.nowMillis
 import com.lumentv.core.IoDispatcher
-import kotlinx.coroutines.async
 import com.lumentv.core.normalize
 import com.lumentv.data.db.AppDatabase
 import com.lumentv.data.db.ChannelRow
 import com.lumentv.data.db.EpisodeEntity
 import com.lumentv.data.db.HistoryEntity
-import com.lumentv.data.db.HistoryKind
 import com.lumentv.data.db.MovieRow
 import com.lumentv.data.db.PrefEntity
 import com.lumentv.data.db.PrefKind
@@ -184,8 +182,6 @@ class LibraryRepository(private val db: AppDatabase) {
     fun observeHistory(limit: Int = 100) = db.history().observeRecent(limit)
 
     suspend fun history(key: String) = withContext(IoDispatcher) { db.history().get(key) }
-    suspend fun episodeHistory(pid: Long, seriesUid: String) = withContext(IoDispatcher) { db.history().episodesOf(pid, seriesUid) }
-    suspend fun recentChannels(limit: Int) = withContext(IoDispatcher) { db.history().recentOf(HistoryKind.CHANNEL, limit) }
 
     suspend fun record(h: HistoryEntity) = withContext(IoDispatcher) { db.history().upsert(h) }
     suspend fun deleteHistory(key: String) = withContext(IoDispatcher) { db.history().delete(key) }

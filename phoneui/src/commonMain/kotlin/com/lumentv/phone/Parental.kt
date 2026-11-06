@@ -74,5 +74,3 @@ internal fun PinHost(core: AppCore) {
     }
 }
 
-@Composable
-private fun Row2(label: String, onClick: () -> Unit) = PhoneButton(label, modifier = Modifier.fillMaxWidth(), onClick = onClick)

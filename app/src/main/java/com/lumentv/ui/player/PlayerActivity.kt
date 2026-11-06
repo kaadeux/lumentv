@@ -82,7 +82,7 @@ import com.lumentv.ui.components.OptionsDialog
 import com.lumentv.ui.components.ProgressLine
 import com.lumentv.ui.components.TvButton
 import com.lumentv.ui.screens.clock
-import com.lumentv.ui.screens.dayLabel
+import com.lumentv.core.dayLabel
 import com.lumentv.ui.screens.progressOf
 import com.lumentv.core.explainFailure
 import com.lumentv.ui.screens.resizeLabel

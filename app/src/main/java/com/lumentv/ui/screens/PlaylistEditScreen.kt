@@ -4,7 +4,6 @@ package com.lumentv.ui.screens
 
 import com.lumentv.ui.components.ButtonRow
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
