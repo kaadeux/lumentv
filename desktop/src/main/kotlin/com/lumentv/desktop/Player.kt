@@ -154,7 +154,7 @@ class PlayerWindow private constructor(private val state: AppState) {
     private var noticeUntil = 0L
     private val timeNow = JLabel("").apply { font = Ui.font(12); foreground = Ui.dim }
     private val timeEnd = JLabel("").apply { font = Ui.font(12); foreground = Ui.dim }
-    private val seek = SeekBar { f -> val len = player.status().length(); if (len > 0) player.controls().setTime((len * f).toLong()) }
+    private val seek = SeekBar { f -> val cu = item?.catchup; val len = player.status().length(); if (cu != null) moveCatchup((cu.durationMs * f).toLong()) else if (len > 0) player.controls().setTime((len * f).toLong()) }
     private val playPause = Bubble(Ui.PAUSE, tooltip = "Pause / lecture (Espace)", size = 56, primary = true) { togglePause() }
     private val fullBtn = Bubble(Ui.FULL, tooltip = "Plein écran (F)") { toggleFullScreen() }
     private val muteBtn = Bubble(Ui.VOLUME, tooltip = "Muet (M)", size = 36) { toggleMute() }
@@ -165,7 +165,7 @@ class PlayerWindow private constructor(private val state: AppState) {
     private val speedBtn = Bubble(Ui.SPEED, "1.0x", "Vitesse de lecture") { cycleSpeed() }
     private val back10 = Bubble(Ui.BACK10, tooltip = "Reculer de 10 s (←)") { skip(-10_000) }
     private val fwd30 = Bubble(Ui.FWD30, tooltip = "Avancer de 30 s") { skip(30_000) }
-    private val restart = Bubble(Ui.RESTART, tooltip = "Reprendre au début") { player.controls().setTime(0) }
+    private val restart = Bubble(Ui.RESTART, tooltip = "Reprendre au début") { if (item?.catchup != null) moveCatchup(0) else player.controls().setTime(0) }
     private val nextBtn = Bubble(Ui.NEXT, tooltip = "Épisode suivant (N)") { playNext() }
     private val skipIntro = Bubble(label = "Passer le récap / l'intro", subtle = true, size = 38) { skipIntro() }
     private val nextCard = Bubble(Ui.NEXT, "Épisode suivant", subtle = true, size = 38) { playNext() }
@@ -260,7 +260,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         actions.add(message); actions.add(backToLive); actions.add(skipIntro); actions.add(nextClose); actions.add(nextCard)
         dark(seekRow).border = EmptyBorder(6, 0, 4, 0)
         seekRow.add(timeNow, BorderLayout.WEST); seekRow.add(seek, BorderLayout.CENTER); seekRow.add(timeEnd, BorderLayout.EAST)
-        seek.hoverText = { f -> val len = player.status().length(); if (len > 0) fmt((len * f).toLong()) else "" }
+        seek.hoverText = { f -> val len = item?.catchup?.durationMs ?: player.status().length(); if (len > 0) fmt((len * f).toLong()) else "" }
         val controls = dark(JPanel(BorderLayout()))
         val center = dark(JPanel(FlowLayout(FlowLayout.CENTER, 12, 0)))
         listOf(restart, back10, playPause, fwd30, nextBtn).forEach { center.add(it) }
@@ -300,7 +300,9 @@ class PlayerWindow private constructor(private val state: AppState) {
         noticeUntil = 0
         message.foreground = Ui.dim; message.text = "Chargement…"
         seekRow.isVisible = !it.live
-        listOf(restart, back10, fwd30, speedBtn).forEach { b -> b.isVisible = !it.live }
+        listOf(restart, speedBtn).forEach { b -> b.isVisible = !it.live }
+        // A programme watched again moves minute by minute (moveCatchup): no 10 s and 30 s here.
+        listOf(back10, fwd30).forEach { b -> b.isVisible = !it.live && it.catchup == null }
         nextBtn.isVisible = it.next != null
         refreshActions()
         val opts = buildList {
@@ -350,7 +352,21 @@ class PlayerWindow private constructor(private val state: AppState) {
         bind(KeyEvent.VK_ESCAPE, "esc") { if (player.fullScreen().isFullScreen) toggleFullScreen() else close() }
     }
 
-    private fun skip(ms: Long) { if (item?.live == false) player.controls().skipTime(ms) }
+    private fun skip(ms: Long) {
+        val it = item ?: return
+        when {
+            it.catchup != null -> moveCatchup(it.catchupOffset + player.status().time().coerceAtLeast(0) + if (ms > 0) 60_000 else -60_000)
+            !it.live -> player.controls().skipTime(ms)
+        }
+    }
+
+    /** Asks the server for the programme from this moment (to the minute, as its addresses are written). */
+    private fun moveCatchup(at: Long) {
+        val it = item ?: return
+        val cu = it.catchup ?: return
+        val minute = at.coerceAtMost(cu.maxMs()).coerceAtLeast(0) / 60_000 * 60_000
+        play(it.copy(url = cu.urlAt(minute), catchupOffset = minute))
+    }
     private fun togglePause() {
         if (item?.live == true) {
             val now = System.currentTimeMillis()
@@ -504,7 +520,11 @@ class PlayerWindow private constructor(private val state: AppState) {
     private fun watchStream(it: PlayItem) {
         val now = System.currentTimeMillis()
         if (reconnectAt > 0) {
-            if (now >= reconnectAt) { reconnectAt = 0; play(if (it.live) it else it.copy(startMs = liveTime.coerceAtLeast(it.startMs))) }
+            if (now >= reconnectAt) {
+                reconnectAt = 0
+                if (it.catchup != null) moveCatchup(it.catchupOffset + liveTime.coerceAtLeast(0))
+                else play(if (it.live) it else it.copy(startMs = liveTime.coerceAtLeast(it.startMs)))
+            }
             return
         }
         val t = player.status().time()
@@ -525,7 +545,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         if (!frame.isVisible) return
         watchStream(it)
         if (noticeUntil in 1..System.currentTimeMillis()) { noticeUntil = 0; if (message.foreground == Color.WHITE) { message.foreground = Ui.dim; message.text = "" } }
-        val pos = player.status().time(); val len = player.status().length()
+        val pos = it.catchupOffset + player.status().time(); val len = it.catchup?.durationMs ?: player.status().length()
         if (!it.live && len > 0) {
             if (!seek.isDragging) { seek.played = pos.toFloat() / len; seek.repaint() }
             timeNow.text = fmt(pos); timeEnd.text = fmt(len)

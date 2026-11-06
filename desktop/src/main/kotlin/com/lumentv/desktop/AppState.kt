@@ -236,7 +236,7 @@ class AppState(private val scope: CoroutineScope) {
     }
 
     fun saveProgress(item: PlayItem, positionMs: Long, durationMs: Long) {
-        if (System.getenv("LUMEN_NO_HISTORY") != null) return // tests: leave the real history alone
+        if (System.getenv("LUMEN_NO_HISTORY") != null || item.catchup != null) return // tests: leave the real history alone
         val k = activeKeyOrFirst ?: return
         val key = ProfileMerge.itemKey(k, item.kind, item.uid)
         val h = SyncHistory(k, item.kind, item.uid, item.title, item.subtitle, item.image, item.parentUid, now(),
@@ -311,6 +311,12 @@ class AppState(private val scope: CoroutineScope) {
     private fun now() = System.currentTimeMillis()
 }
 
+/**
+ * A programme watched again. Its stream cannot be sought: moving in it asks the server for the stream from another
+ * minute ([urlAt], from the programme's start), up to [maxMs] (what has been aired by now).
+ */
+class CatchupPos(val durationMs: Long, val maxMs: () -> Long, val urlAt: (Long) -> String)
+
 /** What the player plays, and what to save in the history. */
 data class PlayItem(
     val kind: String, val uid: String, val title: String, val subtitle: String?, val image: String?, val parentUid: String?,
@@ -321,4 +327,8 @@ data class PlayItem(
     val tmdb: String? = null, val season: Int = 0, val episode: Int = 0,
     /** Episodes: the next one, for "Épisode suivant". */
     val next: (() -> PlayItem?)? = null,
+    /** A programme watched again: left out of the history, where the channel stays live. */
+    val catchup: CatchupPos? = null,
+    /** Where in the programme this stream starts. */
+    val catchupOffset: Long = 0,
 )

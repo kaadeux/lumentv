@@ -62,6 +62,7 @@ private const val ALL = "\u0000all"
 private const val FAVS = "\u0000fav"
 private const val RECENT = "\u0000recent"
 private val hm = SimpleDateFormat("HH:mm", Locale.FRANCE)
+private val dayName = SimpleDateFormat("EEE d", Locale.FRANCE)
 
 // ---- Playback ----------------------------------------------------------------------------------------------
 
@@ -69,6 +70,17 @@ fun AppState.playChannel(c: Ch) = parental.guard(c.group) {
     val p = active ?: return@guard
     rememberChannel(c.uid)
     PlayerWindow.open(this, PlayItem(Kind.CHANNEL, c.uid, c.name, c.group, c.logo, null, library.channelUrl(p, c), live = true, userAgent = p.ua, variants = lowerVariants(p, c)))
+}
+
+fun AppState.canCatchup(c: Ch) = c.catchupDays > 0 && (active?.type == "xtream" || c.catchupSource != null)
+
+/** A past or current programme from its start, on a channel with catch-up. */
+fun AppState.playCatchup(c: Ch, pr: Prog) = parental.guard(c.group) {
+    val p = active ?: return@guard
+    val zone = catalog?.serverZone
+    val url = library.catchupUrl(p, c, pr, zone) ?: return@guard
+    val pos = CatchupPos(pr.stop - pr.start, { minOf(pr.stop - pr.start, System.currentTimeMillis() - pr.start) - 60_000 }) { at -> library.catchupUrl(p, c, pr, zone, at) ?: url }
+    PlayerWindow.open(this, PlayItem(Kind.CHANNEL, c.uid, pr.title, "Rattrapage · ${c.name}", c.logo, null, url, live = false, userAgent = p.ua, catchup = pos))
 }
 
 /** The channel's lower qualities (same name, FHD → HD → SD), best first: what "Qualité auto" steps down to. */
@@ -199,7 +211,10 @@ fun LiveScreen(state: AppState) {
                         Text("${ch.num}", color = Pal.dim, modifier = Modifier.width(44.dp))
                         AsyncImage(ch.logo, null, Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(Pal.panelHigh), contentScale = ContentScale.Fit, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
                         Column(Modifier.weight(1f)) {
-                            Text(ch.name, color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(ch.name, color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                if (ch.catchupDays > 0) Text("Rattrapage", color = Pal.text, style = MaterialTheme.typography.labelSmall, modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Pal.panelHigh).padding(horizontal = 6.dp, vertical = 2.dp))
+                            }
                             if (cur != null) {
                                 Text(cur.title, color = Pal.dim, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                                 LinearProgressIndicator({ (now - cur.start).toFloat() / (cur.stop - cur.start) }, Modifier.width(200.dp).height(3.dp).padding(top = 2.dp))
@@ -218,20 +233,30 @@ fun LiveScreen(state: AppState) {
                 Text(ch.name, style = MaterialTheme.typography.titleLarge, color = Pal.text)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 10.dp)) {
                     Button({ state.playChannel(ch) }) { Text("▶ Regarder") }
-                    OutlinedButton({ state.toggleFavorite(Kind.CHANNEL, ch.uid) }) { Text(if (state.isFavorite(Kind.CHANNEL, ch.uid)) "Retirer des favoris" else "★ Favori") }
+                    OutlinedButton({ state.toggleFavorite(Kind.CHANNEL, ch.uid) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)) { Text(maxLines = 1, text = if (state.isFavorite(Kind.CHANNEL, ch.uid)) "Retirer des favoris" else "★ Favori") }
                     OutlinedButton({
                         val hide = !par.isHidden(PcParental.Kind.CHANNEL, ch.uid)
                         par.setHidden(PcParental.Kind.CHANNEL, ch.uid, hide)
                         if (hide && !par.showHidden) selected = null
-                    }) { Text(if (par.isHidden(PcParental.Kind.CHANNEL, ch.uid)) "Afficher" else "Masquer") }
+                    }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)) { Text(if (par.isHidden(PcParental.Kind.CHANNEL, ch.uid)) "Afficher" else "Masquer", maxLines = 1) }
                 }
-                val progs = state.guide[ch.uid].orEmpty().filter { it.stop > now }
+                val can = state.canCatchup(ch)
+                val all = state.guide[ch.uid].orEmpty()
+                val past = if (can) all.filter { it.stop <= now && it.start >= now - ch.catchupDays.coerceAtMost(7) * 86_400_000L } else emptyList()
+                val progs = past + all.filter { it.stop > now }.take(40)
+                val programmes = androidx.compose.foundation.lazy.rememberLazyListState()
+                // Opens on what is on now; the past is above it.
+                androidx.compose.runtime.LaunchedEffect(ch.uid, all.isEmpty()) { programmes.scrollToItem(past.size) }
+                if (can) Text("Rattrapage : ${ch.catchupDays.coerceAtMost(7)} jour(s). Cliquez sur un programme pour le revoir.", color = Pal.dim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
                 if (progs.isEmpty()) Text(if (state.guide.isEmpty()) "Guide TV en cours de chargement…" else "Pas de programme pour cette chaîne.", color = Pal.dim)
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(progs.take(40)) { pr ->
-                        Column {
-                            Text("${hm.format(Date(pr.start))} – ${hm.format(Date(pr.stop))}" + if (now in pr.start until pr.stop) "  · en cours" else "",
-                                color = if (now in pr.start until pr.stop) Pal.accent else Pal.dim, style = MaterialTheme.typography.bodySmall)
+                LazyColumn(state = programmes, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(progs) { pr ->
+                        val on = now in pr.start until pr.stop
+                        val back = can && pr.start <= now
+                        val day = dayName.format(Date(pr.start)).takeIf { it != dayName.format(Date(now)) }?.let { "$it, " }.orEmpty()
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).then(if (back) Modifier.combinedClickable { state.playCatchup(ch, pr) } else Modifier).padding(horizontal = 6.dp, vertical = 4.dp)) {
+                            Text(day + "${hm.format(Date(pr.start))} – ${hm.format(Date(pr.stop))}" + when { on && can -> "  · en cours · ↺ depuis le début"; on -> "  · en cours"; back -> "  · ↺ Revoir"; else -> "" },
+                                color = if (on) Pal.accent else Pal.dim, style = MaterialTheme.typography.bodySmall)
                             Text(pr.title, color = Pal.text)
                             pr.description?.takeIf { now in pr.start until pr.stop }?.let { Text(it, color = Pal.dim, maxLines = 4, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall) }
                         }

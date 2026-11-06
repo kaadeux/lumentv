@@ -31,7 +31,9 @@ import java.util.zip.GZIPInputStream
 // The uids follow the TV app's rules ("x:<id>" for Xtream, "m:<name>" for M3U), so favourites and history match.
 
 @Serializable data class Ch(val uid: String, val name: String, val group: String, val logo: String? = null, val url: String = "",
-                            val streamId: Long = 0, val epgId: String? = null, val num: Int = 0) { val norm by lazy { normalize(name) } }
+                            val streamId: Long = 0, val epgId: String? = null, val num: Int = 0,
+                            /** Days of catch-up, and the M3U address template for it. */
+                            val catchupDays: Int = 0, val catchupSource: String? = null) { val norm by lazy { normalize(name) } }
 @Serializable data class Mv(val uid: String, val name: String, val category: String, val poster: String? = null, val url: String = "",
                             val streamId: Long = 0, val ext: String? = null, val year: String? = null, val rating: String? = null, val added: Long = 0) { val norm by lazy { normalize(name) } }
 @Serializable data class Se(val uid: String, val name: String, val category: String, val cover: String? = null, val seriesId: Long = 0,
@@ -48,7 +50,7 @@ data class Details(val plot: String? = null, val genre: String? = null,
                    val rating: String? = null, val release: String? = null, val backdrop: String? = null, val durationSecs: Int = 0)
 
 /** Bumped when the cached catalog lacks something new (v2: TMDB ids of series); an older cache is reloaded. */
-const val CATALOG_VERSION = 4 // 3: series' last change date; 4: series' backdrop
+const val CATALOG_VERSION = 5 // 3: series' last change date; 4: series' backdrop; 5: channels' catch-up
 
 @Serializable
 data class Catalog(
@@ -60,6 +62,8 @@ data class Catalog(
     /** M3U only: episodes come with the playlist. Xtream episodes are fetched per series. */
     val episodes: Map<String, List<Ep>> = emptyMap(),
     val epgUrl: String? = null,
+    /** Xtream: the server's time zone, in which catch-up addresses are written. */
+    val serverZone: String? = null,
 )
 
 data class Prog(val start: Long, val stop: Long, val title: String, val description: String?)
@@ -74,7 +78,7 @@ class Library(private val http: OkHttpClient) {
 
     private fun loadXtream(p: SyncPlaylist): Catalog {
         val api = xtream(p)
-        api.authenticate()
+        val account = api.authenticate()
         val liveCats = runCatching { api.liveCategories() }.getOrDefault(emptyMap())
         val vodCats = runCatching { api.vodCategories() }.getOrDefault(emptyMap())
         val serCats = runCatching { api.seriesCategories() }.getOrDefault(emptyMap())
@@ -84,10 +88,11 @@ class Library(private val http: OkHttpClient) {
         return Catalog(
             loadedAt = System.currentTimeMillis(),
             version = CATALOG_VERSION,
-            channels = live.mapIndexed { i, x -> Ch("x:${x.streamId}", x.name, liveCats[x.categoryId] ?: NO_GROUP, x.icon, streamId = x.streamId, epgId = x.epgId, num = x.num ?: (i + 1)) },
+            channels = live.mapIndexed { i, x -> Ch("x:${x.streamId}", x.name, liveCats[x.categoryId] ?: NO_GROUP, x.icon, streamId = x.streamId, epgId = x.epgId, num = x.num ?: (i + 1), catchupDays = x.archiveDays) },
             movies = vod.map { x -> Mv("x:${x.streamId}", x.name, vodCats[x.categoryId] ?: NO_GROUP, x.icon, streamId = x.streamId, ext = x.ext, year = x.year, rating = x.rating, added = x.added) },
             series = ser.map { x -> Se("x:${x.seriesId}", x.name, serCats[x.categoryId] ?: NO_GROUP, x.cover, x.seriesId, x.plot, x.year, x.rating, x.tmdb, x.updated, x.backdrop) },
             epgUrl = p.epgUrl.ifBlank { XtreamApi.xmltvUrl(XtreamCredentials(XtreamApi.normalizeServer(p.source), p.username, p.password)) },
+            serverZone = account.timeZone,
         )
     }
 
@@ -106,7 +111,7 @@ class Library(private val http: OkHttpClient) {
                 val norm = normalize(e.name)
                 val ext = e.url.substringBefore('?').substringAfterLast('.', "").takeIf { it.length in 2..4 }
                 when (c.kind) {
-                    EntryKind.LIVE -> channels += Ch(unique("m:" + norm + "|" + (e.tvgId?.lowercase() ?: "")), e.name, group, e.logo, e.url, epgId = e.tvgId, num = channels.size + 1)
+                    EntryKind.LIVE -> channels += Ch(unique("m:" + norm + "|" + (e.tvgId?.lowercase() ?: "")), e.name, group, e.logo, e.url, epgId = e.tvgId, num = channels.size + 1, catchupDays = e.catchupDays, catchupSource = e.catchupSource)
                     EntryKind.MOVIE -> movies += Mv(unique("m:$norm"), e.name, group, e.logo, e.url, ext = ext,
                         year = Regex("\\((19|20)\\d{2}\\)").find(e.name)?.value?.trim('(', ')'))
                     EntryKind.EPISODE -> {
@@ -180,6 +185,15 @@ class Library(private val http: OkHttpClient) {
         (this[k] as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != "null" }
 
     fun channelUrl(p: SyncPlaylist, c: Ch) = if (p.type == "xtream") xtream(p).liveUrl(c.streamId, p.liveFormat) else c.url
+    /** A past or current programme on a channel with catch-up (Xtream timeshift, or the M3U template); null when it has none. */
+    fun catchupUrl(p: SyncPlaylist, c: Ch, pr: Prog, serverZone: String?, offsetMs: Long = 0): String? {
+        if (c.catchupDays <= 0) return null
+        val from = pr.start + offsetMs
+        if (p.type == "xtream") return xtream(p).catchupUrl(c.streamId, from, ((pr.stop - from) / 60_000L).toInt().coerceAtLeast(1), serverZone)
+        val filled = com.lumentv.data.m3u.CatchupTemplate.fill(c.catchupSource ?: return null, from, pr.stop)
+        return if (filled.contains("://")) filled else c.url + filled
+    }
+
     fun movieUrl(p: SyncPlaylist, m: Mv) = if (p.type == "xtream") xtream(p).movieUrl(m.streamId, m.ext) else m.url
     fun episodeUrl(p: SyncPlaylist, e: Ep) = if (p.type == "xtream" && e.streamId > 0) xtream(p).episodeUrl(e.streamId, e.ext) else e.url
 
@@ -188,10 +202,11 @@ class Library(private val http: OkHttpClient) {
     /** Recap / intro / credits of an episode (TheIntroDB). */
     suspend fun segments(tmdb: String, season: Int, episode: Int): Segments? = introDb.segments(tmdb, season, episode)
 
-    /** Programmes from 6 h ago to [days] days ahead (setting "Jours de programmes gardés"), by channel uid. */
+    /** Programmes from 6 h ago (or the channel's catch-up, 7 days at most) to [days] days ahead (setting "Jours de programmes gardés"), by channel uid. */
     suspend fun guide(c: Catalog, offsetMinutes: Int, userAgent: String, days: Int = 3): Map<String, List<Prog>> = withContext(Dispatchers.IO) {
         val url = c.epgUrl ?: return@withContext emptyMap()
-        val from = System.currentTimeMillis() - 6 * 3_600_000L
+        fun since(catchupDays: Int) = System.currentTimeMillis() - maxOf(6 * 3_600_000L, catchupDays.coerceIn(0, 7) * 86_400_000L)
+        val from = since(c.channels.maxOfOrNull { it.catchupDays } ?: 0)
         val to = System.currentTimeMillis() + days * 86_400_000L
         val shift = offsetMinutes * 60_000L
         val names = HashMap<String, String>() // channelKeyName(display name) -> lowercase XMLTV id
@@ -208,7 +223,8 @@ class Library(private val http: OkHttpClient) {
         val out = HashMap<String, List<Prog>>()
         for (ch in c.channels) {
             val key = matcher.keyFor(null, ch.epgId, ch.name) ?: continue
-            progs[key]?.let { out[ch.uid] = it.sortedBy { p -> p.start } }
+            val oldest = since(ch.catchupDays)
+            progs[key]?.let { out[ch.uid] = it.filter { p -> p.stop >= oldest }.sortedBy { p -> p.start }.distinctBy { p -> p.start } }
         }
         out
     }
