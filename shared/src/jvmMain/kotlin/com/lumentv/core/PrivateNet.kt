@@ -27,6 +27,8 @@ object PrivateNet {
     private var file: File? = null
     /** host → time of the decision: positive = HTTPS works, negative = refused. */
     private val decisions = ConcurrentHashMap<String, Long>()
+    /** Hosts reached over HTTPS since the app started: an address no longer used leaves the settings screen. */
+    private val usedSecure: MutableSet<String> = ConcurrentHashMap.newKeySet()
     /** Hosts the app still had to reach over plain HTTP since it started. */
     val cleartextHosts: MutableSet<String> = ConcurrentHashMap.newKeySet()
     @Volatile var dnsFallbacks = 0; private set
@@ -42,8 +44,8 @@ object PrivateNet {
         }
     }
 
-    /** Hosts moved to HTTPS. */
-    val secureHosts: List<String> get() = decisions.filterValues { it > 0 }.keys.sorted()
+    /** Hosts moved to HTTPS and in use. */
+    val secureHosts: List<String> get() = decisions.filterValues { it > 0 }.keys.filter { it in usedSecure }.sorted()
 
     /** For the settings: what the internet provider can still see. */
     fun summary(): Privacy = Privacy.of(secureHosts, cleartextHosts.sorted(), dnsFallbacks)
@@ -113,7 +115,7 @@ object PrivateNet {
     private object Watch : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
             val url = chain.request().url
-            if (url.scheme == "http") cleartextHosts += url.host
+            if (url.scheme == "http") cleartextHosts += url.host else usedSecure += url.host
             return chain.proceed(chain.request())
         }
     }

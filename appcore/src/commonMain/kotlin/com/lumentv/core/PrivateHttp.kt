@@ -16,6 +16,8 @@ object HttpsUpgrade {
     /** host → time of the decision: positive = HTTPS works, negative = refused. */
     private val decisions = HashMap<String, Long>()
     private val clear = HashSet<String>()
+    /** Hosts reached over HTTPS since the app started: an address no longer used leaves the settings. */
+    private val used = HashSet<String>()
 
     /** Loads the decisions kept from earlier runs (host names only). Call once at start-up. */
     fun init(store: TextFile) = synchronized(lock) {
@@ -26,8 +28,8 @@ object HttpsUpgrade {
         }
     }
 
-    /** Hosts moved to HTTPS, and those still reached in clear since the app started. */
-    val secureHosts: List<String> get() = synchronized(lock) { decisions.filterValues { it > 0 }.keys.sorted() }
+    /** Hosts moved to HTTPS and in use, and those still reached in clear since the app started. */
+    val secureHosts: List<String> get() = synchronized(lock) { decisions.filterValues { it > 0 }.keys.filter { it in used }.sorted() }
     val cleartextHosts: List<String> get() = synchronized(lock) { clear.sorted() }
 
     private class Parts(val host: String, val port: Int, val path: String)
@@ -60,7 +62,7 @@ object HttpsUpgrade {
     fun stream(url: String): String {
         val p = plain(url)
         val d = p?.takeIf { it.port == 80 }?.let { synchronized(lock) { decisions[it.host] } }
-        if (d != null && d > 0) return secure(url)
+        if (d != null && d > 0) { synchronized(lock) { used += p.host }; return secure(url) }
         sawClear(url)
         return url
     }
@@ -74,7 +76,7 @@ object HttpsUpgrade {
             if (d != null && d > 0) {
                 // A server whose API works over HTTPS may still refuse another address there: plain HTTP then.
                 val r = runCatching { inner.execute(https) }.getOrNull()
-                if (r != null && r.code < 400) return r
+                if (r != null && r.code < 400) { synchronized(lock) { used += p.host }; return r }
                 r?.close()
                 return inner.execute(request).also { sawClear(request.url) }
             }
@@ -87,6 +89,7 @@ object HttpsUpgrade {
                     val t = text.trimStart()
                     if (t.startsWith("{") || t.startsWith("[")) {
                         mark(p.host, true)
+                        synchronized(lock) { used += p.host }
                         return HttpResponse(r.code, { r.header(it) }, HttpBody.of(text.encodeToByteArray()))
                     }
                     mark(p.host, false)
