@@ -103,6 +103,19 @@ class AppState(private val scope: CoroutineScope) {
 
     init { PcSettings.read = { key, default -> setting(key, default) } }
 
+    val parental = PcParental(this)
+
+    /** The active list without what the parental control hides (see [PcParental]). */
+    val shownCatalog: Catalog? by androidx.compose.runtime.derivedStateOf {
+        val c = catalog ?: return@derivedStateOf null
+        val hidden = parental.hiddenNow()
+        if (hidden.isEmpty()) c else c.copy(
+            channels = c.channels.filter { "c:" + it.uid !in hidden && "g:" + it.group !in hidden },
+            movies = c.movies.filter { "m:" + it.category !in hidden },
+            series = c.series.filter { "s:" + it.category !in hidden },
+        )
+    }
+
     /** Remembered for "Au lancement": on this PC only (a channel is not the same on another device's list). */
     fun rememberChannel(uid: String) = prefs.put("last_channel", uid)
 
@@ -302,6 +315,8 @@ class AppState(private val scope: CoroutineScope) {
 data class PlayItem(
     val kind: String, val uid: String, val title: String, val subtitle: String?, val image: String?, val parentUid: String?,
     val url: String, val live: Boolean, val startMs: Long = 0, val userAgent: String = "",
+    /** A live channel: its lower qualities (label, address), to step down to when the picture keeps stopping. */
+    val variants: List<Pair<String, String>> = emptyList(),
     /** Episodes: TMDB id of the series, season and episode, to find the recap / intro / credits. */
     val tmdb: String? = null, val season: Int = 0, val episode: Int = 0,
     /** Episodes: the next one, for "Épisode suivant". */

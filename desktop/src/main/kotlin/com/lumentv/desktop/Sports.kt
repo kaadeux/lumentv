@@ -71,7 +71,7 @@ private class Game(val f: Fixture, val channels: List<Ch>, val tv: com.lumentv.d
  */
 @Composable
 fun SportsScreen(state: AppState) {
-    val c = state.catalog!!
+    val c = state.shownCatalog!!
     val funnel = com.lumentv.data.sports.SportsFunnel
     // Same settings as the TV (shared by the profile): sports, then competitions, then clubs.
     fun set(key: String) = state.setting(key).split('\n').filter { it.isNotBlank() }

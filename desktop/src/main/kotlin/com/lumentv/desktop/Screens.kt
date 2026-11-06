@@ -65,10 +65,22 @@ private val hm = SimpleDateFormat("HH:mm", Locale.FRANCE)
 
 // ---- Playback ----------------------------------------------------------------------------------------------
 
-fun AppState.playChannel(c: Ch) {
-    val p = active ?: return
+fun AppState.playChannel(c: Ch) = parental.guard(c.group) {
+    val p = active ?: return@guard
     rememberChannel(c.uid)
-    PlayerWindow.open(this, PlayItem(Kind.CHANNEL, c.uid, c.name, c.group, c.logo, null, library.channelUrl(p, c), live = true, userAgent = p.ua))
+    PlayerWindow.open(this, PlayItem(Kind.CHANNEL, c.uid, c.name, c.group, c.logo, null, library.channelUrl(p, c), live = true, userAgent = p.ua, variants = lowerVariants(p, c)))
+}
+
+/** The channel's lower qualities (same name, FHD → HD → SD), best first: what "Qualité auto" steps down to. */
+private fun AppState.lowerVariants(p: com.lumentv.sync.SyncPlaylist, c: Ch): List<Pair<String, String>> {
+    val q = com.lumentv.core.ChannelQuality
+    val all = catalog?.channels ?: return emptyList()
+    val base = q.base(c.name)
+    if (base.length < 2 || setting("auto_quality", "true") == "false") return emptyList()
+    val rank = q.rank(c.name)
+    val hidden = parental.hiddenNow()
+    return all.filter { q.base(it.name) == base && q.rank(it.name) < rank && "c:" + it.uid !in hidden }.distinctBy { q.rank(it.name) }
+        .sortedByDescending { q.rank(it.name) }.map { q.label(it.name) to library.channelUrl(p, it) }
 }
 
 fun AppState.playMovie(m: Mv, fromStart: Boolean = false) {
@@ -108,40 +120,76 @@ fun Filter(value: String, placeholder: String, onChange: (String) -> Unit) =
     OutlinedTextField(value, onChange, singleLine = true, placeholder = { Text(placeholder) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
 
 @Composable
-fun Categories(title: String, items: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+fun Categories(title: String, items: List<Pair<String, String>>, selected: String, menu: (String) -> List<com.lumentv.ui.kit.KitOption> = { emptyList() }, onSelect: (String) -> Unit) {
+    var menuOf by remember { mutableStateOf<String?>(null) }
+    menuOf?.let { id -> com.lumentv.ui.kit.KitMenu(items.firstOrNull { it.first == id }?.second ?: id, menu(id), { menuOf = null }) }
     Column(Modifier.width(260.dp).fillMaxHeight()) {
         Text(title, style = MaterialTheme.typography.titleLarge, color = Pal.text, modifier = Modifier.padding(bottom = 10.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(items, key = { it.first }) { (id, label) ->
                 val sel = id == selected
-                Text(label, color = if (sel) Pal.text else Pal.dim, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (sel) Pal.accent.copy(alpha = 0.22f) else Pal.bg)
-                        .combinedClickable { onSelect(id) }.padding(horizontal = 12.dp, vertical = 9.dp))
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (sel) Pal.accent.copy(alpha = 0.22f) else Pal.bg), verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, color = if (sel) Pal.text else Pal.dim, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).combinedClickable { onSelect(id) }.padding(horizontal = 12.dp, vertical = 9.dp))
+                    if (sel && menu(id).isNotEmpty()) Text("⋮", color = Pal.dim, modifier = Modifier.combinedClickable { menuOf = id }.padding(horizontal = 12.dp, vertical = 9.dp))
+                }
             }
         }
     }
+}
+
+/** The ⋮ of a film or series category: hide it (it leaves the lists and the homes) or show it again. */
+private fun categoryMenu(state: AppState, kind: PcParental.Kind, id: String, real: Boolean, onHidden: () -> Unit): List<com.lumentv.ui.kit.KitOption> {
+    if (!real) return emptyList()
+    val par = state.parental
+    val hidden = par.isHidden(kind, id)
+    return listOf(com.lumentv.ui.kit.KitOption(if (hidden) "Afficher la catégorie" else "Masquer la catégorie") {
+        par.setHidden(kind, id, !hidden)
+        if (!hidden && !par.showHidden) onHidden()
+    })
 }
 
 // ---- Direct -------------------------------------------------------------------------------------------------
 
 @Composable
 fun LiveScreen(state: AppState) {
-    val c = state.catalog!!
+    val c = state.shownCatalog!!
     var group by remember { mutableStateOf(ALL) }
     var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var selected by remember { mutableStateOf<Ch?>(null) }
-    val groups = remember(c) { c.channels.groupBy { it.group }.map { (g, l) -> g to "$g  (${l.size})" } }
+    val par = state.parental
+    val groups = c.channels.groupBy { it.group }.map { (g, l) -> g to "$g  (${l.size})" + (if (par.isLocked(g)) "  🔒" else "") + (if (par.isHidden(PcParental.Kind.GROUP, g)) " · masqué" else "") }
     val favUids = remember(state.doc.favorites, state.activeKey) { state.favorites(Kind.CHANNEL).map { it.uid } }
-    val list = remember(c, group, filter, favUids) {
-        val base = when (group) { ALL -> c.channels; FAVS -> favUids.mapNotNull { u -> c.channels.firstOrNull { it.uid == u } }; else -> c.channels.filter { it.group == group } }
+    val list = remember(c, group, filter, favUids, par.isOpen(group)) {
+        val base = if (!par.isOpen(group)) emptyList() else when (group) { ALL -> c.channels; FAVS -> favUids.mapNotNull { u -> c.channels.firstOrNull { it.uid == u } }; else -> c.channels.filter { it.group == group } }
         val f = normalize(filter)
         if (f.isEmpty()) base else base.filter { it.norm.contains(f) }
     }
     val now = System.currentTimeMillis()
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Categories("Groupes", listOf(ALL to "Toutes les chaînes (${c.channels.size})", FAVS to "★ Favoris") + groups, group) { group = it }
+        Categories("Groupes", listOf(ALL to "Toutes les chaînes (${c.channels.size})", FAVS to "★ Favoris") + groups, group, menu = { g ->
+            if (g == ALL || g == FAVS) emptyList() else listOf(
+                com.lumentv.ui.kit.KitOption(if (par.isHidden(PcParental.Kind.GROUP, g)) "Afficher le groupe" else "Masquer le groupe") {
+                    val hide = !par.isHidden(PcParental.Kind.GROUP, g)
+                    par.setHidden(PcParental.Kind.GROUP, g, hide)
+                    if (hide && !par.showHidden) group = ALL
+                },
+                com.lumentv.ui.kit.KitOption(if (par.isLocked(g)) "Retirer le verrou parental" else "Verrouiller par code PIN") {
+                    when {
+                        par.isLocked(g) -> par.confirm("Retirer le verrou de « $g »") { par.setLocked(g, false) }
+                        !par.hasPin -> state.show("Définis d'abord un code PIN dans Paramètres › Contrôle parental.")
+                        else -> par.setLocked(g, true)
+                    }
+                },
+            )
+        }) { g -> par.guard(g) { group = g } }
         Column(Modifier.weight(1f)) {
             Filter(filter, "Rechercher une chaîne") { filter = it }
+            if (!par.isOpen(group)) Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("🔒  Groupe verrouillé", color = Pal.text, style = MaterialTheme.typography.titleMedium)
+                Text("Saisis le code PIN pour afficher ces chaînes.", color = Pal.dim)
+                com.lumentv.ui.kit.KitButton("Saisir le code PIN", primary = true) { par.guard(group) {} }
+            }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(list, key = { it.uid }) { ch ->
                     val cur = state.guide[ch.uid]?.firstOrNull { now in it.start until it.stop }
@@ -171,6 +219,11 @@ fun LiveScreen(state: AppState) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 10.dp)) {
                     Button({ state.playChannel(ch) }) { Text("▶ Regarder") }
                     OutlinedButton({ state.toggleFavorite(Kind.CHANNEL, ch.uid) }) { Text(if (state.isFavorite(Kind.CHANNEL, ch.uid)) "Retirer des favoris" else "★ Favori") }
+                    OutlinedButton({
+                        val hide = !par.isHidden(PcParental.Kind.CHANNEL, ch.uid)
+                        par.setHidden(PcParental.Kind.CHANNEL, ch.uid, hide)
+                        if (hide && !par.showHidden) selected = null
+                    }) { Text(if (par.isHidden(PcParental.Kind.CHANNEL, ch.uid)) "Afficher" else "Masquer") }
                 }
                 val progs = state.guide[ch.uid].orEmpty().filter { it.stop > now }
                 if (progs.isEmpty()) Text(if (state.guide.isEmpty()) "Guide TV en cours de chargement…" else "Pas de programme pour cette chaîne.", color = Pal.dim)
@@ -196,7 +249,7 @@ private const val HOME = "\u0000home"
 
 @Composable
 fun MoviesScreen(state: AppState) {
-    val c = state.catalog!!
+    val c = state.shownCatalog!!
     val scope = rememberCoroutineScope()
     var cat by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(HOME) }
     var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
@@ -212,7 +265,7 @@ fun MoviesScreen(state: AppState) {
     val resume = resumeMovies(state)
     var forget by remember { mutableStateOf<ResumeItem?>(null) }
     open?.let { m -> MovieDetail(state, m) { open = null }; return }
-    val cats = remember(c) { c.movies.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" } }
+    val cats = c.movies.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" + if (state.parental.isHidden(PcParental.Kind.MOVIE_CATEGORY, g)) " · masquée" else "" }
     if (cat == HOME) {
         val catRows = remember(c) { categoryRows(c.movies, { it.name }, { it.category }, { it.added }) }
         val rows = buildList {
@@ -248,7 +301,8 @@ fun MoviesScreen(state: AppState) {
     }
     pages.SaveableStateProvider("grid") {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Categories("Films", listOf(HOME to "Accueil des films", RECENT to "Ajoutés récemment", ALL to "Tous les films (${c.movies.size})", FAVS to "★ Favoris") + cats, cat) { cat = it }
+            Categories("Films", listOf(HOME to "Accueil des films", RECENT to "Ajoutés récemment", ALL to "Tous les films (${c.movies.size})", FAVS to "★ Favoris") + cats, cat,
+                menu = { g -> categoryMenu(state, PcParental.Kind.MOVIE_CATEGORY, g, c.movies.any { it.category == g }) { cat = ALL } }) { cat = it }
             Column(Modifier.weight(1f)) {
                 Filter(filter, if (cat == ALL || cat == RECENT) "Rechercher un film" else "Rechercher dans cette liste") { filter = it }
                 LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -266,7 +320,7 @@ fun MoviesScreen(state: AppState) {
 
 @Composable
 fun SeriesScreen(state: AppState) {
-    val c = state.catalog!!
+    val c = state.shownCatalog!!
     val scope = rememberCoroutineScope()
     var cat by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(HOME) }
     var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
@@ -281,7 +335,7 @@ fun SeriesScreen(state: AppState) {
     val resume = resumeSeries(state) { open = it }
     var forget by remember { mutableStateOf<ResumeItem?>(null) }
     open?.let { s -> SeriesDetail(state, s) { open = null }; return }
-    val cats = remember(c) { c.series.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" } }
+    val cats = c.series.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" + if (state.parental.isHidden(PcParental.Kind.SERIES_CATEGORY, g)) " · masquée" else "" }
     if (cat == HOME) {
         val catRows = remember(c) { categoryRows(c.series, { it.name }, { it.category }, { it.updated }) }
         val rows = buildList {
@@ -317,7 +371,8 @@ fun SeriesScreen(state: AppState) {
     }
     pages.SaveableStateProvider("grid") {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Categories("Séries", listOf(HOME to "Accueil des séries", ALL to "Toutes les séries (${c.series.size})", RECENT to "Ajoutées récemment", FAVS to "★ Favoris") + cats, cat) { cat = it }
+            Categories("Séries", listOf(HOME to "Accueil des séries", ALL to "Toutes les séries (${c.series.size})", RECENT to "Ajoutées récemment", FAVS to "★ Favoris") + cats, cat,
+                menu = { g -> categoryMenu(state, PcParental.Kind.SERIES_CATEGORY, g, c.series.any { it.category == g }) { cat = ALL } }) { cat = it }
             Column(Modifier.weight(1f)) {
                 Filter(filter, if (cat == ALL || cat == RECENT) "Rechercher une série" else "Rechercher dans cette liste") { filter = it }
                 LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -338,7 +393,7 @@ fun SeriesScreen(state: AppState) {
  */
 @Composable
 fun SearchScreen(state: AppState) {
-    val c = state.catalog!!
+    val c = state.shownCatalog!!
     var q by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var openMovie by remember { mutableStateOf<Mv?>(null) }
     var openSeries by remember { mutableStateOf<Se?>(null) }
@@ -413,7 +468,7 @@ private fun SeriesRow(state: AppState, list: List<Se>, open: (Se) -> Unit) =
 
 @Composable
 fun FavoritesScreen(state: AppState) {
-    val c = state.catalog!!
+    val c = state.shownCatalog!!
     var openMovie by remember { mutableStateOf<Mv?>(null) }
     var openSeries by remember { mutableStateOf<Se?>(null) }
     val pages = androidx.compose.runtime.saveable.rememberSaveableStateHolder()

@@ -185,6 +185,7 @@ class PlayerWindow private constructor(private val state: AppState) {
         frame.contentPane.background = Ui.bg
         frame.layout = BorderLayout()
         frame.add(component, BorderLayout.CENTER)
+        component.addComponentListener(object : java.awt.event.ComponentAdapter() { override fun componentResized(e: java.awt.event.ComponentEvent) = applyFormat() })
         overlay.background = Color(0, 0, 0, 0)
         val root = JPanel(BorderLayout()).apply { isOpaque = false }
         root.add(buildTop(), BorderLayout.NORTH)
@@ -218,14 +219,14 @@ class PlayerWindow private constructor(private val state: AppState) {
                 message.foreground = Ui.danger
                 message.text = "Lecture impossible : le flux ne répond pas, ou l'abonnement est déjà utilisé sur un autre écran."
             }
-            override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) { if (newCount > 0) trace("image") }
+            override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) { if (newCount > 0) { trace("image"); SwingUtilities.invokeLater { applyFormat() } } }
             override fun playing(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { player.audio().setVolume(volume.value); message.foreground = Ui.dim; message.text = ""; playPause.set(icon = Ui.PAUSE); if (!languagesApplied) { languagesApplied = true; applyLanguages() }; describeVideo() }
             override fun paused(mediaPlayer: MediaPlayer) = SwingUtilities.invokeLater { playPause.set(icon = Ui.PLAY) }
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = SwingUtilities.invokeLater {
                 // Buffering after the start is a stall: its length goes to the log.
                 if (newCache < 100f && liveTime > 0 && stallSince == 0L) stallSince = System.currentTimeMillis()
                 if (newCache >= 100f && stallSince > 0) {
-                    if (item?.live == true) addLag(System.currentTimeMillis() - stallSince)
+                    if (item?.live == true) { addLag(System.currentTimeMillis() - stallSince); onStall(System.currentTimeMillis() - stallSince) }
                     PlaybackLog.line("mise en mémoire à ${fmt(liveTime)} : ${(System.currentTimeMillis() - stallSince) / 100 / 10.0} s"); stallSince = 0
                 }
                 if (message.foreground == Ui.danger) return@invokeLater
@@ -439,10 +440,45 @@ class PlayerWindow private constructor(private val state: AppState) {
         if (showNext) nextCard.set(label = "Épisode suivant dans ${(len - pos) / 1000} s")
     }
 
+    private val stallTimes = ArrayList<Long>()
+
+    /** Live: two stalls close together, or a long one, step down to the channel's lower quality (setting "Qualité auto"). */
+    private fun onStall(ms: Long) {
+        val now = System.currentTimeMillis()
+        stallTimes.removeAll { now - it > com.lumentv.core.ChannelQuality.STALL_WINDOW_MS }
+        stallTimes += now
+        if (stallTimes.size >= 2 || ms >= com.lumentv.core.ChannelQuality.LONG_STALL_MS) stepDown()
+    }
+
+    /** The next lower quality; false when there is none. */
+    private fun stepDown(): Boolean {
+        val it = item ?: return false
+        if (!it.live || it.variants.isEmpty() || PcSettings.read("auto_quality", "true") == "false") return false
+        val (label, url) = it.variants.first()
+        stallTimes.clear()
+        PlaybackLog.line("connexion lente : passage en $label")
+        play(it.copy(url = url, variants = it.variants.drop(1)))
+        message.foreground = Color.WHITE
+        message.text = "Connexion lente : passage en $label"
+        return true
+    }
+
+    /** Setting "Format d'image": 0 the whole picture, 1 fills the window (cropped), 2 stretched to it. */
+    private fun applyFormat() {
+        val mode = PcSettings.read("resize", "0")
+        val w = component.width; val h = component.height
+        runCatching {
+            val ratio = if (w > 0 && h > 0) "$w:$h" else null
+            player.video().setAspectRatio(if (mode == "2") ratio else null)
+            player.video().setCropGeometry(if (mode == "1") ratio else null)
+        }
+    }
+
     /** Shows the countdown and reopens the stream when it is due (see watchStream). Films and episodes: 5 tries. */
     private fun scheduleReconnect(reason: String) {
         val it = item ?: return
         if (reconnectAt > 0 || !frame.isVisible) return
+        if (stepDown()) return
         if (!it.live && liveAttempt >= 5) {
             message.foreground = Ui.danger
             message.text = "Lecture interrompue : le serveur ne répond plus. Relancez la lecture pour reprendre ici."

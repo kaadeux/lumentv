@@ -46,7 +46,6 @@ private fun day(t: Long) = SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format
 
 /**
  * The PC's data and actions for the shared settings page. The same keys as the other apps in the profile's settings.
- * Not here yet: the parental control, the automatic quality and the default picture format.
  */
 private class PcSettingsModel(private val app: AppState, private val onAdd: (String) -> Unit, private val onEdit: (String) -> Unit) : SettingsModel {
     @Composable override fun state(): SettingsState {
@@ -60,9 +59,9 @@ private class PcSettingsModel(private val app: AppState, private val onAdd: (Str
                 SettingsList(key, p.name, p.type == "xtream", key == app.activeKeyOrFirst, c?.channels?.size ?: 0, c?.movies?.size ?: 0, c?.series?.size ?: 0,
                     c?.let { day(it.loadedAt) }, null, p.refreshHours, app.loading && p == app.active, app.loadError?.takeIf { p == app.active }, false, " par Windows")
             },
-            app.setting("auto_next", "true") != "false", false, app.setting("buffer") == "stable", app.setting("subs_on") == "true",
-            app.setting("audio_lang"), app.setting("sub_lang"), 0, app.setting("startup", "home"), app.setting("user_agent"),
-            app.setting("epg_days", "3").toIntOrNull() ?: 3, false, false,
+            app.setting("auto_next", "true") != "false", app.setting("auto_quality", "true") != "false", app.setting("buffer") == "stable", app.setting("subs_on") == "true",
+            app.setting("audio_lang"), app.setting("sub_lang"), app.setting("resize", "0").toIntOrNull() ?: 0, app.setting("startup", "home"), app.setting("user_agent"),
+            app.setting("epg_days", "3").toIntOrNull() ?: 3, app.parental.showHidden, app.parental.hasPin,
         )
     }
 
@@ -88,6 +87,8 @@ private class PcSettingsModel(private val app: AppState, private val onAdd: (Str
     override fun set(key: SettingKey, on: Boolean) {
         when (key) {
             SettingKey.AUTO_NEXT -> app.setSetting("auto_next", on.toString())
+            SettingKey.AUTO_QUALITY -> app.setSetting("auto_quality", on.toString())
+            SettingKey.SHOW_HIDDEN -> app.parental.setShowHidden(on)
             SettingKey.STABLE_BUFFER -> app.setSetting("buffer", if (on) "stable" else "normal")
             SettingKey.SUBTITLES_ON -> app.setSetting("subs_on", on.toString())
             else -> Unit
@@ -103,13 +104,13 @@ private class PcSettingsModel(private val app: AppState, private val onAdd: (Str
         }
     }
     override fun setEpgDays(days: Int) { app.setSetting("epg_days", days.toString()); app.reloadGuide() }
-    override fun setResizeMode(mode: Int) = Unit
+    override fun setResizeMode(mode: Int) = app.setSetting("resize", mode.toString())
     override fun reloadGuide() = app.reloadGuide()
     override fun clearGuide() = app.clearGuide()
 
-    override val hasParental get() = false
-    override val hasAutoQuality get() = false
-    override val hasResizeMode get() = false
+    override val parentalHint get() = "Verrouille ou masque un groupe de chaînes, ou masque une catégorie, avec le ⋮ à côté de son nom. Une chaîne se masque depuis sa fiche, à droite."
+    override suspend fun checkPin(pin: String) = app.parental.checkPin(pin)
+    override suspend fun setPin(pin: String) = app.parental.setPin(pin)
 
     override suspend fun cacheBytes() = withContext(Dispatchers.IO) {
         (SingletonImageLoader.get(PlatformContext.INSTANCE).diskCache?.size ?: 0L) + (app.vod.tmdbHttp.cache?.size() ?: 0L)

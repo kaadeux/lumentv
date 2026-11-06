@@ -137,6 +137,13 @@ fun Shell(state: AppState) {
                     Section.Settings, Section.Downloads -> Unit
                 } }
             }
+            // The PIN of a locked group, over every screen.
+            state.parental.ask?.let { a ->
+                var error by remember(a) { mutableStateOf<String?>(null) }
+                com.lumentv.ui.kit.KitPinDialog(a.title, "Saisis le code PIN pour continuer.", error, { state.parental.ask = null }) { pin ->
+                    if (state.parental.checkPin(pin)) { state.parental.ask = null; a.then() } else error = "Code incorrect."
+                }
+            }
             state.toast?.let { t ->
                 Surface(Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), shape = RoundedCornerShape(24.dp), color = Pal.panelHigh) {
                     Text(t, color = Pal.text, modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
