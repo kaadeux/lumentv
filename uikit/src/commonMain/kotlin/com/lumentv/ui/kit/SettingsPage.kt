@@ -117,6 +117,7 @@ fun SettingsPage(model: SettingsModel, modifier: Modifier = Modifier, maxWidth: 
     var listMenu by remember { mutableStateOf<SettingsList?>(null) }
     var deleting by remember { mutableStateOf<SettingsList?>(null) }
     var clearingGuide by remember { mutableStateOf(false) }
+    var signingOut by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var pinStep by remember { mutableStateOf<PinStep?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
@@ -156,7 +157,7 @@ fun SettingsPage(model: SettingsModel, modifier: Modifier = Modifier, maxWidth: 
                         s.profileStatus?.let { Text(it, color = if (s.profileError) c.danger else c.dim) }
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             KitButton("Synchroniser", primary = true, modifier = Modifier.weight(1f)) { scope.launch { model.syncNow() } }
-                            KitButton("Se déconnecter", modifier = Modifier.weight(1f)) { model.signOut() }
+                            KitButton("Se déconnecter", modifier = Modifier.weight(1f)) { signingOut = true }
                         }
                     }
                 }
@@ -266,6 +267,9 @@ fun SettingsPage(model: SettingsModel, modifier: Modifier = Modifier, maxWidth: 
         KitConfirm("Supprimer « ${l.name} » ?", "Ses chaînes, films, séries, son guide et son historique sont retirés de ${model.deviceWord}.", "Supprimer",
             onConfirm = { model.deleteList(l.key) }, onDismiss = { deleting = null }, danger = true)
     }
+    // One press used to sign out: asked first, as the name and the passphrase are needed to come back.
+    if (signingOut) KitConfirm("Se déconnecter du profil ?", "Les favoris, l'historique et les notes ne se synchroniseront plus. Il faudra le nom du profil et sa phrase secrète pour le retrouver.",
+        "Se déconnecter", onConfirm = { signingOut = false; model.signOut() }, onDismiss = { signingOut = false }, danger = true)
     if (clearingGuide) KitConfirm("Effacer le guide TV ?", "Il sera de nouveau téléchargé à la prochaine actualisation.", "Effacer",
         onConfirm = { model.clearGuide() }, onDismiss = { clearingGuide = false }, danger = true)
     when (menu) {

@@ -140,7 +140,9 @@ class HeroItem(
 class HomeTile(val key: String, val title: String, val image: String?, val caption: String?, val progress: Float?, val favorite: Boolean,
                val hero: HeroItem, val onClick: () -> Unit, val onRemove: (() -> Unit)? = null,
                /** TMDB's poster, when the provider's is missing or does not load. */
-               val altImage: (suspend () -> String?)? = null)
+               val altImage: (suspend () -> String?)? = null,
+               /** The title it has in France (TMDB). */
+               val altTitle: (suspend () -> String?)? = null)
 
 class HomeRow(val key: String, val title: String, val tiles: List<HomeTile>)
 
@@ -194,7 +196,7 @@ private object StayPut : androidx.compose.foundation.gestures.BringIntoViewSpec 
 private fun Hero(state: AppState, h: HeroItem, actions: @Composable () -> Unit) {
     val t = rememberInfo(state, h.series, h.name, h.tmdb, h.year)
     Column(Modifier.fillMaxSize().padding(start = 4.dp, bottom = 12.dp), verticalArrangement = Arrangement.Bottom) {
-        TitleArt(h.name, t?.logo, 34.sp, 96.dp)
+        TitleArt(com.lumentv.data.frenchTitle(h.name, t), t?.logo, 34.sp, 96.dp)
         val meta = listOfNotNull(ratingText(t, h.rating)) + h.meta
         if (meta.isNotEmpty()) Text(meta.joinToString("  ·  "), color = Pal.text.copy(alpha = 0.85f), maxLines = 1, modifier = Modifier.padding(top = 8.dp))
         (t?.overview ?: h.plot)?.takeIf { it.isNotBlank() }?.let {
@@ -212,7 +214,7 @@ private fun Hero(state: AppState, h: HeroItem, actions: @Composable () -> Unit) 
 @Composable
 private fun HomePoster(t: HomeTile, onHover: () -> Unit) {
     Box(Modifier.width(140.dp).onPointerEvent(PointerEventType.Enter) { onHover() }) {
-        Poster(t.title, t.image, t.caption, t.progress, t.favorite, t.altImage, t.onClick)
+        Poster(t.title, t.image, t.caption, t.progress, t.favorite, t.altImage, t.altTitle, t.onClick)
         t.onRemove?.let { remove ->
             IconButton(remove, Modifier.align(Alignment.TopStart).padding(4.dp).size(28.dp).clip(RoundedCornerShape(14.dp)).background(Pal.bg.copy(alpha = 0.75f))) {
                 Icon(Icons.Filled.Close, "Retirer de Reprendre la lecture", tint = Pal.text, modifier = Modifier.size(16.dp))
@@ -226,7 +228,10 @@ private fun HomePoster(t: HomeTile, onHover: () -> Unit) {
  * not load (dead server, image taken off TMDB), [altImage] (TMDB's poster) takes its place, else the title in text.
  */
 @Composable
-fun Poster(title: String, image: String?, caption: String?, progress: Float?, favorite: Boolean, altImage: (suspend () -> String?)? = null, onClick: () -> Unit) {
+fun Poster(title: String, image: String?, caption: String?, progress: Float?, favorite: Boolean, altImage: (suspend () -> String?)? = null,
+           altTitle: (suspend () -> String?)? = null, onClick: () -> Unit) {
+    // The title it has in France (TMDB) when it comes, the playlist's meanwhile.
+    val shownTitle by produceState(title, title) { altTitle?.let { f -> runCatching { f() }.getOrNull()?.let { value = it } } }
     var failed by remember(image) { mutableStateOf(image.isNullOrBlank()) }
     val alt by produceState<String?>(null, failed, title) { if (failed && altImage != null) value = runCatching { altImage() }.getOrNull() }
     val shown = if (failed) alt else image
@@ -238,7 +243,7 @@ fun Poster(title: String, image: String?, caption: String?, progress: Float?, fa
             if (favorite) Icon(Icons.Filled.Favorite, null, tint = Pal.accent, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(18.dp))
         }
         progress?.let { LinearProgressIndicator({ it.coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(3.dp)) }
-        Text(title, color = Pal.text, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 6.dp))
+        Text(shownTitle, color = Pal.text, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 6.dp))
         Text(caption ?: "", color = Pal.dim, maxLines = 1, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp))
     }
 }
@@ -295,6 +300,8 @@ fun ratio(h: com.lumentv.sync.SyncHistory?) = h?.takeIf { it.durationMs > 0 }?.l
 /** TMDB's poster of a film or a series (French when there is one). */
 fun AppState.posterOf(m: Mv): suspend () -> String? = { vod.info(false, m.name, null, Featured.yearOf(m.year, m.name))?.poster }
 fun AppState.posterOf(s: Se): suspend () -> String? = { vod.info(true, s.name, s.tmdb, Featured.year(s.year))?.poster }
+fun AppState.frenchOf(m: Mv): suspend () -> String? = { vod.info(false, m.name, null, Featured.yearOf(m.year, m.name))?.title }
+fun AppState.frenchOf(s: Se): suspend () -> String? = { vod.info(true, s.name, s.tmdb, Featured.year(s.year))?.title }
 
 fun AppState.movieTile(rowKey: String, m: Mv, open: (Mv) -> Unit): HomeTile {
     val h = progress(Kind.MOVIE, m.uid)
@@ -305,14 +312,14 @@ fun AppState.movieTile(rowKey: String, m: Mv, open: (Mv) -> Unit): HomeTile {
         HeroItem("m:${m.uid}", m.name, false, null, year, m.poster, listOfNotNull(year?.toString()), null, m.rating,
             if (resumable) "Reprendre" else "Lecture", { playMovie(m) }, { open(m) },
             backdrop = { active?.let { p -> runCatching { library.movieDetails(p, m) }.getOrNull()?.backdrop } }),
-        onClick = { open(m) }, altImage = posterOf(m))
+        onClick = { open(m) }, altImage = posterOf(m), altTitle = frenchOf(m))
 }
 
 fun AppState.seriesTile(rowKey: String, s: Se, open: (Se) -> Unit): HomeTile =
     HomeTile("$rowKey:${s.uid}", Featured.shortTitle(s.name), s.cover, Featured.posterLine(s.year, s.rating, null), null, isFavorite(Kind.SERIES, s.uid),
         HeroItem("s:${s.uid}", s.name, true, s.tmdb, Featured.year(s.year), s.backdrop ?: s.cover, listOfNotNull(s.year?.take(4), s.category), s.plot, s.rating,
             "Voir la série", { open(s) }, { open(s) }, backdrop = { s.backdrop }),
-        onClick = { open(s) }, altImage = posterOf(s))
+        onClick = { open(s) }, altImage = posterOf(s), altTitle = frenchOf(s))
 
 /**
  * The rows of a home: computed in the background (TMDB), kept while a page is open over the home, and replaced only

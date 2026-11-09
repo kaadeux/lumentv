@@ -161,7 +161,7 @@ fun MovieDetail(state: AppState, m0: Mv, onBack: () -> Unit) {
             item { TopActions(onBack, state.isFavorite(Kind.MOVIE, m.uid)) { state.toggleFavorite(Kind.MOVIE, m.uid) } }
             item {
                 Column(Modifier.fillMaxWidth().padding(start = 8.dp, top = 70.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TitleArt(m.name, t?.logo, 40.sp, 120.dp)
+                    TitleArt(com.lumentv.data.frenchTitle(m.name, t), t?.logo, 40.sp, 120.dp)
                     val meta = listOfNotNull(ratingText(t, details?.rating ?: m.rating), year?.toString(), details?.durationSecs?.takeIf { it > 0 }?.let { "${it / 3600} h ${"%02d".format(it / 60 % 60)}" },
                         details?.genre?.split(',')?.take(3)?.joinToString(" • ") { it.trim() }?.takeIf { it.isNotBlank() },
                         Featured.versionLabel(m.name).takeIf { it != "Version" })
@@ -221,7 +221,7 @@ fun SeriesDetail(state: AppState, s0: Se, onBack: () -> Unit) {
             item { TopActions(onBack, state.isFavorite(Kind.SERIES, s.uid)) { state.toggleFavorite(Kind.SERIES, s.uid) } }
             item {
                 Column(Modifier.fillMaxWidth().padding(start = 8.dp, top = 70.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TitleArt(s.name, t?.logo, 40.sp, 120.dp)
+                    TitleArt(com.lumentv.data.frenchTitle(s.name, t), t?.logo, 40.sp, 120.dp)
                     Text(listOfNotNull(ratingText(t, details?.rating ?: s.rating), (details?.release ?: s.year)?.take(4)?.takeIf { it.isNotBlank() },
                         if (seasons > 0) "$seasons saison" + if (seasons > 1) "s" else "" else null,
                         details?.genre?.takeIf { it.isNotBlank() } ?: s.category).joinToString("  ·  "), color = Pal.text.copy(alpha = 0.85f))

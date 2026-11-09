@@ -103,7 +103,7 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
             item { SectionTitle("Films") }
             item {
                 LazyRow(state = rememberList("s:mv"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(movies, key = { it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } } }
+                    items(movies, key = { it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name), french = core.frenchOf(m)) { open(Route.Movie(m)) } } }
                 }
             }
         }
@@ -111,7 +111,7 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
             item { SectionTitle("Séries") }
             item {
                 LazyRow(state = rememberList("s:se"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(series, key = { it.s.id }) { s -> Box(Modifier.width(110.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } } }
+                    items(series, key = { it.s.id }) { s -> Box(Modifier.width(110.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name), french = core.frenchOf(s)) { open(Route.Series(s)) } } }
                 }
             }
         }
@@ -123,8 +123,8 @@ internal fun SearchHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
             item(key = "pt:" + h.key) { SectionTitle(h.title) }
             item(key = "pr:" + h.key) {
                 LazyRow(state = rememberList("s:p:${h.key}"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(films, key = { "m" + it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } } }
-                    items(shows, key = { "s" + it.s.id }) { s -> Box(Modifier.width(110.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } } }
+                    items(films, key = { "m" + it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name), french = core.frenchOf(m)) { open(Route.Movie(m)) } } }
+                    items(shows, key = { "s" + it.s.id }) { s -> Box(Modifier.width(110.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name), french = core.frenchOf(s)) { open(Route.Series(s)) } } }
                 }
             }
         }

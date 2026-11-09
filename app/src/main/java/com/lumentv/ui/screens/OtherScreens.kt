@@ -90,7 +90,7 @@ private fun PosterRow(movies: List<MovieRow>, series: List<SeriesRow>, vm: MainV
                     Modifier.returnFocus(vm, "m:" + r.m.uid).fillMaxWidth().aspectRatio(2f / 3f), focusedScale = 1.06f) {
                     Poster(r.m.poster, r.m.name, Modifier.fillMaxSize(), com.lumentv.ui.components.PosterSearch(false, r.m.name, null, com.lumentv.core.Featured.yearOf(r.m.year, r.m.name)))
                 }
-                Text(r.m.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Palette.Text)
+                Text(com.lumentv.ui.components.frenchCaption(com.lumentv.core.Featured.shortTitle(r.m.name), com.lumentv.ui.components.PosterSearch(false, r.m.name, null, com.lumentv.core.Featured.yearOf(r.m.year, r.m.name))), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Palette.Text)
             }
         }
         items(series, key = { "s" + it.s.id }) { r ->
@@ -99,7 +99,7 @@ private fun PosterRow(movies: List<MovieRow>, series: List<SeriesRow>, vm: MainV
                     Modifier.returnFocus(vm, "s:" + r.s.uid).fillMaxWidth().aspectRatio(2f / 3f), focusedScale = 1.06f) {
                     Poster(r.s.cover, r.s.name, Modifier.fillMaxSize(), com.lumentv.ui.components.PosterSearch(true, r.s.name, r.s.tmdb, com.lumentv.core.Featured.year(r.s.year)))
                 }
-                Text(r.s.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Palette.Text)
+                Text(com.lumentv.ui.components.frenchCaption(com.lumentv.core.Featured.shortTitle(r.s.name), com.lumentv.ui.components.PosterSearch(true, r.s.name, r.s.tmdb, com.lumentv.core.Featured.year(r.s.year))), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Palette.Text)
             }
         }
     }

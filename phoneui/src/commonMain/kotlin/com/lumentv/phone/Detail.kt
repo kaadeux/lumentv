@@ -132,7 +132,7 @@ internal fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer) {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp)) {
         item(key = "top") {
-            DetailTop(info?.backdrop ?: m.poster, m.name, t?.logo)
+            DetailTop(info?.backdrop ?: m.poster, com.lumentv.data.frenchTitle(m.name, t), t?.logo)
             Meta(listOfNotNull(ratingText(t, m.rating), year?.toString(), info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }))
             info?.genre?.takeIf { it.isNotBlank() }?.let {
                 Text(it.split(',').take(3).joinToString(" • ") { g -> g.trim() }, fontSize = 13.sp, color = Palette.TextDim,
@@ -278,7 +278,7 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp)) {
         item(key = "top") {
-            DetailTop(s.backdrop ?: s.cover, s.name, t?.logo)
+            DetailTop(s.backdrop ?: s.cover, com.lumentv.data.frenchTitle(s.name, t), t?.logo)
             Meta(listOfNotNull(ratingText(t, s.rating), s.year?.take(4),
                 if (seasons.isNotEmpty()) "${seasons.size} saison" + (if (seasons.size > 1) "s" else "") else null))
         }

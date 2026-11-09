@@ -127,7 +127,7 @@ private fun PosterTile(title: String, image: String?, subtitle: String?, progres
             if (favorite) Text("★", color = Palette.Gold, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp))
             if (progress != null && progress > 0f) ProgressLine(progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp))
         }
-        Text(title, style = MaterialTheme.typography.bodySmall, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+        Text(com.lumentv.ui.components.frenchCaption(title, search), style = MaterialTheme.typography.bodySmall, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
         if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -637,7 +637,7 @@ private fun RowScroller(focus: HomeFocus, list: androidx.compose.foundation.lazy
 private fun Hero(vm: MainViewModel, h: HeroItem, info: XVodInfo?, actions: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().height(232.dp).padding(start = 4.dp, top = 8.dp), verticalArrangement = Arrangement.Bottom) {
         val t = tmdbInfo(vm, h.title, h.series, h.tmdb ?: info?.tmdb, h.year ?: com.lumentv.core.Featured.yearOf(info?.releaseDate, h.title))
-        TitleArt(h.title, t?.logo, 30.sp, 84.dp)
+        TitleArt(com.lumentv.data.frenchTitle(h.title, t), t?.logo, 30.sp, 84.dp)
         val meta = listOfNotNull(ratingText(t, h.rating ?: info?.rating)) + h.meta + listOfNotNull(info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(2)?.joinToString(" • ") { it.trim() })
         if (meta.isNotEmpty()) Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium, color = Palette.Text.copy(alpha = 0.85f),
             maxLines = 1, modifier = Modifier.padding(top = 6.dp))
@@ -705,14 +705,14 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
     // No scrolling: the page fits the screen, so moving between the buttons and the stars never shifts it.
     Column(Modifier.fillMaxSize().padding(start = 4.dp, top = 28.dp)) {
         val t = tmdbInfo(vm, m.m.name, false, info?.tmdb, com.lumentv.core.Featured.yearOf(m.m.year ?: info?.releaseDate, m.m.name))
-        TitleArt(m.m.name, t?.logo, 36.sp, 110.dp)
+        TitleArt(com.lumentv.data.frenchTitle(m.m.name, t), t?.logo, 36.sp, 110.dp)
         val meta = listOfNotNull(ratingText(t, m.m.rating)) + metaOf(null, com.lumentv.core.Featured.yearOf(m.m.year ?: info?.releaseDate, m.m.name)?.toString(),
             info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }, info?.genre?.split(',')?.take(3)?.joinToString(" • ") { it.trim() })
         Text(meta.joinToString("  ·  "), style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
         val summary = t?.overview ?: info?.plot ?: "Aucun résumé disponible."
         Text(summary, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 3,
             overflow = TextOverflow.Ellipsis, onTextLayout = { summaryCut = it.hasVisualOverflow }, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 10.dp))
-        if (summaryOpen) com.lumentv.ui.kit.KitTextDialog(m.m.name.substringBefore(" (").trim(), summary, { summaryOpen = false }, Modifier.ignoreHeldOk())
+        if (summaryOpen) com.lumentv.ui.kit.KitTextDialog(com.lumentv.data.frenchTitle(m.m.name, t), summary, { summaryOpen = false }, Modifier.ignoreHeldOk())
         if (resumable) Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             ProgressLine(h!!.positionMs.toFloat() / h.durationMs.coerceAtLeast(1), Modifier.width(220.dp))
             Text("  " + (com.lumentv.core.Resume.remaining(h.positionMs, h.durationMs) ?: ""), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
@@ -781,7 +781,7 @@ private fun SeriesDetailTv(
         var summaryCut by remember(s.s.id) { mutableStateOf(false) }
         var summaryOpen by remember { mutableStateOf(false) }
         val t = tmdbInfo(vm, s.s.name, true, s.s.tmdb, com.lumentv.core.Featured.year(s.s.year))
-        TitleArt(s.s.name, t?.logo, if (low) 24.sp else 34.sp, if (low) 52.dp else 92.dp)
+        TitleArt(com.lumentv.data.frenchTitle(s.s.name, t), t?.logo, if (low) 24.sp else 34.sp, if (low) 52.dp else 92.dp)
         Text((listOfNotNull(ratingText(t, s.s.rating)) + metaOf(null, s.s.year, if (seasons.isNotEmpty()) "${seasons.size} saison" + if (seasons.size > 1) "s" else "" else null, s.s.category)).joinToString("  ·  "),
             style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.85f), modifier = Modifier.padding(top = 8.dp))
         // One line, read whole: who created it, then the first four actors (the page has no room for a second line).
@@ -793,7 +793,7 @@ private fun SeriesDetailTv(
         val summary = (t?.overview ?: s.s.plot)?.takeIf { it.isNotBlank() }
         if (!low) summary?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = Palette.Text.copy(alpha = 0.92f), maxLines = 2,
             overflow = TextOverflow.Ellipsis, onTextLayout = { l -> summaryCut = l.hasVisualOverflow }, modifier = Modifier.fillMaxWidth(0.55f).padding(top = 8.dp)) }
-        if (summaryOpen && summary != null) com.lumentv.ui.kit.KitTextDialog(s.s.name.substringBefore(" (").trim(), summary, { summaryOpen = false }, Modifier.ignoreHeldOk())
+        if (summaryOpen && summary != null) com.lumentv.ui.kit.KitTextDialog(com.lumentv.data.frenchTitle(s.s.name, t), summary, { summaryOpen = false }, Modifier.ignoreHeldOk())
         Row(Modifier.padding(top = 12.dp).focusMemory(buttons), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             next?.let { (e, resume) ->
                 HeroButton("▶  " + (if (resume) "Reprendre" else "Lecture") + " S${e.season} E${e.episode}", primary = true,

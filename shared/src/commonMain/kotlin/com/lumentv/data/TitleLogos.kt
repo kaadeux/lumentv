@@ -20,11 +20,12 @@ class TitleLogos(private val http: Http, private val key: String) {
     /**
      * What TMDB says of a title: its logo, its rating (out of 10, from its users' votes), its summary in French (null
      * when TMDB has none in French), its main actors and who made it (directors of a film, creators of a series), and
-     * its poster (French when there is one): shown when the provider's is missing or does not load.
+     * its poster (French when there is one): shown when the provider's is missing or does not load. [title]: the
+     * title it has in France (its French release: "Au cœur de la bête", but "Spider-Man : Brand New Day").
      */
     class Info(val logo: String?, val rating: Double?, val votes: Int,
                val overview: String? = null, val cast: List<String> = emptyList(), val makers: List<String> = emptyList(),
-               val poster: String? = null)
+               val poster: String? = null, val title: String? = null)
 
     private val cache = Lru<String, Info?>(600)
 
@@ -46,7 +47,11 @@ class TitleLogos(private val http: Http, private val key: String) {
             val d = get("https://api.themoviedb.org/3/$kind/$id", "language" to "fr-FR", "append_to_response" to "images,credits",
                 "include_image_language" to "fr,en,null") ?: return@runCatching null
             val logos = ((d["images"] as? JsonObject)?.get("logos") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
-            val best = listOf("fr", "en", null).firstNotNullOfOrNull { lang -> logos.firstOrNull { it.s("iso_639_1") == lang } }
+            val french = (d.s("title") ?: d.s("name"))?.trim()?.takeIf { it.isNotEmpty() }
+            val original = d.s("original_title") ?: d.s("original_name")
+            // The logo writes the title: an English one only when the title is the same in France, else the French title in text.
+            val sameTitle = french == null || original == null || com.lumentv.core.Featured.baseTitle(french) == com.lumentv.core.Featured.baseTitle(original)
+            val best = (if (sameTitle) listOf("fr", "en", null) else listOf("fr")).firstNotNullOfOrNull { lang -> logos.firstOrNull { it.s("iso_639_1") == lang } }
             val votes = d.s("vote_count")?.toIntOrNull() ?: 0
             val credits = d["credits"] as? JsonObject
             val cast = (credits?.get("cast") as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.s("name") }.take(CAST)
@@ -54,7 +59,7 @@ class TitleLogos(private val http: Http, private val key: String) {
             else (credits?.get("crew") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.filter { it.s("job") == "Director" }.mapNotNull { it.s("name") }
             Info(best?.s("file_path")?.let { "https://image.tmdb.org/t/p/w500$it" }, d.s("vote_average")?.toDoubleOrNull()?.takeIf { votes >= MIN_VOTES && it > 0 }, votes,
                 d.s("overview")?.trim()?.takeIf { it.isNotEmpty() }, cast, makers.distinct().take(3),
-                d.s("poster_path")?.let { "https://image.tmdb.org/t/p/w342$it" })
+                d.s("poster_path")?.let { "https://image.tmdb.org/t/p/w342$it" }, french)
         }.getOrNull()
         cache[k] = found
         return found
@@ -93,3 +98,6 @@ class TitleLogos(private val http: Http, private val key: String) {
 /** "★ 7,3" from TMDB when it knows the title, else the provider's rating. */
 fun ratingText(tmdb: TitleLogos.Info?, provider: String?): String? =
     (tmdb?.rating ?: com.lumentv.core.Featured.rating(provider))?.let { "★ " + com.lumentv.core.oneDecimal(it) }
+
+/** The title to show: the one it has in France when TMDB knows it, else the playlist's ("FR - " and the year left out). */
+fun frenchTitle(name: String, info: TitleLogos.Info?): String = info?.title ?: com.lumentv.core.Featured.shortTitle(name)

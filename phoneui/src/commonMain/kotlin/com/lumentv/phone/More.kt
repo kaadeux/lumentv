@@ -155,7 +155,7 @@ internal fun FavoritesPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer
             item { Title("Films") }
             item {
                 LazyRow(state = rememberList("fav:mv"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(movies, key = { it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } } }
+                    items(movies, key = { it.m.id }) { m -> Box(Modifier.width(110.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name), french = core.frenchOf(m)) { open(Route.Movie(m)) } } }
                 }
             }
         }
@@ -163,7 +163,7 @@ internal fun FavoritesPage(core: AppCore, p: PlaylistEntity, player: VideoPlayer
             item { Title("Séries") }
             item {
                 LazyRow(state = rememberList("fav:se"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(series, key = { it.s.id }) { s -> Box(Modifier.width(110.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } } }
+                    items(series, key = { it.s.id }) { s -> Box(Modifier.width(110.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name), french = core.frenchOf(s)) { open(Route.Series(s)) } } }
                 }
             }
         }

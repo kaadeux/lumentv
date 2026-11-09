@@ -109,7 +109,7 @@ internal fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
     }
     HomeList(core, "Films", heroes, shelves, onCategories = { open(Route.Categories(false)) },
         resume = { ResumeRow(core, p, HistoryKind.MOVIE) { h -> scope.launch { core.library.movieByUid(p.id, h.uid)?.let { open(Route.Movie(it)) } } } },
-        row = { items -> items(items, key = { it.m.id }) { m -> Box(Modifier.width(104.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } } } })
+        row = { items -> items(items, key = { it.m.id }) { m -> Box(Modifier.width(104.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name), french = core.frenchOf(m)) { open(Route.Movie(m)) } } } })
 }
 
 @Composable
@@ -136,7 +136,7 @@ internal fun SeriesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
     }
     HomeList(core, "Séries", heroes, shelves, onCategories = { open(Route.Categories(true)) },
         resume = { ResumeRow(core, p, HistoryKind.EPISODE) { h -> scope.launch { h.parentUid?.let { core.library.seriesByUid(p.id, it) }?.let { open(Route.Series(it)) } } } },
-        row = { items -> items(items, key = { it.s.id }) { s -> Box(Modifier.width(104.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } } } })
+        row = { items -> items(items, key = { it.s.id }) { s -> Box(Modifier.width(104.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name), french = core.frenchOf(s)) { open(Route.Series(s)) } } } })
 }
 
 /** Plays a film from the banner: where it was left, else from the start; the position is kept on closing. */
@@ -214,7 +214,7 @@ private fun Banner(core: AppCore, heroes: List<Hero>) {
                 Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     val l = logo?.logo
                     if (l != null) AsyncImage(l, h.title, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth(0.75f).height(70.dp))
-                    else Text(h.title, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    else Text(com.lumentv.data.frenchTitle(h.title, logo), fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     val meta = listOfNotNull(logo?.rating?.let { "★ " + com.lumentv.core.oneDecimal(it) }, h.meta).joinToString("  ·  ")
                     if (meta.isNotEmpty()) Text(meta, color = Palette.Text.copy(alpha = 0.85f), fontSize = 14.sp, maxLines = 1, modifier = Modifier.padding(top = 8.dp))
                     Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

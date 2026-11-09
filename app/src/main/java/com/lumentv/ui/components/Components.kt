@@ -273,6 +273,19 @@ class PosterSearch(val series: Boolean, val name: String, val tmdb: String? = nu
 /** Finds a poster on TMDB (set by the app: [com.lumentv.ui.MainActivity]); null without TMDB. */
 val LocalPosterLookup = androidx.compose.runtime.staticCompositionLocalOf<(suspend (PosterSearch) -> String?)?> { null }
 
+/** Finds the title a film or series has in France on TMDB (set by the app); null without TMDB. */
+val LocalTitleLookup = androidx.compose.runtime.staticCompositionLocalOf<(suspend (PosterSearch) -> String?)?> { null }
+
+/** The French title of a poster's caption: [fallback] at once, TMDB's French title when it comes. */
+@androidx.compose.runtime.Composable
+fun frenchCaption(fallback: String, search: PosterSearch?): String {
+    val lookup = LocalTitleLookup.current
+    val title by androidx.compose.runtime.produceState(fallback, fallback, search?.name) {
+        if (search != null && lookup != null) runCatching { lookup(search) }.getOrNull()?.let { value = it }
+    }
+    return title
+}
+
 /**
  * A poster: the provider's picture, else (none, or it does not load: dead server, image taken off TMDB) TMDB's
  * poster of the title when [search] says which title it is, else the title in text.

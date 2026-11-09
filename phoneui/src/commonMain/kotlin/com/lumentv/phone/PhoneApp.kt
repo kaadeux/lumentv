@@ -1,5 +1,6 @@
 package com.lumentv.phone
 
+import com.lumentv.core.IoDispatcher
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -305,13 +306,15 @@ private fun CategoryMenu(core: AppCore, p: PlaylistEntity, kind: String, cat: St
     }), onDismiss)
 
 @Composable
-internal fun Poster(url: String?, title: String, progress: Float? = null, onClick: () -> Unit) = Column(Modifier.clickable(onClick = onClick)) {
+internal fun Poster(url: String?, title: String, progress: Float? = null, french: (suspend () -> String?)? = null, onClick: () -> Unit) = Column(Modifier.clickable(onClick = onClick)) {
+    // The title it has in France (TMDB) when it comes, the playlist's meanwhile.
+    val shown by produceState(title, title) { french?.let { f -> withContext(IoDispatcher) { runCatching { f() }.getOrNull() }?.let { value = it } } }
     Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(10.dp)).background(Palette.PanelHigh)) {
         Text(title, color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.align(Alignment.Center).padding(8.dp), maxLines = 3)
         AsyncImage(url, title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         progress?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp)) }
     }
-    Text(title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+    Text(shown, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
 }
 
 private const val RECENT = "Ajoutés récemment"
@@ -361,7 +364,7 @@ private fun MovieCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> U
         Chips(cats, cat, "chips:mv", hidden, onMore = if (cat != RECENT) ({ catMenu = true }) else null) { cat = it; memory.values["cat:mv"] = it; memory.forget("grid:mv") }
         if (catMenu) CategoryMenu(core, p, com.lumentv.data.db.PrefKind.MOVIE_CATEGORY, cat, cat in hidden, onHidden = { if (!showHidden) cat = RECENT }) { catMenu = false }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:mv:$cat", ready = movies != null), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(movies.orEmpty(), key = { it.m.id }) { m -> Poster(m.m.poster, Featured.shortTitle(m.m.name)) { open(Route.Movie(m)) } }
+            items(movies.orEmpty(), key = { it.m.id }) { m -> Poster(m.m.poster, Featured.shortTitle(m.m.name), french = core.frenchOf(m)) { open(Route.Movie(m)) } }
         }
     }
 }
@@ -386,7 +389,7 @@ private fun SeriesCategories(core: AppCore, p: PlaylistEntity, open: (Route) -> 
         Chips(cats, cat, "chips:se", hidden, onMore = if (cat != RECENT) ({ catMenu = true }) else null) { cat = it; memory.values["cat:se"] = it; memory.forget("grid:se") }
         if (catMenu) CategoryMenu(core, p, com.lumentv.data.db.PrefKind.SERIES_CATEGORY, cat, cat in hidden, onHidden = { if (!showHidden) cat = RECENT }) { catMenu = false }
         LazyVerticalGrid(GridCells.Adaptive(108.dp), state = rememberGrid("grid:se:$cat", ready = series != null), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(series.orEmpty(), key = { it.s.id }) { s -> Poster(s.s.cover, Featured.shortTitle(s.s.name)) { open(Route.Series(s)) } }
+            items(series.orEmpty(), key = { it.s.id }) { s -> Poster(s.s.cover, Featured.shortTitle(s.s.name), french = core.frenchOf(s)) { open(Route.Series(s)) } }
         }
     }
 }
@@ -542,3 +545,9 @@ private fun ChannelCard(core: AppCore, c: ChannelRow, onClick: () -> Unit, onMor
         }
     }
 }
+
+/** The title a film / series has in France (TMDB), for a poster's caption. */
+internal fun AppCore.frenchOf(m: com.lumentv.data.db.MovieRow): suspend () -> String? =
+    { logos.info(false, null, Featured.shortTitle(m.m.name), Featured.yearOf(m.m.year, m.m.name))?.title }
+internal fun AppCore.frenchOf(s: com.lumentv.data.db.SeriesRow): suspend () -> String? =
+    { logos.info(true, s.s.tmdb, Featured.shortTitle(s.s.name), Featured.year(s.s.year))?.title }

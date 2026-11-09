@@ -103,3 +103,13 @@ class FrenchGroupsTest {
             Featured.frenchFirst(atlas) { it })
     }
 }
+
+/** The title shown: the one in France (TMDB) when known, else the playlist's without its tags. */
+class FrenchTitleTest {
+    @Test fun shown() {
+        val known = com.lumentv.data.TitleLogos.Info(null, null, 0, title = "Spider-Man : Brand New Day")
+        org.junit.Assert.assertEquals("Spider-Man : Brand New Day", com.lumentv.data.frenchTitle("EN - Spider-Man: Brand New Day (2026)", known))
+        org.junit.Assert.assertEquals("Heart of the Beast", com.lumentv.data.frenchTitle("FR - Heart of the Beast (2026)", null))
+        org.junit.Assert.assertEquals("Hope", com.lumentv.data.frenchTitle("Hope (2026) MULTI", com.lumentv.data.TitleLogos.Info(null, null, 0)))
+    }
+}

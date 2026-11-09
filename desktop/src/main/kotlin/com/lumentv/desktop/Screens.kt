@@ -299,7 +299,7 @@ fun MoviesScreen(state: AppState) {
                 val base = state.movieTile("resume", m) { open = it }
                 HomeTile(base.key, base.title, r.image ?: m.poster, r.line, r.progress, false,
                     // The poster opens the film's page; "Reprendre" of the banner plays.
-                    base.hero.playing("Reprendre") { scope.launch { r.play() } }, { open = m }, onRemove = { forget = r })
+                    base.hero.playing("Reprendre") { scope.launch { r.play() } }, { open = m }, onRemove = { forget = r }, altTitle = base.altTitle)
             }))
             shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { state.movieTile("f:" + sh.title, it) { m -> open = m } })) }
             catRows.forEach { (name, list) -> add(HomeRow("cat:$name", name, list.map { state.movieTile("c:$name", it) { m -> open = m } })) }
@@ -333,7 +333,7 @@ fun MoviesScreen(state: AppState) {
                 LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     items(list, key = { it.uid }) { m ->
                         Poster(Featured.shortTitle(m.name), m.poster, Featured.posterLine(m.year, m.rating, m.name), ratio(state.progress(Kind.MOVIE, m.uid)),
-                            state.isFavorite(Kind.MOVIE, m.uid), altImage = state.posterOf(m)) { open = m }
+                            state.isFavorite(Kind.MOVIE, m.uid), altImage = state.posterOf(m), altTitle = state.frenchOf(m)) { open = m }
                     }
                 }
             }
@@ -369,7 +369,7 @@ fun SeriesScreen(state: AppState) {
                 val base = state.seriesTile("resume", s) { open = it }
                 HomeTile(base.key, base.title, r.image ?: s.cover, r.line, r.progress, false,
                     // The poster opens the series' page; "Reprendre" of the banner plays.
-                    base.hero.playing("Reprendre") { scope.launch { r.play() } }, { open = s }, onRemove = { forget = r })
+                    base.hero.playing("Reprendre") { scope.launch { r.play() } }, { open = s }, onRemove = { forget = r }, altTitle = base.altTitle)
             }))
             shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { state.seriesTile("f:" + sh.title, it) { s -> open = s } })) }
             catRows.forEach { (name, list) -> add(HomeRow("cat:$name", name, list.map { state.seriesTile("c:$name", it) { s -> open = s } })) }
@@ -402,7 +402,7 @@ fun SeriesScreen(state: AppState) {
                 Filter(filter, if (cat == ALL || cat == RECENT) "Rechercher une série" else "Rechercher dans cette liste") { filter = it }
                 LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     items(list, key = { it.uid }) { s ->
-                        Poster(Featured.shortTitle(s.name), s.cover, Featured.posterLine(s.year, s.rating, null), null, state.isFavorite(Kind.SERIES, s.uid), altImage = state.posterOf(s)) { open = s }
+                        Poster(Featured.shortTitle(s.name), s.cover, Featured.posterLine(s.year, s.rating, null), null, state.isFavorite(Kind.SERIES, s.uid), altImage = state.posterOf(s), altTitle = state.frenchOf(s)) { open = s }
                     }
                 }
             }
@@ -478,7 +478,7 @@ private fun MovieRow(state: AppState, list: List<Mv>, open: (Mv) -> Unit) =
     ScrollRow(Modifier.padding(vertical = 6.dp)) {
         items(list, key = { it.uid }) { m ->
             Box(Modifier.width(140.dp)) {
-                Poster(Featured.shortTitle(m.name), m.poster, Featured.posterLine(m.year, m.rating, m.name), ratio(state.progress(Kind.MOVIE, m.uid)), state.isFavorite(Kind.MOVIE, m.uid), altImage = state.posterOf(m)) { open(m) }
+                Poster(Featured.shortTitle(m.name), m.poster, Featured.posterLine(m.year, m.rating, m.name), ratio(state.progress(Kind.MOVIE, m.uid)), state.isFavorite(Kind.MOVIE, m.uid), altImage = state.posterOf(m), altTitle = state.frenchOf(m)) { open(m) }
             }
         }
     }
@@ -487,7 +487,7 @@ private fun MovieRow(state: AppState, list: List<Mv>, open: (Mv) -> Unit) =
 private fun SeriesRow(state: AppState, list: List<Se>, open: (Se) -> Unit) =
     ScrollRow(Modifier.padding(vertical = 6.dp)) {
         items(list, key = { it.uid }) { s ->
-            Box(Modifier.width(140.dp)) { Poster(Featured.shortTitle(s.name), s.cover, Featured.posterLine(s.year, s.rating, null), null, state.isFavorite(Kind.SERIES, s.uid), altImage = state.posterOf(s)) { open(s) } }
+            Box(Modifier.width(140.dp)) { Poster(Featured.shortTitle(s.name), s.cover, Featured.posterLine(s.year, s.rating, null), null, state.isFavorite(Kind.SERIES, s.uid), altImage = state.posterOf(s), altTitle = state.frenchOf(s)) { open(s) } }
         }
     }
 

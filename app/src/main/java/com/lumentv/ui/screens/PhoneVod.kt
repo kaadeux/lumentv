@@ -228,7 +228,7 @@ internal fun PhoneMovieDetail(vm: MainViewModel, playlistId: Long, startUid: Str
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "top") {
-            DetailTop(info?.backdrop ?: m.m.poster, m.m.name, t?.logo)
+            DetailTop(info?.backdrop ?: m.m.poster, com.lumentv.data.frenchTitle(m.m.name, t), t?.logo)
             Meta(listOfNotNull(ratingText(t, m.m.rating)) + metaOf(null, year?.toString(), info?.durationSecs?.takeIf { it > 0 }?.let { duration(it) }))
             info?.genre?.takeIf { it.isNotBlank() }?.let { Text(it.split(',').take(3).joinToString(" • ") { g -> g.trim() }, style = MaterialTheme.typography.bodySmall,
                 color = Palette.TextDim, modifier = Modifier.fillMaxWidth().padding(top = 2.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
@@ -313,7 +313,7 @@ internal fun PhoneSeriesDetail(
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "top") {
-            DetailTop(s.s.backdrop ?: s.s.cover, s.s.name, t?.logo)
+            DetailTop(s.s.backdrop ?: s.s.cover, com.lumentv.data.frenchTitle(s.s.name, t), t?.logo)
             Meta(listOfNotNull(ratingText(t, s.s.rating)) + metaOf(null, s.s.year,
                 if (seasons.isNotEmpty()) "${seasons.size} saison" + (if (seasons.size > 1) "s" else "") else null))
         }

@@ -92,7 +92,11 @@ class MainActivity : ComponentActivity() {
             val posters: suspend (com.lumentv.ui.components.PosterSearch) -> String? = remember { { s ->
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vm.graph.logos.info(s.series, s.tmdb, com.lumentv.core.Featured.shortTitle(s.name), s.year)?.poster }
             } }
-            LumenTheme { androidx.compose.runtime.CompositionLocalProvider(LocalPhone provides phone, com.lumentv.ui.components.LocalPosterLookup provides posters) {
+            val titles: suspend (com.lumentv.ui.components.PosterSearch) -> String? = remember { { s ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vm.graph.logos.info(s.series, s.tmdb, com.lumentv.core.Featured.shortTitle(s.name), s.year)?.title }
+            } }
+            LumenTheme { androidx.compose.runtime.CompositionLocalProvider(LocalPhone provides phone, com.lumentv.ui.components.LocalPosterLookup provides posters,
+                com.lumentv.ui.components.LocalTitleLookup provides titles) {
                 var unlocked by remember { mutableStateOf(com.lumentv.core.Access.isUnlocked(this)) }
                 if (!unlocked) AccessScreen(onUnlocked = { unlocked = true }, onQuit = { finish() })
                 else {
