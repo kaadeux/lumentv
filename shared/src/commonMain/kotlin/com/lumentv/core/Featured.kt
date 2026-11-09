@@ -19,6 +19,30 @@ object Featured {
     /** "FR - Heart of the Beast (2026)" → "FR"; null without such a tag. */
     fun langTag(name: String): String? = langTag.find(name)?.groupValues?.get(1)?.uppercase()
 
+    private val frenchWord = Regex("\\b(FR|FRA|FRANCE|FRENCH|FRANCAIS|FRANÇAIS|VF|VFF)\\b", RegexOption.IGNORE_CASE)
+    private val francophone = Regex("\\b(BELGIQUE|BELGIUM|SUISSE|SWITZERLAND|ROMANDE?|ROMANDIE|QU[EÉ]BEC|WALLONIE|LUXEMBOURG|MONACO)\\b", RegexOption.IGNORE_CASE)
+
+    /** The country or language a group starts with, however the provider writes it: "FR|", "FR -", "FR:", "[FR]", "|FR|", "FR ·". */
+    private val leadCode = Regex("^[^A-Za-z0-9]*([A-Z]{2})(?![A-Za-z0-9])")
+    private val francophoneCodes = setOf("BE", "CH", "QC", "LU", "MC")
+
+    /**
+     * A group of channels, whatever the playlist: 0 French ("FR| CANAL+ LIVE", "[FR] Sport", "🇫🇷 Cinéma", "FRANCE HD",
+     * "SPORT FR"), 1 French-speaking from elsewhere ("CA| GENERAL FR", "BE| …", "Suisse romande", "Québec"), 2 the others.
+     */
+    fun frenchRank(group: String): Int {
+        val code = leadCode.find(group)?.groupValues?.get(1)
+        val word = frenchWord.containsMatchIn(group)
+        return when {
+            "🇫🇷" in group || code == "FR" || (code == null && word) -> 0
+            word || code in francophoneCodes || francophone.containsMatchIn(group) -> 1
+            else -> 2
+        }
+    }
+
+    /** The groups in French first, each part in the provider's order: the same on every app. */
+    fun <T> frenchFirst(list: List<T>, name: (T) -> String): List<T> = list.sortedBy { frenchRank(name(it)) }
+
     /** "FR - Heart of the Beast (2026)" → "Heart of the Beast (2026)". */
     fun untagged(name: String): String = name.replaceFirst(langTag, "").ifBlank { name }
 

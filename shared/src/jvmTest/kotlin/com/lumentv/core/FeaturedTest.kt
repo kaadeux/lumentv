@@ -78,3 +78,28 @@ class LanguageTagTest {
         org.junit.Assert.assertEquals("FR - Heart of the Beast (2026)", idx.find(false, "Heart of the Beast", "Heart of the Beast", 2026)?.name)
     }
 }
+
+/** Live channel groups: French first, the provider's order kept within each part. */
+class FrenchGroupsTest {
+    /** Other playlists write it in other ways: the French groups are found all the same. */
+    @Test fun anyWriting() {
+        listOf("[FR] TF1", "|FR| CINEMA", "FR: SPORT", "FR · Films CULTES", "FR-NEWS", "🇫🇷 Chaînes", "Français HD", "France Sport", "Sport VF", "HBO FR")
+            .forEach { org.junit.Assert.assertEquals(it, 0, Featured.frenchRank(it)) }
+        listOf("BE| RTBF", "QC: TVA", "CA| GENERAL FR", "Suisse romande", "BELGIUM", "Québec")
+            .forEach { org.junit.Assert.assertEquals(it, 1, Featured.frenchRank(it)) }
+        listOf("US| NEWS", "UK| SPORTS", "TV5MONDE", "AFR| SOMALIA", "DSTV AFRICA", "SPORT AR", "Freeform", "UK| BBC")
+            .forEach { org.junit.Assert.assertEquals(it, 2, Featured.frenchRank(it)) }
+    }
+
+    @Test fun frenchFirst() {
+        val strong = listOf("US| AT&T ᴿᴬᵂ", "US| NEWS ᴴᴰ", "CA| GENERAL FR", "UK| SPORTS", "FR| FRANCE ⱽᴵᴾ ᴿᴬᵂ", "FR| CANAL+ LIVE ᴴᴰ", "AFR| SOMALIA", "DSTV AFRICA")
+        org.junit.Assert.assertEquals(
+            listOf("FR| FRANCE ⱽᴵᴾ ᴿᴬᵂ", "FR| CANAL+ LIVE ᴴᴰ", "CA| GENERAL FR", "US| AT&T ᴿᴬᵂ", "US| NEWS ᴴᴰ", "UK| SPORTS", "AFR| SOMALIA", "DSTV AFRICA"),
+            Featured.frenchFirst(strong) { it })
+        // A list already French first keeps its order.
+        val atlas = listOf("FRANCE HD", "FRANCE FHD", "SPORT FR", "FRANCE SD", "FORMULA 1 & MOTO GP", "DISNEY+ SPORT FR", "DAZN FRANCE", "SPORT AR", "AFRICA")
+        org.junit.Assert.assertEquals(
+            listOf("FRANCE HD", "FRANCE FHD", "SPORT FR", "FRANCE SD", "DISNEY+ SPORT FR", "DAZN FRANCE", "FORMULA 1 & MOTO GP", "SPORT AR", "AFRICA"),
+            Featured.frenchFirst(atlas) { it })
+    }
+}

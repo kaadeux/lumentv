@@ -170,7 +170,7 @@ fun LiveScreen(state: AppState) {
     var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var selected by remember { mutableStateOf<Ch?>(null) }
     val par = state.parental
-    val groups = c.channels.groupBy { it.group }.map { (g, l) -> g to "$g  (${l.size})" + (if (par.isLocked(g)) "  🔒" else "") + (if (par.isHidden(PcParental.Kind.GROUP, g)) " · masqué" else "") }
+    val groups = Featured.frenchFirst(c.channels.groupBy { it.group }.toList()) { it.first }.map { (g, l) -> g to "$g  (${l.size})" + (if (par.isLocked(g)) "  🔒" else "") + (if (par.isHidden(PcParental.Kind.GROUP, g)) " · masqué" else "") }
     val favUids = remember(state.doc.favorites, state.activeKey) { state.favorites(Kind.CHANNEL).map { it.uid } }
     val list = remember(c, group, filter, favUids, par.isOpen(group)) {
         val base = if (!par.isOpen(group)) emptyList() else when (group) { ALL -> c.channels; FAVS -> favUids.mapNotNull { u -> c.channels.firstOrNull { it.uid == u } }; else -> c.channels.filter { it.group == group } }

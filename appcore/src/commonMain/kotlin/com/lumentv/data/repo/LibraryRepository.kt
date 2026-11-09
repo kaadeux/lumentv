@@ -53,10 +53,10 @@ class LibraryRepository(private val db: AppDatabase) {
 
     suspend fun groups(pid: Long, includeHidden: Boolean): List<GroupInfo> = withContext(IoDispatcher) {
         val prefs = db.prefs().allOf(pid, PrefKind.GROUP).associateBy { it.uid }
-        db.channels().groups(pid).map {
+        com.lumentv.core.Featured.frenchFirst(db.channels().groups(pid).map {
             val p = prefs[it.groupName]
             GroupInfo(it.groupName, it.count, p?.hidden == true, p?.locked == true)
-        }.filter { includeHidden || !it.hidden }
+        }.filter { includeHidden || !it.hidden }) { it.name }
     }
 
     suspend fun channels(pid: Long, group: String, includeHidden: Boolean, sort: String): List<ChannelRow> = withContext(IoDispatcher) {

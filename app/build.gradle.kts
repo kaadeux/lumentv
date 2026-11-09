@@ -17,8 +17,8 @@ android {
         minSdk = 23
         targetSdk = 34
         // Raise versionCode on every release: installed copies only accept a higher one as an update.
-        versionCode = 86
-        versionName = "2.6.19"
+        versionCode = 87
+        versionName = "2.6.20"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Family access code and update feed, from local.properties (never committed). Only the code's hash is built in.
         val code = localProp("lumen.accessCode").trim()
