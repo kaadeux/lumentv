@@ -113,3 +113,19 @@ class FrenchTitleTest {
         org.junit.Assert.assertEquals("Hope", com.lumentv.data.frenchTitle("Hope (2026) MULTI", com.lumentv.data.TitleLogos.Info(null, null, 0)))
     }
 }
+
+/** The name of each copy in the "Version" menu. */
+class VersionLabelTest {
+    @Test fun labels() {
+        org.junit.Assert.assertEquals("VOSTFR", Featured.versionLabel("Breach (2026) VOSTFR"))
+        org.junit.Assert.assertEquals("4K MULTI", Featured.versionLabel("The Dog Stars (2026) 4K MULTI"))
+        org.junit.Assert.assertEquals("Français", Featured.versionLabel("FR - Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals("Anglais", Featured.versionLabel("EN - Heart of the Beast  (2026)"))
+        org.junit.Assert.assertEquals("4K · Scandinave · HDR", Featured.versionLabel("4K-SC-HDR - Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals("Arabe · sous-titré", Featured.versionLabel("AR-SUBS - Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals("Persan", Featured.versionLabel("IR - Heart of the Beast (2026) قلب هیولا"))
+        org.junit.Assert.assertEquals("Top", Featured.versionLabel("TOP - Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals("Version", Featured.versionLabel("Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals("Version", Featured.versionLabel("LOL - Qui rit sort (2023)"))
+    }
+}

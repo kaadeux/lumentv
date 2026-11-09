@@ -84,9 +84,28 @@ object Featured {
     /** "Hope (2026) MULTI" → "Hope": the name without the year and the copy's tags (they go to [posterLine]). */
     fun shortTitle(name: String): String = untagged(name).substringBefore(" (").substringBefore(" [").trim().ifBlank { name }
 
-    /** "Breach (2026) VOSTFR" → "VOSTFR", "The Dog Stars (2026) 4K MULTI" → "4K MULTI": what tells a copy from another. */
-    fun versionLabel(name: String): String =
-        name.substringAfterLast(")", "").replace(Regex("^[\\s\\-|:]+"), "").trim().ifBlank { name.substringAfter(" | ", "").trim() }.ifBlank { "Version" }
+    /** The tags a provider puts before a copy's title: "4K-SC-HDR - ", "AR-SUBS - ", "FR | ". */
+    private val copyPrefix = Regex("^\\s*([A-Z0-9]{2,4}(?:[-/][A-Z0-9]{2,4}){0,3})\\s*(?:-\\s+|\\|\\s*)")
+    private val tagNames = mapOf(
+        "FR" to "Français", "EN" to "Anglais", "DE" to "Allemand", "NL" to "Néerlandais", "GR" to "Grec", "SC" to "Scandinave",
+        "SE" to "Suédois", "NO" to "Norvégien", "DK" to "Danois", "FI" to "Finnois", "IS" to "Islandais", "AL" to "Albanais",
+        "IR" to "Persan", "AR" to "Arabe", "ES" to "Espagnol", "IT" to "Italien", "PT" to "Portugais", "BR" to "Brésilien",
+        "TR" to "Turc", "PL" to "Polonais", "RU" to "Russe", "IN" to "Indien", "RO" to "Roumain", "HU" to "Hongrois",
+        "4K" to "4K", "8K" to "8K", "HDR" to "HDR", "TOP" to "Top", "SUBS" to "sous-titré", "SUB" to "sous-titré", "MULTI" to "MULTI",
+    )
+
+    /**
+     * What tells a copy from another: "Breach (2026) VOSTFR" → "VOSTFR", "The Dog Stars (2026) 4K MULTI" → "4K MULTI",
+     * "FR - Heart of the Beast (2026)" → "Français", "4K-SC-HDR - Heart of the Beast (2026)" → "4K · Scandinave · HDR".
+     */
+    fun versionLabel(name: String): String {
+        val tags = copyPrefix.find(name)?.groupValues?.get(1)?.split('-', '/')?.takeIf { t -> t.any { it in tagNames } }.orEmpty()
+        // After the year: in Latin letters only ("قلب هیولا" is the same title in Persian).
+        val after = name.substringAfterLast(")", "").replace(Regex("[^\\p{L}\\p{N} +\\-]|[\\u0590-\\u08FF]"), " ")
+            .replace(Regex("^[\\s\\-|:]+"), "").replace(Regex("\\s+"), " ").trim()
+        val label = (tags.map { tagNames[it] ?: it } + listOfNotNull(after.takeIf { it.isNotEmpty() })).joinToString(" · ")
+        return label.ifBlank { name.substringAfter(" | ", "").trim() }.ifBlank { "Version" }
+    }
 
     /** "2026 · ★ 7,2 · MULTI": year, rating, and for a film ([name] given) which copy it is. */
     fun posterLine(year: String?, rating: String?, name: String?): String? =

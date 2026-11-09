@@ -106,8 +106,10 @@ class LibraryRepository(private val db: AppDatabase) {
     suspend fun versions(m: com.lumentv.data.db.MovieEntity): List<MovieRow> = withContext(IoDispatcher) {
         val base = com.lumentv.core.Featured.baseTitle(m.name)
         if (base.length < 2) return@withContext emptyList()
-        db.vod().searchMovies(base, 80).filter { it.m.playlistId == m.playlistId && com.lumentv.core.Featured.baseTitle(it.m.name) == base }
-            .sortedBy { it.m.number }
+        db.vod().searchMovies(base, 80).filter { it.m.playlistId == m.playlistId && com.lumentv.core.Featured.baseTitle(it.m.name) == base &&
+                (it.m.id == m.id || !com.lumentv.core.Featured.foreign(it.m.name, it.m.category)) }
+            // The French copies first, then the subtitled and the others; the playlist's order in each.
+            .sortedWith(compareBy({ com.lumentv.core.SmartSearch.languageRank(it.m.name) }, { it.m.number }))
     }
 
     /** A category's films or series for a row of the Films / Séries home: one per title, newest first. */

@@ -96,7 +96,10 @@ class Vod(private val state: AppState) {
     fun versions(c: Catalog, m: Mv): List<Mv> {
         val base = Featured.baseTitle(m.name)
         if (base.length < 2) return listOf(m)
-        return c.movies.filter { Featured.baseTitle(it.name) == base }.ifEmpty { listOf(m) }
+        // The French copies first, then the subtitled and the others; the best quality first in each.
+        return c.movies.filter { Featured.baseTitle(it.name) == base && (it == m || !Featured.foreign(it.name, it.category)) }
+            .sortedWith(compareBy({ com.lumentv.core.SmartSearch.languageRank(it.name) }, { com.lumentv.core.SmartSearch.qualityRank(it.name) }))
+            .ifEmpty { listOf(m) }
     }
 }
 
