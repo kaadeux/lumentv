@@ -32,7 +32,13 @@ object SmartSearch {
     private val vost = Regex("\\bVOST(FR)?\\b", RegexOption.IGNORE_CASE)
 
     /** For choosing a copy of a title: French or multi-language first (0), then subtitled (1), then other languages (2). */
-    fun languageRank(name: String): Int = when {
+    fun languageRank(name: String): Int = when (Featured.langTag(name)) {
+        null, "FR" -> untaggedRank(name)
+        "EN" -> maxOf(1, untaggedRank(name))
+        else -> 2
+    }
+
+    private fun untaggedRank(name: String): Int = when {
         otherLang.containsMatchIn(name) -> 2
         vost.containsMatchIn(name) -> 1
         else -> 0

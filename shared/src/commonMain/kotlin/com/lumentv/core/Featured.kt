@@ -10,16 +10,28 @@ object Featured {
     /** Titles of a category row. */
     const val ROW = 20
 
-    /** "The Dog Stars (2026) 4K MULTI" and "The Dog Stars (2026) SUBT AR" are one title: "the dog stars". */
+    /**
+     * The language some providers put before every title: "FR - Heart of the Beast (2026)", "IN-EN - The Highest Stakes",
+     * "AR | The Greatest". Two letters, then a dash between spaces or a bar: "LOL - Qui rit sort" keeps its name.
+     */
+    private val langTag = Regex("^\\s*(?:[48]K[-/])?([A-Z]{2})(?:[-/][A-Z]{2,4}){0,2}\\s*(?:-\\s+|\\|\\s*)")
+
+    /** "FR - Heart of the Beast (2026)" → "FR"; null without such a tag. */
+    fun langTag(name: String): String? = langTag.find(name)?.groupValues?.get(1)?.uppercase()
+
+    /** "FR - Heart of the Beast (2026)" → "Heart of the Beast (2026)". */
+    fun untagged(name: String): String = name.replaceFirst(langTag, "").ifBlank { name }
+
+    /** "The Dog Stars (2026) 4K MULTI", "The Dog Stars (2026) SUBT AR" and "FR - The Dog Stars" are one title: "the dog stars". */
     fun baseTitle(name: String): String =
-        normalize(name.substringBefore(" (").substringBefore(" [").substringBefore(" | ").replace(Regex("\\b(4K|FHD|HD|SD|MULTI|VOSTFR|VOST|VF|VFF|VOF|SUBT AR)\\b.*$", RegexOption.IGNORE_CASE), ""))
+        normalize(untagged(name).substringBefore(" (").substringBefore(" [").substringBefore(" | ").replace(Regex("\\b(4K|FHD|HD|SD|MULTI|VOSTFR|VOST|VF|VFF|VOF|SUBT AR)\\b.*$", RegexOption.IGNORE_CASE), ""))
 
     /**
      * Arabic titles, Arabic-subtitled or dubbed copies and Arabic categories, not for this family: "AR · ARABE",
      * "Séries SUB-AR", "Séries DUB-AR", "Séries ARABES", "AR | The Greatest"…
      */
     fun foreign(name: String, category: String): Boolean =
-        name.any { it in '؀'..'ۿ' } || subtAr.containsMatchIn(name) || arPrefix.containsMatchIn(name) ||
+        name.any { it in '؀'..'ۿ' } || subtAr.containsMatchIn(name) || arPrefix.containsMatchIn(name) || langTag(name) == "AR" ||
             category.trimStart().startsWith("AR", ignoreCase = true) || arCategory.containsMatchIn(category)
 
     private val subtAr = Regex("\\bSUBT AR\\b", RegexOption.IGNORE_CASE)
@@ -46,7 +58,7 @@ object Featured {
     private val copyTags = Regex("\\b(4K|UHD|FHD|HD|SD|HDR|MULTI|VOSTFR|VOST|VFF|VFQ|VF|VOF|VO)\\b", RegexOption.IGNORE_CASE)
 
     /** "Hope (2026) MULTI" → "Hope": the name without the year and the copy's tags (they go to [posterLine]). */
-    fun shortTitle(name: String): String = name.substringBefore(" (").substringBefore(" [").trim().ifBlank { name }
+    fun shortTitle(name: String): String = untagged(name).substringBefore(" (").substringBefore(" [").trim().ifBlank { name }
 
     /** "Breach (2026) VOSTFR" → "VOSTFR", "The Dog Stars (2026) 4K MULTI" → "4K MULTI": what tells a copy from another. */
     fun versionLabel(name: String): String =

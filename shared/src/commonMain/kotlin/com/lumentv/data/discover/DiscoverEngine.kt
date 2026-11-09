@@ -59,7 +59,9 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
         val series = input.series
         val idx = input.index
         val byUid = (if (series) idx.series else idx.movies).associateBy({ it.item.uid }, { it.item })
-        fun ok(v: VodLite) = v.category !in input.hidden && !Featured.foreign(v.name, v.category)
+        // Not a copy in another language ("DE - …", "(ITA)"): the rows are for a French family.
+        fun ok(v: VodLite) = v.category !in input.hidden && !Featured.foreign(v.name, v.category) &&
+            com.lumentv.core.SmartSearch.languageRank(v.name) < 2
 
         // 1. The playlist alone
         val local = listOf(

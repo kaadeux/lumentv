@@ -49,3 +49,32 @@ class SearchTitleTest {
         org.junit.Assert.assertEquals(2026, Featured.yearOf(null, "Breach (2026) VOSTFR"))
     }
 }
+
+/** Titles from a provider that writes the language first ("FR - …"): the same titles as without it. */
+class LanguageTagTest {
+    @Test fun tagIsLeftOut() {
+        org.junit.Assert.assertEquals("heart of the beast", Featured.baseTitle("FR - Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals(Featured.baseTitle("Heart of the Beast (2026) MULTI"), Featured.baseTitle("EN - Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals("The Highest Stakes", Featured.shortTitle("IN-EN - The Highest Stakes (2026)"))
+        org.junit.Assert.assertEquals("Traffik", Featured.shortTitle("AR-SUBS - Traffik (2018)"))
+        org.junit.Assert.assertEquals("the greatest", Featured.baseTitle("AR | The Greatest"))
+        org.junit.Assert.assertEquals("Heart of the Beast", Featured.searchTitle("FR - Heart of the Beast (2026)"))
+        // A title of its own that only looks like a tag.
+        org.junit.Assert.assertEquals("LOL - Qui rit sort", Featured.shortTitle("LOL - Qui rit sort (2023)"))
+        org.junit.Assert.assertEquals("Spider-Man", Featured.shortTitle("Spider-Man (2002)"))
+        org.junit.Assert.assertEquals("Happy Raj", Featured.shortTitle("4K-AR-IN - Happy Raj"))
+        org.junit.Assert.assertTrue(Featured.foreign("4K-AR-IN - Happy Raj", "IN - HINDI"))
+        org.junit.Assert.assertFalse(Featured.foreign("FR - Heart of the Beast (2026)", "FR - LE DRENIER AJOUTEE"))
+    }
+
+    @Test fun frenchCopyFirst() {
+        org.junit.Assert.assertEquals(0, SmartSearch.languageRank("FR - Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals(1, SmartSearch.languageRank("EN - Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals(2, SmartSearch.languageRank("DE - Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals(0, SmartSearch.languageRank("Heart of the Beast (2026) MULTI"))
+        val copies = listOf("DE - Heart of the Beast (2026)", "EN - Heart of the Beast (2026)", "FR - Heart of the Beast (2026)")
+            .mapIndexed { i, n -> com.lumentv.data.discover.VodLite(i.toLong(), "x:$i", n, "Films", null, null) }
+        val idx = com.lumentv.data.discover.TitleIndex(copies, emptyList())
+        org.junit.Assert.assertEquals("FR - Heart of the Beast (2026)", idx.find(false, "Heart of the Beast", "Heart of the Beast", 2026)?.name)
+    }
+}
