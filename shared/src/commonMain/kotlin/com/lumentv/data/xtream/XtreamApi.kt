@@ -126,7 +126,7 @@ class XtreamApi(private val http: Http, private val creds: XtreamCredentials, pr
         val info = root?.get("info") as? JsonObject ?: return null
         return XVodInfo(
             plot = info.str("plot") ?: info.str("description"),
-            durationSecs = info.long("duration_secs")?.toInt() ?: parseDuration(info.str("duration")),
+            durationSecs = durationOf(info.long("duration_secs")?.toInt(), info.str("duration")),
             genre = info.str("genre"), cast = info.str("cast") ?: info.str("actors"),
             director = info.str("director"), releaseDate = info.str("releasedate") ?: info.str("release_date"),
             backdrop = info.backdrop(), rating = info.str("rating")?.takeIf { it != "0" && it.isNotBlank() },
@@ -221,7 +221,7 @@ class XtreamApi(private val http: Http, private val creds: XtreamCredentials, pr
                         ext = o.str("container_extension"),
                         image = info?.str("movie_image"),
                         plot = info?.str("plot"),
-                        durationSecs = info?.long("duration_secs")?.toInt() ?: parseDuration(info?.str("duration")),
+                        durationSecs = durationOf(info?.long("duration_secs")?.toInt(), info?.str("duration")),
                     )
                 }
             }
@@ -229,6 +229,12 @@ class XtreamApi(private val http: Http, private val creds: XtreamCredentials, pr
         }
 
         /** "01:42:00" -> 6120. */
+        /**
+         * A film's length from both fields a provider fills: the longer one. Some write the seconds field wrong (a
+         * film shown "0 h 01") while "duration" says "01:45:00", which other players show.
+         */
+        fun durationOf(secs: Int?, text: String?): Int = maxOf(secs ?: 0, parseDuration(text))
+
         fun parseDuration(s: String?): Int {
             if (s.isNullOrBlank()) return 0
             val parts = s.split(':').mapNotNull { it.trim().toIntOrNull() }

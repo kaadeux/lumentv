@@ -172,7 +172,7 @@ class Library(private val http: OkHttpClient) {
         return Details(info.s("plot") ?: info.s("description"), info.s("genre"), info.s("rating"),
             info.s("releasedate") ?: info.s("release_date"),
             (info["backdrop_path"] as? kotlinx.serialization.json.JsonArray)?.firstOrNull()?.let { b -> (b as? kotlinx.serialization.json.JsonPrimitive)?.content },
-            info.s("duration_secs")?.toIntOrNull() ?: XtreamApi.parseDuration(info.s("duration")))
+            XtreamApi.durationOf(info.s("duration_secs")?.toIntOrNull(), info.s("duration")))
     }
 
     private fun getJson(p: SyncPlaylist, action: String): kotlinx.serialization.json.JsonElement {

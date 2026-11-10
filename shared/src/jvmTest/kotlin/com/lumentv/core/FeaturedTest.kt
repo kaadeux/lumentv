@@ -129,3 +129,13 @@ class VersionLabelTest {
         org.junit.Assert.assertEquals("Version", Featured.versionLabel("LOL - Qui rit sort (2023)"))
     }
 }
+
+/** A film's length when the provider fills one field wrong: the longer of the two. */
+class DurationTest {
+    @Test fun longest() {
+        org.junit.Assert.assertEquals(6300, com.lumentv.data.xtream.XtreamApi.durationOf(60, "01:45:00"))
+        org.junit.Assert.assertEquals(6300, com.lumentv.data.xtream.XtreamApi.durationOf(6300, null))
+        org.junit.Assert.assertEquals(6300, com.lumentv.data.xtream.XtreamApi.durationOf(null, "01:45:00"))
+        org.junit.Assert.assertEquals(0, com.lumentv.data.xtream.XtreamApi.durationOf(null, null))
+    }
+}
