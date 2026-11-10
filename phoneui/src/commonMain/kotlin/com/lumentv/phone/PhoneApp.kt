@@ -212,6 +212,8 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
         TitleBar(if (route == null) null else titleOf(route), tab.label, onBack = back, onSearch = if (tab != Tab.SEARCH || route != null) ({
             tab = Tab.SEARCH; stack.clear(); memory.clear()
         }) else null)
+        val loading by remember { core.epg.loading }.collectAsState(null)
+        loading?.let { com.lumentv.ui.kit.KitLoadingBar(it.label, it.fraction, Modifier.padding(horizontal = 12.dp, vertical = 6.dp).fillMaxWidth()) }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (val r = stack.lastOrNull()) {
                 is Route.Movie -> MoviePage(core, r.row, player)

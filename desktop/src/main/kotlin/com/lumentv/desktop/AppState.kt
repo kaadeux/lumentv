@@ -89,6 +89,8 @@ class AppState(private val scope: CoroutineScope) {
     var activeKey by mutableStateOf(prefs.get("active", null)); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
     var loading by mutableStateOf(false); private set
+    /** The step of the list being loaded ("Chargement des films · 12 000") and how far along, for the bar at the top. */
+    var loadStep by mutableStateOf<Pair<String, Float?>?>(null); private set
     var loadError by mutableStateOf<String?>(null); private set
     var guide by mutableStateOf<Map<String, List<Prog>>>(emptyMap()); private set
     var toast by mutableStateOf<String?>(null)
@@ -190,12 +192,17 @@ class AppState(private val scope: CoroutineScope) {
             catalog = cached
             val stale = cached == null || force || cached.version < CATALOG_VERSION || System.currentTimeMillis() - cached.loadedAt > p.refreshHours.coerceAtLeast(1) * 3_600_000L
             if (stale) {
-                runCatching { library.load(p) }
+                runCatching { library.load(p) { label, f -> loadStep = label to f } }
                     .onSuccess { c -> catalog = c; withContext(Dispatchers.IO) { Store.saveCatalog(key, c) } }
                     .onFailure { loadError = userMessage(it) }
             }
             loading = false
-            catalog?.let { c -> playStartupChannel(c); runCatching { library.guide(c, p.epgOffsetMinutes, p.ua, guideDays) }.onSuccess { guide = it } }
+            catalog?.let { c ->
+                playStartupChannel(c)
+                if (stale || guide.isEmpty()) loadStep = "Chargement du guide TV" to null
+                runCatching { library.guide(c, p.epgOffsetMinutes, p.ua, guideDays) }.onSuccess { guide = it }
+            }
+            loadStep = null
         }
     }
 

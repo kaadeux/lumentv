@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -118,7 +119,9 @@ fun Shell(state: AppState) {
                 }, style = MaterialTheme.typography.bodySmall, color = if (state.syncMessage != null) Pal.danger else Pal.dim, modifier = Modifier.padding(8.dp),
             )
         }
-        Box(Modifier.weight(1f).fillMaxHeight().padding(20.dp)) {
+        androidx.compose.foundation.layout.Column(Modifier.weight(1f).fillMaxHeight()) {
+        state.loadStep?.let { (label, f) -> com.lumentv.ui.kit.KitLoadingBar(label, f, Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp).fillMaxWidth()) }
+        Box(Modifier.weight(1f).fillMaxWidth().padding(20.dp)) {
             when {
                 section == Section.Settings -> SettingsScreen(state)
                 section == Section.Downloads -> DownloadsScreen(state)
@@ -149,6 +152,7 @@ fun Shell(state: AppState) {
                     Text(t, color = Pal.text, modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
                 }
             }
+        }
         }
     }
 }

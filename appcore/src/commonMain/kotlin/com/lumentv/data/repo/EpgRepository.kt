@@ -51,6 +51,11 @@ class EpgRepository(
         return null
     }
 
+    /** What the loading bar of every app shows: the list being loaded, then its guide; null when nothing loads. */
+    val loading: kotlinx.coroutines.flow.Flow<LoadStep?> = kotlinx.coroutines.flow.combine(playlists.progress, _busy) { p, e ->
+        p.values.firstOrNull() ?: if (e.isNotEmpty()) LoadStep("Chargement du guide TV", null) else null
+    }
+
     suspend fun refresh(playlistId: Long): RefreshOutcome = withContext(IoDispatcher) {
         val p = db.playlists().get(playlistId) ?: return@withContext RefreshOutcome(false, "Playlist introuvable.")
         val url = epgUrl(p) ?: return@withContext RefreshOutcome(false, "Aucun guide TV (XMLTV) configuré pour cette playlist.")

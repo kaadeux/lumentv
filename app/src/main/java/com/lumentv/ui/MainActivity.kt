@@ -201,6 +201,8 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
         BackdropLayer()
         Column(Modifier.fillMaxSize()) {
             TopNav(tabs, icons, vm.root, topFocus) { vm.openTab(it) }
+            val loading by vm.loading.collectAsStateWithLifecycle()
+            loading?.let { com.lumentv.ui.kit.KitLoadingBar(it.label, it.fraction, Modifier.padding(start = 40.dp, end = 40.dp, bottom = 8.dp).fillMaxWidth()) }
             Box(Modifier.weight(1f).fillMaxWidth().padding(start = 40.dp, top = 4.dp, end = 40.dp, bottom = 16.dp)
                 .onFocusChanged { contentHasFocus = it.hasFocus }.focusRequester(contentFocus).focusGroup()) {
                 ScreenContent(vm, vm.current, states)

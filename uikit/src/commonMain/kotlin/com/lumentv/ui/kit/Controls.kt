@@ -1,5 +1,6 @@
 package com.lumentv.ui.kit
 
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,6 +9,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -75,5 +77,27 @@ fun KitToggle(title: String, subtitle: String, on: Boolean, onChange: (Boolean) 
             Text(subtitle, color = c.dim, fontSize = 13.sp)
         }
         Switch(checked = on, onCheckedChange = null, colors = SwitchDefaults.colors(checkedTrackColor = c.accent))
+    }
+}
+
+/**
+ * The loading of a list, the same on every app: "Chargement des films · 12 000" over a thin bar. [fraction] null: a
+ * step whose length is not known (the guide), the bar then fills slowly back and forth.
+ */
+@Composable
+fun KitLoadingBar(label: String, fraction: Float?, modifier: Modifier = Modifier) {
+    val c = LocalKitColors.current
+    val shown by androidx.compose.animation.core.animateFloatAsState(fraction ?: 0f, label = "load")
+    val pulse = if (fraction == null) androidx.compose.animation.core.rememberInfiniteTransition(label = "pulse").animateFloat(
+        0.1f, 0.9f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(1400),
+            androidx.compose.animation.core.RepeatMode.Reverse), label = "pulse").value else null
+    Column(modifier.clip(RoundedCornerShape(12.dp)).background(c.panelHigh).padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, modifier = Modifier.weight(1f))
+            if (fraction != null) Text("${(fraction * 100).toInt()} %", fontSize = 13.sp, color = c.dim, maxLines = 1)
+        }
+        Box(Modifier.padding(top = 8.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x22FFFFFF))) {
+            Box(Modifier.fillMaxWidth(pulse ?: shown).height(4.dp).clip(RoundedCornerShape(2.dp)).background(c.accent))
+        }
     }
 }

@@ -36,6 +36,9 @@ import kotlinx.coroutines.withContext
 
 data class RefreshOutcome(val ok: Boolean, val message: String)
 
+/** Where the loading of a list is: "Chargement des films · 12 000", and how far along it is (0..1; null: not known). */
+data class LoadStep(val label: String, val fraction: Float?)
+
 /** Adds, edits, refreshes and deletes playlists. Refresh parses everything first, then swaps it in one transaction. */
 class PlaylistRepository(
     private val db: AppDatabase,
@@ -47,6 +50,17 @@ class PlaylistRepository(
     private val _busy = MutableStateFlow<Set<Long>>(emptySet())
     /** Playlists being refreshed right now, for the progress indicators. */
     val busy: StateFlow<Set<Long>> = _busy
+    private val _progress = MutableStateFlow<Map<Long, LoadStep>>(emptyMap())
+    /** The step of each list being loaded, for the progress bar of every app. */
+    val progress: StateFlow<Map<Long, LoadStep>> = _progress
+
+    private fun step(id: Long, label: String, fraction: Float) { _progress.value = _progress.value + (id to LoadStep(label, fraction)) }
+
+    /** "Chargement des films · 12 000" every 2 000 titles, the bar moving from [from] towards [to] meanwhile. */
+    private fun counter(id: Long, label: String, from: Float, to: Float): (Int) -> Unit {
+        step(id, label, from)
+        return { n -> if (n % 2000 == 0) step(id, "$label · ${thousands(n)}", from + (to - from) * (1f - 1f / (1f + n / 20_000f))) }
+    }
 
     fun observe(): Flow<List<PlaylistEntity>> = db.playlists().observeAll()
     suspend fun all() = db.playlists().all()
@@ -91,24 +105,28 @@ class PlaylistRepository(
                 RefreshOutcome(false, msg)
             } finally {
                 _busy.value = _busy.value - id
+                _progress.value = _progress.value - id
             }
         }
     }
 
     private suspend fun refreshM3u(p: PlaylistEntity): String {
         val source = SecretBox.decrypt(p.sourceEnc)
+        step(p.id, "Téléchargement de la liste", 0.05f)
         val result = openSource(source, userAgentFor(p)).use { stream ->
             M3uImport.build(p.id, stream.lineReader(), p.dedupe)
         }
+        step(p.id, "Enregistrement", 0.8f)
         db.transaction {
             db.channels().deleteFor(p.id)
             db.vod().deleteMovies(p.id)
             db.vod().deleteSeries(p.id)
             db.vod().deleteEpisodes(p.id)
-            result.channels.chunked(CHUNK).forEach { db.channels().insertAll(it) }
-            result.movies.chunked(CHUNK).forEach { db.vod().insertMovies(it) }
-            result.series.chunked(CHUNK).forEach { db.vod().insertSeries(it) }
-            result.episodes.chunked(CHUNK).forEach { db.vod().insertEpisodes(it) }
+            val saved = saving(p.id, result.channels.size + result.movies.size + result.series.size + result.episodes.size)
+            result.channels.chunked(CHUNK).forEach { db.channels().insertAll(it); saved(it.size) }
+            result.movies.chunked(CHUNK).forEach { db.vod().insertMovies(it); saved(it.size) }
+            result.series.chunked(CHUNK).forEach { db.vod().insertSeries(it); saved(it.size) }
+            result.episodes.chunked(CHUNK).forEach { db.vod().insertEpisodes(it); saved(it.size) }
             db.playlists().update(
                 p.copy(
                     lastRefresh = nowMillis(), lastError = null,
@@ -123,27 +141,30 @@ class PlaylistRepository(
 
     private suspend fun refreshXtream(p: PlaylistEntity) : String {
         val api = xtream(p)
+        step(p.id, "Connexion au serveur", 0.02f)
         val account = api.authenticate()
         val liveCats = api.liveCategories()
-        val live = ArrayList<XLive>(); api.liveStreams { live += it }
+        val live = ArrayList<XLive>(); counter(p.id, "Chargement des chaînes", 0.05f, 0.25f).let { c -> api.liveStreams { live += it; c(live.size) } }
         val vodCats = runCatching { api.vodCategories() }.getOrDefault(emptyMap())
-        val movies = ArrayList<XMovie>(); runCatching { api.vodStreams { movies += it } }
+        val movies = ArrayList<XMovie>(); counter(p.id, "Chargement des films", 0.25f, 0.55f).let { c -> runCatching { api.vodStreams { movies += it; c(movies.size) } } }
         val seriesCats = runCatching { api.seriesCategories() }.getOrDefault(emptyMap())
-        val series = ArrayList<XSeries>(); runCatching { api.series { series += it } }
+        val series = ArrayList<XSeries>(); counter(p.id, "Chargement des séries", 0.55f, 0.75f).let { c -> runCatching { api.series { series += it; c(series.size) } } }
         if (live.isEmpty() && movies.isEmpty() && series.isEmpty()) {
             throw FormatException("Le serveur Xtream n'a renvoyé aucune chaîne, aucun film et aucune série.")
         }
         val chRows = XtreamImport.channels(p.id, live, liveCats)
         val mvRows = XtreamImport.movies(p.id, movies, vodCats)
         val seRows = XtreamImport.series(p.id, series, seriesCats)
+        step(p.id, "Enregistrement", 0.8f)
         db.transaction {
             db.channels().deleteFor(p.id)
             db.vod().deleteMovies(p.id)
             db.vod().deleteSeries(p.id)
             db.vod().deleteEpisodes(p.id)
-            chRows.chunked(CHUNK).forEach { db.channels().insertAll(it) }
-            mvRows.chunked(CHUNK).forEach { db.vod().insertMovies(it) }
-            seRows.chunked(CHUNK).forEach { db.vod().insertSeries(it) }
+            val saved = saving(p.id, chRows.size + mvRows.size + seRows.size)
+            chRows.chunked(CHUNK).forEach { db.channels().insertAll(it); saved(it.size) }
+            mvRows.chunked(CHUNK).forEach { db.vod().insertMovies(it); saved(it.size) }
+            seRows.chunked(CHUNK).forEach { db.vod().insertSeries(it); saved(it.size) }
             db.playlists().update(
                 p.copy(
                     lastRefresh = nowMillis(), lastError = null,
@@ -183,6 +204,14 @@ class PlaylistRepository(
         }
         return raw.ungzipped()
     }
+
+    /** The bar from 80 % to 100 % while the rows are written. */
+    private fun saving(id: Long, total: Int): (Int) -> Unit {
+        var done = 0
+        return { n -> done += n; step(id, "Enregistrement", 0.8f + 0.2f * done / maxOf(total, 1)) }
+    }
+
+    private fun thousands(n: Int): String = n.toString().reversed().chunked(3).joinToString(" ").reversed()
 
     private fun summary(ch: Int, mv: Int, se: Int) =
         listOfNotNull("$ch chaîne" + (if (ch > 1) "s" else ""), mv.takeIf { it > 0 }?.let { "$it film" + if (it > 1) "s" else "" },

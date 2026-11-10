@@ -110,7 +110,9 @@ fun PhoneShell(vm: MainViewModel, firstLaunch: Boolean, screen: @Composable (Scr
         is Screen.PlaylistEdit -> "Playlist"; is Screen.EpgFix -> "Guide de la chaîne"
     }
 
+    val loading by vm.loading.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize().background(Palette.Background)) {
+        loading?.let { com.lumentv.ui.kit.KitLoadingBar(it.label, it.fraction, Modifier.padding(horizontal = 12.dp, vertical = 6.dp).fillMaxWidth()) }
         // Title bar
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             val home = !sub && vm.root in tabs.map { it.screen } && current != Screen.More

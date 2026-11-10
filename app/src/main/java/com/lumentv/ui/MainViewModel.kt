@@ -60,6 +60,8 @@ class MainViewModel(val graph: AppGraph) : ViewModel() {
 
     val busy = combine(graph.playlists.busy, graph.epg.busy) { a, b -> a + b }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+    /** The step of the list being loaded, for the bar under the tabs. */
+    val loading = graph.epg.loading.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _toast = MutableStateFlow<String?>(null)
     val toast: StateFlow<String?> = _toast

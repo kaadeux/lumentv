@@ -74,17 +74,23 @@ const val NO_GROUP = "Sans catégorie"
 class Library(private val http: OkHttpClient) {
     private fun xtream(p: SyncPlaylist) = XtreamApi(http.asHttp(), XtreamCredentials(p.source, p.username, p.password), p.ua.ifBlank { null })
 
-    suspend fun load(p: SyncPlaylist): Catalog = withContext(Dispatchers.IO) { if (p.type == "xtream") loadXtream(p) else loadM3u(p) }
+    /** [step]: "Chargement des films · 12 000" and how far along (0..1, null: not known), for the bar at the top. */
+    suspend fun load(p: SyncPlaylist, step: (String, Float?) -> Unit = { _, _ -> }): Catalog =
+        withContext(Dispatchers.IO) { if (p.type == "xtream") loadXtream(p, step) else loadM3u(p, step) }
 
-    private fun loadXtream(p: SyncPlaylist): Catalog {
+    private fun loadXtream(p: SyncPlaylist, step: (String, Float?) -> Unit): Catalog {
+        fun counted(label: String, from: Float, to: Float): (Int) -> Unit { step(label, from)
+            return { n -> if (n % 2000 == 0) step("$label · ${"%,d".format(n).replace(',', ' ')}", from + (to - from) * (1f - 1f / (1f + n / 20_000f))) } }
         val api = xtream(p)
+        step("Connexion au serveur", 0.02f)
         val account = api.authenticate()
         val liveCats = runCatching { api.liveCategories() }.getOrDefault(emptyMap())
         val vodCats = runCatching { api.vodCategories() }.getOrDefault(emptyMap())
         val serCats = runCatching { api.seriesCategories() }.getOrDefault(emptyMap())
-        val live = ArrayList<XLive>(); api.liveStreams { live += it }
-        val vod = ArrayList<XMovie>(); runCatching { api.vodStreams { vod += it } }
-        val ser = ArrayList<XSeries>(); runCatching { api.series { ser += it } }
+        val live = ArrayList<XLive>(); counted("Chargement des chaînes", 0.05f, 0.3f).let { c -> api.liveStreams { live += it; c(live.size) } }
+        val vod = ArrayList<XMovie>(); counted("Chargement des films", 0.3f, 0.65f).let { c -> runCatching { api.vodStreams { vod += it; c(vod.size) } } }
+        val ser = ArrayList<XSeries>(); counted("Chargement des séries", 0.65f, 0.95f).let { c -> runCatching { api.series { ser += it; c(ser.size) } } }
+        step("Enregistrement", 0.97f)
         return Catalog(
             loadedAt = System.currentTimeMillis(),
             version = CATALOG_VERSION,
@@ -96,7 +102,8 @@ class Library(private val http: OkHttpClient) {
         )
     }
 
-    private fun loadM3u(p: SyncPlaylist): Catalog {
+    private fun loadM3u(p: SyncPlaylist, step: (String, Float?) -> Unit): Catalog {
+        step("Téléchargement de la liste", null)
         val channels = ArrayList<Ch>(); val movies = ArrayList<Mv>()
         val series = LinkedHashMap<String, Se>(); val episodes = HashMap<String, MutableList<Ep>>()
         val seen = HashMap<String, Int>()
