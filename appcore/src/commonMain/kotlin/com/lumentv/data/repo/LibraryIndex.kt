@@ -17,7 +17,10 @@ import kotlinx.coroutines.withContext
  * background; about 2 MB per 10 000 titles.
  */
 class LibraryIndex(private val db: AppDatabase) {
-    class Index(movies: List<VodLite>, series: List<VodLite>, val channels: List<SmartSearch.Entry<ChannelLite>>) : TitleIndex(movies, series)
+    class Index(movies: List<VodLite>, series: List<VodLite>, channelList: List<ChannelLite>) : TitleIndex(movies, series) {
+        /** Prepared at the first search only: 56 000 channels took most of the time before the Films page could show. */
+        val channels: List<SmartSearch.Entry<ChannelLite>> by lazy { channelList.map { SmartSearch.Entry(it, it.name) } }
+    }
 
     private val lock = Mutex()
     private val built = HashMap<Long, Pair<Long, Index>>()
@@ -30,7 +33,7 @@ class LibraryIndex(private val db: AppDatabase) {
             val movies = withContext(IoDispatcher) { db.vod().movieIndex(pid).map { it.lite() } }
             val series = withContext(IoDispatcher) { db.vod().seriesIndex(pid).map { it.lite() } }
             val channels = withContext(IoDispatcher) { db.channels().channelIndex(pid) }
-            Index(movies, series, channels.map { SmartSearch.Entry(it, it.name) })
+            Index(movies, series, channels)
         }
         // Only the list in use: two big lists side by side ran the TV out of memory.
         built.clear()

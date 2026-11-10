@@ -20,8 +20,9 @@ open class TitleIndex(movies: List<VodLite>, series: List<VodLite>) {
     private fun keep(v: VodLite) = !Featured.foreign(v.name, v.category) && SmartSearch.languageRank(v.name) < 2
     val movies: List<SmartSearch.Entry<VodLite>> = movieList.map { SmartSearch.Entry(it, it.name) }
     val series: List<SmartSearch.Entry<VodLite>> = seriesList.map { SmartSearch.Entry(it, it.name) }
-    private val moviesByTitle = movieList.groupBy { key(it.name) }
-    private val seriesByTitle = seriesList.groupBy { key(it.name) }
+    // From the prepared titles: each title cleaned once, not twice (the time of a big list on a TV).
+    private val moviesByTitle = this.movies.groupBy({ it.compact }, { it.item })
+    private val seriesByTitle = this.series.groupBy({ it.compact }, { it.item })
 
     /** The playlist's copy of a TMDB title (in French when there is one, then subtitled, then other languages; the best quality first), or null. */
     fun find(series: Boolean, title: String, original: String, year: Int?): VodLite? {

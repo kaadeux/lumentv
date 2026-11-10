@@ -48,7 +48,10 @@ object Featured {
 
     /** "The Dog Stars (2026) 4K MULTI", "The Dog Stars (2026) SUBT AR" and "FR - The Dog Stars" are one title: "the dog stars". */
     fun baseTitle(name: String): String =
-        normalize(untagged(name).substringBefore(" (").substringBefore(" [").substringBefore(" | ").replace(Regex("\\b(4K|FHD|HD|SD|MULTI|VOSTFR|VOST|VF|VFF|VOF|SUBT AR)\\b.*$", RegexOption.IGNORE_CASE), ""))
+        normalize(untagged(name).substringBefore(" (").substringBefore(" [").substringBefore(" | ").replace(baseTags, ""))
+
+    // Made once: built at each call, it took most of the time of indexing a big list on a TV.
+    private val baseTags = Regex("\\b(4K|FHD|HD|SD|MULTI|VOSTFR|VOST|VF|VFF|VOF|SUBT AR)\\b.*$", RegexOption.IGNORE_CASE)
 
     /**
      * Arabic titles, Arabic-subtitled or dubbed copies and Arabic categories, not for this family: "AR · ARABE",

@@ -112,7 +112,9 @@ class LumenApp : Application(), ImageLoaderFactory {
             com.lumentv.phone.AutoRefresh.start(graph.core)
             graph.transfers.resumePending()
             val s = graph.settings.current()
-            (s.activePlaylistId.takeIf { it > 0 } ?: graph.playlists.all().firstOrNull()?.id)?.let {
+            // The list in use: a list removed since would have its (empty) index built instead of the real one.
+            val lists = graph.playlists.all()
+            (s.activePlaylistId.takeIf { id -> lists.any { it.id == id } } ?: lists.firstOrNull()?.id)?.let {
                 // Ready before the viewer opens Films or the search: the library's index (titles in memory).
                 runCatching { graph.index.of(it) }
                 // The sports (a 9 MB guide when older than 12 h) wait for the first screen to be drawn and used.

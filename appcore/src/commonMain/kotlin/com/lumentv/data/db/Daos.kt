@@ -114,10 +114,11 @@ data class VodIndexRow(val id: Long, val uid: String, val name: String, val cate
 
 @Dao
 interface VodDao {
-    @Query("SELECT id, uid, name, category, year, rating FROM movies WHERE playlistId = :pid")
+    /** The index's titles: not the copies written for another language ("DE - …"), which it leaves out anyway. */
+    @Query("SELECT id, uid, name, category, year, rating FROM movies WHERE playlistId = :pid AND NOT ((name GLOB '[A-Z][A-Z] - *' OR name GLOB '[A-Z][A-Z]|*' OR name GLOB '[A-Z][A-Z] |*' OR name GLOB '[A-Z][A-Z]-[A-Z]* - *') AND substr(name, 1, 2) NOT IN ('FR', 'EN'))")
     suspend fun movieIndex(pid: Long): List<VodIndexRow>
 
-    @Query("SELECT id, uid, name, category, year, rating FROM series WHERE playlistId = :pid")
+    @Query("SELECT id, uid, name, category, year, rating FROM series WHERE playlistId = :pid AND NOT ((name GLOB '[A-Z][A-Z] - *' OR name GLOB '[A-Z][A-Z]|*' OR name GLOB '[A-Z][A-Z] |*' OR name GLOB '[A-Z][A-Z]-[A-Z]* - *') AND substr(name, 1, 2) NOT IN ('FR', 'EN'))")
     suspend fun seriesIndex(pid: Long): List<VodIndexRow>
 
     @Query("""SELECT m.*, p.favorite AS favorite FROM movies m LEFT JOIN prefs p ON p.playlistId = m.playlistId AND p.kind = 'mv' AND p.uid = m.uid

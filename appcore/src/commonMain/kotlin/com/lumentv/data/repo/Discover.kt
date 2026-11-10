@@ -18,6 +18,8 @@ import com.lumentv.data.discover.Rated
 import com.lumentv.data.discover.Row
 import com.lumentv.data.discover.VodLite
 import com.lumentv.data.repo.LibraryRepository.Shelf
+import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -48,6 +50,8 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
 
     private fun rows(series: Boolean, pid: Long, history: List<HistoryEntity>, ratings: List<RatingEntity>): Flow<List<Row>> = flow {
         val kind = if (series) "se" else HistoryKind.MOVIE
+        // The index is the long part on a big list: built while the rest is read, not after.
+        val indexed = kotlinx.coroutines.CoroutineScope(currentCoroutineContext()).async { index.of(pid) }
         val hidden = db.prefs().allOf(pid, if (series) PrefKind.SERIES_CATEGORY else PrefKind.MOVIE_CATEGORY).filter { it.hidden }.mapTo(HashSet()) { it.uid }
         val recent = if (series) db.vod().recentSeries(pid, 200).map { VodLite(it.s.id, it.s.uid, it.s.name, it.s.category, it.s.year, it.s.rating) }
         else db.vod().recentMovies(pid, 200).map { VodLite(it.m.id, it.m.uid, it.m.name, it.m.category, it.m.year, it.m.rating) }
@@ -57,7 +61,7 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
             .groupBy { it.parentUid!! }.forEach { (uid, eps) -> watched[uid] = (eps.count { Resume.watched(it.positionMs, it.durationMs) } / 3.0).coerceIn(0.3, 1.0) }
         else history.filter { it.kind == HistoryKind.MOVIE && it.playlistId == pid }
             .forEach { h -> watched[h.uid] = if (h.durationMs > 0) (h.positionMs.toDouble() / h.durationMs).coerceIn(0.0, 1.0) else 0.5 }
-        val input = DiscoverInput(series, index.of(pid), recent,
+        val input = DiscoverInput(series, indexed.await(), recent,
             ratings.filter { it.playlistId == pid && it.kind == kind }.map { Rated(it.uid, it.stars, it.ratedAt) }, watched, hidden) { link(series, pid, it) }
         emitAll(engine.rows(input))
     }.flowOn(IoDispatcher)
