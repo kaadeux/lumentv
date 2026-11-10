@@ -88,15 +88,17 @@ fun LiveScreen(vm: MainViewModel) {
         ) { TvButton("Actualiser", { vm.refresh(p.id) }, primary = true) }
     }
 
-    var group by remember(p.id) { mutableStateOf(vm.liveGroup ?: Groups.ALL) }
+    var group by remember(p.id) { mutableStateOf(vm.liveGroup ?: Groups.START) }
     val groups by produceState<List<GroupInfo>?>(null, p.id, changes, settings.showHidden, p.lastRefresh) {
         value = vm.graph.library.groups(p.id, settings.showHidden)
     }
+    // First time here: the first French group rather than all the channels (long to show on a big list).
+    LaunchedEffect(groups) { groups?.let { if (group == Groups.START) group = Groups.pick(it) } }
     var pinFor by remember { mutableStateOf<String?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
     val locked = groups?.firstOrNull { it.name == group }?.locked == true && group !in vm.unlocked.value
     val channels by produceState<List<ChannelRow>?>(null, p.id, group, changes, settings.showHidden, settings.sort, p.lastRefresh, locked) {
-        value = if (locked) emptyList() else vm.graph.library.channels(p.id, group, settings.showHidden, settings.sort)
+        value = if (group == Groups.START) null else if (locked) emptyList() else vm.graph.library.channels(p.id, group, settings.showHidden, settings.sort)
     }
     var focused by remember { mutableStateOf<ChannelRow?>(null) }
     var filter by remember(p.id, group) { mutableStateOf("") }
@@ -109,7 +111,7 @@ fun LiveScreen(vm: MainViewModel) {
     val channelColumn: @Composable () -> Unit = {
             Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    when (group) { Groups.ALL -> "Chaînes"; Groups.FAVORITES -> "Favoris"; else -> group },
+                    when (group) { Groups.ALL, Groups.START -> "Chaînes"; Groups.FAVORITES -> "Favoris"; else -> group },
                     style = MaterialTheme.typography.titleLarge, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )

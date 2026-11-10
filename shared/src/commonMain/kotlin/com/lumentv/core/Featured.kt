@@ -40,6 +40,13 @@ object Featured {
         }
     }
 
+    /**
+     * The group the TV channels open on: the first French one the viewer can open ("FR| PRIME"), not all the channels,
+     * which on a list of every country took long to show. Null: no French group, all the channels then.
+     */
+    fun <T> startGroup(groups: List<T>, name: (T) -> String, usable: (T) -> Boolean = { true }): String? =
+        groups.firstOrNull { frenchRank(name(it)) == 0 && usable(it) }?.let(name)
+
     /** The groups in French first, each part in the provider's order: the same on every app. */
     fun <T> frenchFirst(list: List<T>, name: (T) -> String): List<T> = list.sortedBy { frenchRank(name(it)) }
 

@@ -166,10 +166,12 @@ private fun categoryMenu(state: AppState, kind: PcParental.Kind, id: String, rea
 @Composable
 fun LiveScreen(state: AppState) {
     val c = state.shownCatalog!!
-    var group by remember { mutableStateOf(ALL) }
+    val par = state.parental
+    // The first French group rather than all the channels (long to show on a big list).
+    var group by remember(state.activeKey) { mutableStateOf(Featured.startGroup(Featured.frenchFirst(c.channels.map { it.group }.distinct()) { it }, { it }) {
+        !par.isLocked(it) && !par.isHidden(PcParental.Kind.GROUP, it) } ?: ALL) }
     var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var selected by remember { mutableStateOf<Ch?>(null) }
-    val par = state.parental
     val groups = Featured.frenchFirst(c.channels.groupBy { it.group }.toList()) { it.first }.map { (g, l) -> g to "$g  (${l.size})" + (if (par.isLocked(g)) "  🔒" else "") + (if (par.isHidden(PcParental.Kind.GROUP, g)) " · masqué" else "") }
     val favUids = remember(state.doc.favorites, state.activeKey) { state.favorites(Kind.CHANNEL).map { it.uid } }
     val list = remember(c, group, filter, favUids, par.isOpen(group)) {

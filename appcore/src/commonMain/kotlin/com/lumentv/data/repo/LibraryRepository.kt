@@ -24,6 +24,12 @@ const val SEARCH_LIMIT = 300
 object Groups {
     const val ALL = "\u0001all"
     const val FAVORITES = "\u0001fav"
+    /** Not chosen yet: the first French group once the groups are read ([pick]). */
+    const val START = "\u0001start"
+
+    /** The group to open on: the first French one not locked nor hidden, else all the channels. */
+    fun pick(groups: List<GroupInfo>): String =
+        com.lumentv.core.Featured.startGroup(groups, { it.name }) { !it.locked && !it.hidden } ?: ALL
 }
 
 data class SearchResults(

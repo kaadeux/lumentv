@@ -424,17 +424,19 @@ private fun LiveHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open
     val sort = settings?.sort ?: "provider"
     val showHidden = settings?.showHidden ?: false
     val changes by core.library.changes.collectAsState()
-    val groups by produceState(emptyList<com.lumentv.data.repo.GroupInfo>(), p.id, p.lastRefresh, changes, showHidden) { value = core.library.groups(p.id, showHidden) }
-    var group by remember(p.id) { mutableStateOf(memory.values["live:group"] as? String ?: Groups.ALL) }
+    val groups by produceState<List<com.lumentv.data.repo.GroupInfo>?>(null, p.id, p.lastRefresh, changes, showHidden) { value = core.library.groups(p.id, showHidden) }
+    var group by remember(p.id) { mutableStateOf(memory.values["live:group"] as? String ?: Groups.START) }
+    // First time here: the first French group rather than all the channels (long to show on a big list).
+    androidx.compose.runtime.LaunchedEffect(groups) { groups?.let { if (group == Groups.START) group = Groups.pick(it) } }
     var filter by remember { mutableStateOf("") }
     var picker by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf<ChannelRow?>(null) }
     var groupMenu by remember { mutableStateOf(false) }
-    val info = groups.firstOrNull { it.name == group }
+    val info = groups?.firstOrNull { it.name == group }
     // A locked group shows nothing until the PIN is given.
     val locked = info?.locked == true && !Parental.isUnlocked(p.id, group)
     val channels by produceState<List<ChannelRow>?>(null, p.id, group, sort, changes, showHidden, locked) {
-        value = if (locked) emptyList() else core.library.channels(p.id, group, showHidden, sort)
+        value = if (group == Groups.START) null else if (locked) emptyList() else core.library.channels(p.id, group, showHidden, sort)
     }
     val shown = remember(channels, filter) {
         val f = com.lumentv.core.normalize(filter)
@@ -443,17 +445,17 @@ private fun LiveHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open
     val scope = rememberCoroutineScope()
     fun pick(g: String) {
         group = g; memory.values["live:group"] = g; filter = ""
-        if (groups.firstOrNull { it.name == g }?.locked == true) scope.launch { Parental.unlockGroup(core, p.id, g) }
+        if (groups?.firstOrNull { it.name == g }?.locked == true) scope.launch { Parental.unlockGroup(core, p.id, g) }
     }
     val pills = listOf(Groups.FAVORITES to "★ Mes chaînes", Groups.ALL to "Toutes") +
-        groups.map { it.name to it.name + (if (it.locked) "  🔒" else "") + (if (it.hidden) " · masqué" else "") }
+        groups.orEmpty().map { it.name to it.name + (if (it.locked) "  🔒" else "") + (if (it.hidden) " · masqué" else "") }
     Column(Modifier.fillMaxSize()) {
         LazyRow(state = rememberList("live:pills"), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item(key = "picker") { PhoneChip("Groupes  ▾") { picker = true } }
             items(pills, key = { it.first }) { (name, label) -> PhoneChip(label, selected = name == group) { pick(name) } }
         }
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(when (group) { Groups.ALL -> "Chaînes"; Groups.FAVORITES -> "Favoris"; else -> group }, fontSize = 22.sp, color = Palette.Text,
+            Text(when (group) { Groups.ALL, Groups.START -> "Chaînes"; Groups.FAVORITES -> "Favoris"; else -> group }, fontSize = 22.sp, color = Palette.Text,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             if (info != null) Box(Modifier.padding(end = 8.dp)) { PhoneChip("⋮") { groupMenu = true } }
             if (group != Groups.FAVORITES) PhoneChip(when (sort) { "az" -> "A → Z"; "za" -> "Z → A"; else -> "Ordre" }) {
@@ -483,7 +485,7 @@ private fun LiveHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, open
         }
     }
     if (picker) Options("Groupes", null, pills.map { (name, label) ->
-        Option(label + (groups.firstOrNull { it.name == name }?.let { "  ·  ${it.count}" } ?: ""), checked = name == group) { pick(name) }
+        Option(label + (groups?.firstOrNull { it.name == name }?.let { "  ·  ${it.count}" } ?: ""), checked = name == group) { pick(name) }
     }) { picker = false }
     menu?.let { c ->
         Options(c.ch.name, null, listOf(
