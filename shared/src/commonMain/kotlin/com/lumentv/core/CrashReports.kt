@@ -20,6 +20,12 @@ object CrashReports {
     /** What the reports say about the app and the device. */
     class App(val app: String, val version: String, val device: String, val os: String)
 
+    /** Whose device it is: the online profile signed in ("flo", the parents'), set by the apps once it is known. */
+    @kotlin.concurrent.Volatile var profile: String = ""
+
+    /** This device among those of a profile: the first letters of its random id (the same in every report). */
+    @kotlin.concurrent.Volatile var deviceId: String = ""
+
     /** The screen in use, set by the apps as the viewer moves: it says where the crash happened. */
     @kotlin.concurrent.Volatile var where: String = ""
 
@@ -32,6 +38,7 @@ object CrashReports {
     /** The report of [t] as it is sent. */
     fun report(t: Throwable, app: App, time: Long = nowMillis(), where: String = this.where): JsonObject = buildJsonObject {
         put("app", app.app); put("version", app.version); put("device", app.device); put("os", app.os)
+        put("profile", profile); put("deviceId", deviceId.take(8))
         put("time", time); put("where", where)
         put("error", mask("${t::class.simpleName ?: "Erreur"}: ${t.message.orEmpty()}").take(500))
         put("trace", mask(t.stackTraceToString()).take(TRACE))
@@ -51,6 +58,7 @@ object CrashReports {
             val old = runCatching { file.read()?.let { Json.parseToJsonElement(it).jsonArray.toList() } }.getOrNull().orEmpty()
             val r = buildJsonObject {
                 put("app", app.app); put("version", app.version); put("device", app.device); put("os", app.os)
+        put("profile", profile); put("deviceId", deviceId.take(8))
                 put("time", time); put("where", where); put("error", mask(error).take(500)); put("trace", mask(trace).take(TRACE))
             }
             file.write(JsonArray((old + r).takeLast(KEEP)).toString())

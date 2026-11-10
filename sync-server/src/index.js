@@ -18,7 +18,7 @@
 // Crash reports: an app that crashed sends what happened at its next start (the error, the app and version, the
 // device; accounts and addresses masked on the device). Write only: nobody reads them back through the web, the
 // developer reads them with wrangler (kv key list --prefix crash:). Kept 30 days.
-//   POST   /v1/crash   {app, version, device, os, time, where, error, trace}   -> 204
+//   POST   /v1/crash   {app, version, device, os, profile, deviceId, time, where, error, trace}   -> 204
 
 const MAX_BYTES = 4 * 1024 * 1024;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -171,6 +171,7 @@ async function crash(request, env) {
   const cut = (v, n) => String(v ?? "").slice(0, n);
   const report = {
     app: cut(b.app, 20), version: cut(b.version, 30), device: cut(b.device, 60), os: cut(b.os, 60),
+    profile: cut(b.profile, 60), deviceId: cut(b.deviceId, 12),
     time: Number(b.time) || Date.now(), where: cut(b.where, 80), error: cut(b.error, 500), trace: cut(b.trace, 48000),
     received: Date.now(),
   };

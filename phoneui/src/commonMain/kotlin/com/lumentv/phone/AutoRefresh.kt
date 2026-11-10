@@ -22,6 +22,9 @@ object AutoRefresh {
         if (started) return
         started = true
         core.scope.launch { while (true) { check(core); delay(30 * 60_000L) } }
+        // Whose device a crash report comes from: the profile signed in, and this device's id.
+        com.lumentv.core.CrashReports.deviceId = core.platform.deviceId
+        core.scope.launch { core.profile.state.collect { com.lumentv.core.CrashReports.profile = it.name.orEmpty() } }
         // A crash of an earlier session, sent to the sync server where the developer reads it (CrashReports).
         core.scope.launch(com.lumentv.core.IoDispatcher) {
             delay(5_000)

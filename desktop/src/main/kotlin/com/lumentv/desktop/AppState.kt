@@ -105,6 +105,11 @@ class AppState(private val scope: CoroutineScope) {
 
     init { PcSettings.read = { key, default -> setting(key, default) } }
 
+    // Whose PC a crash report comes from: the profile signed in, and this PC's id.
+    init {
+        com.lumentv.core.CrashReports.deviceId = prefs.get("device", "")
+        scope.launch { androidx.compose.runtime.snapshotFlow { profileName }.collect { com.lumentv.core.CrashReports.profile = it.orEmpty() } }
+    }
     // A crash of an earlier session, sent to the sync server where the developer reads it.
     init { scope.launch(Dispatchers.IO) { kotlinx.coroutines.delay(5_000); com.lumentv.core.CrashReports.send(crashFile, http.asHttp(), BuildInfo.SYNC_URL) } }
 
