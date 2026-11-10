@@ -246,7 +246,11 @@ class XtreamApi(private val http: Http, private val creds: XtreamCredentials, pr
             }
         }
 
-        private fun enc(s: String) = urlEncode(s)
+        /**
+         * A login in a URL: without the spaces a copy and paste leaves around it, a space inside written %20. "pass "
+         * encoded "pass+" was refused by the server for every stream (HTTP 513) though its list loaded.
+         */
+        private fun enc(s: String) = urlEncode(s.trim()).replace("+", "%20")
     }
 }
 

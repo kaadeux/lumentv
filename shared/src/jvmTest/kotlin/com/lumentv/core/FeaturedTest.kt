@@ -167,3 +167,11 @@ class SearchRankTest {
         kotlin.test.assertEquals(3L, SmartSearch.search(SmartSearch.Query("From"), idx.series, 10).first().id)
     }
 }
+
+class XtreamLoginTest {
+    @Test fun spacesAroundTheLoginDoNotReachTheServer() {
+        val api = com.lumentv.data.xtream.XtreamApi(object : Http { override fun execute(request: HttpRequest) = error("no") },
+            com.lumentv.data.xtream.XtreamCredentials("http://srv.example:80", " user ", "pa ss "), null)
+        kotlin.test.assertEquals("http://srv.example:80/live/user/pa%20ss/42.ts", api.liveUrl(42, "ts"))
+    }
+}

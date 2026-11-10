@@ -103,6 +103,12 @@ class Library(private val http: OkHttpClient) {
         }.getOrNull()
         PlaybackLog.line("diagnostic « ${ch.name} » : serveur annoncé ${if (info?.first == null) "?" else if (info.first == java.net.URI(base).host) "= adresse de la liste" else "≠ adresse de la liste"}, port ${info?.second}, formats ${info?.third}")
         val path = "live/$u/$pw/${ch.streamId}"
+        // Does the login change once encoded (special characters), or have spaces around it? (yes / no only)
+        PlaybackLog.line("diagnostic identifiants : encodage change le nom ${u != p.username}, le mot de passe ${pw != p.password}, " +
+            "espaces autour ${p.username != p.username.trim() || p.password != p.password.trim()}")
+        PlaybackLog.line("diagnostic ts, identifiants bruts : ${code("$base/live/${p.username}/${p.password}/${ch.streamId}.ts", null)}")
+        PlaybackLog.line("diagnostic ts, identifiants sans espaces : ${code("$base/live/${com.lumentv.core.urlEncode(p.username.trim())}/${com.lumentv.core.urlEncode(p.password.trim())}/${ch.streamId}.ts", null)}")
+        PlaybackLog.line("diagnostic ts, sans Range : ${runCatching { plain.newCall(Request.Builder().url("$base/$path.ts").build()).execute().use { "${it.code}" } }.getOrElse { "erreur" }}")
         listOf(
             "ts, lecteur par défaut" to ("$base/$path.ts" to null),
             "m3u8" to ("$base/$path.m3u8" to null),
@@ -241,7 +247,8 @@ class Library(private val http: OkHttpClient) {
     }
 
     private fun getJson(p: SyncPlaylist, action: String): kotlinx.serialization.json.JsonElement {
-        fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
+        // As XtreamApi: without the spaces around (a copy and paste), a space inside written %20.
+        fun enc(s: String) = java.net.URLEncoder.encode(s.trim(), "UTF-8").replace("+", "%20")
         val url = XtreamApi.normalizeServer(p.source) + "/player_api.php?username=${enc(p.username)}&password=${enc(p.password)}&action=$action"
         open(url, p.ua).use { return kotlinx.serialization.json.Json.parseToJsonElement(it.reader().readText()) }
     }
