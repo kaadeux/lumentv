@@ -28,7 +28,7 @@ import kotlinx.datetime.toLocalDateTime
  * league's own results page (LNR), for the live score and clock TheSportsDB's free key gives late or not at all.
  */
 data class League(val id: String, val sport: String, val label: String, val path: String, val tvFr: String? = null, val sportsDb: Boolean = false,
-                  val badgesFrom: String? = null, val lnr: String? = null)
+                  val badgesFrom: String? = null, val lnr: String? = null, val national: Boolean = false)
 
 data class Team(val name: String, val short: String?, val abbr: String?, val logo: String?) {
     /** Names a guide may use for this team, normalised: "Paris Saint-Germain", "PSG", "Le Havre AC" → "le havre", "havre". */
@@ -50,11 +50,40 @@ data class Team(val name: String, val short: String?, val abbr: String?, val log
         out.filter { it.length >= 3 }
     }
 
-    private companion object {
-        val noise = setOf("fc", "ac", "as", "sc", "cf", "afc", "ssc", "us", "sco", "ogc", "rc", "stade", "olympique", "club", "de", "du", "la", "le", "les", "real", "sporting")
+    companion object {
+        /** A national team's French name ("Italy" → "Italie", "Ireland Women" → "Irlande féminines"); null for a club. */
+        fun country(name: String): String? {
+            val women = name.endsWith(" Women")
+            val base = name.removeSuffix(" Women").removeSuffix(" U21").trim()
+            val fr = countries[base] ?: return null
+            return fr + when { women -> " féminines"; name.endsWith(" U21") -> " Espoirs"; else -> "" }
+        }
+
+        private val countries = mapOf(
+            "France" to "France", "Italy" to "Italie", "Turkey" to "Turquie", "Türkiye" to "Turquie", "Germany" to "Allemagne", "Spain" to "Espagne",
+            "England" to "Angleterre", "Scotland" to "Écosse", "Wales" to "Pays de Galles", "Ireland" to "Irlande", "Northern Ireland" to "Irlande du Nord",
+            "Republic of Ireland" to "Irlande", "Belgium" to "Belgique", "Netherlands" to "Pays-Bas", "Portugal" to "Portugal", "Switzerland" to "Suisse",
+            "Austria" to "Autriche", "Croatia" to "Croatie", "Serbia" to "Serbie", "Poland" to "Pologne", "Czechia" to "Tchéquie", "Czech Republic" to "Tchéquie",
+            "Slovakia" to "Slovaquie", "Slovenia" to "Slovénie", "Hungary" to "Hongrie", "Romania" to "Roumanie", "Bulgaria" to "Bulgarie", "Greece" to "Grèce",
+            "Denmark" to "Danemark", "Sweden" to "Suède", "Norway" to "Norvège", "Finland" to "Finlande", "Iceland" to "Islande", "Ukraine" to "Ukraine",
+            "Russia" to "Russie", "Georgia" to "Géorgie", "Armenia" to "Arménie", "Azerbaijan" to "Azerbaïdjan", "Albania" to "Albanie",
+            "North Macedonia" to "Macédoine du Nord", "Bosnia-Herzegovina" to "Bosnie-Herzégovine", "Bosnia and Herzegovina" to "Bosnie-Herzégovine",
+            "Montenegro" to "Monténégro", "Kosovo" to "Kosovo", "Israel" to "Israël", "Cyprus" to "Chypre", "Luxembourg" to "Luxembourg", "Malta" to "Malte",
+            "Estonia" to "Estonie", "Latvia" to "Lettonie", "Lithuania" to "Lituanie", "Belarus" to "Biélorussie", "Moldova" to "Moldavie", "Kazakhstan" to "Kazakhstan",
+            "Faroe Islands" to "Îles Féroé", "Andorra" to "Andorre", "San Marino" to "Saint-Marin", "Liechtenstein" to "Liechtenstein", "Gibraltar" to "Gibraltar",
+            "Brazil" to "Brésil", "Argentina" to "Argentine", "Uruguay" to "Uruguay", "Colombia" to "Colombie", "Chile" to "Chili", "Peru" to "Pérou",
+            "Ecuador" to "Équateur", "Paraguay" to "Paraguay", "Venezuela" to "Venezuela", "Bolivia" to "Bolivie", "Mexico" to "Mexique",
+            "United States" to "États-Unis", "USA" to "États-Unis", "Canada" to "Canada", "Morocco" to "Maroc", "Algeria" to "Algérie", "Tunisia" to "Tunisie",
+            "Senegal" to "Sénégal", "Ivory Coast" to "Côte d'Ivoire", "Côte d'Ivoire" to "Côte d'Ivoire", "Cameroon" to "Cameroun", "Egypt" to "Égypte",
+            "Nigeria" to "Nigeria", "Ghana" to "Ghana", "Mali" to "Mali", "South Africa" to "Afrique du Sud", "Japan" to "Japon", "South Korea" to "Corée du Sud",
+            "Korea Republic" to "Corée du Sud", "Australia" to "Australie", "New Zealand" to "Nouvelle-Zélande", "Saudi Arabia" to "Arabie saoudite",
+            "Qatar" to "Qatar", "Iran" to "Iran", "China" to "Chine", "Fiji" to "Fidji", "Samoa" to "Samoa", "Tonga" to "Tonga", "Namibia" to "Namibie",
+        )
+
+        private val noise = setOf("fc", "ac", "as", "sc", "cf", "afc", "ssc", "us", "sco", "ogc", "rc", "stade", "olympique", "club", "de", "du", "la", "le", "les", "real", "sporting")
 
         /** A club's name in French TV guides, by the (normalised) name or word ESPN uses. */
-        val frenchNames = mapOf(
+        private val frenchNames = mapOf(
             "napoli" to "naples", "como" to "come", "milan" to "milan ac", "ac milan" to "milan ac", "internazionale" to "inter milan",
             "inter" to "inter milan", "roma" to "as rome", "lazio" to "lazio rome", "fiorentina" to "fiorentina", "bayern munich" to "bayern munich",
             "bayern" to "bayern munich", "munchen" to "munich", "barcelona" to "barcelone", "sevilla" to "seville", "atletico madrid" to "atletico madrid",
@@ -130,7 +159,9 @@ class FixtureClient(
                 if (l.sportsDb) listOf(async { rounds(l, l.path, rounds).let { list -> if (l.lnr != null) withLnr(list, l.lnr) else list } })
                 else compact.map { d -> async { day(l, d).let { list -> l.badgesFrom?.let { id -> withCrests(list, crests.getValue(id).await()) } ?: list } } }
             }.awaitAll().flatten()
-        }.distinctBy { it.id }.filter { it.state == "in" || (it.state == "pre" && it.start > now - 3 * 3_600_000L && it.start < end) }
+        // National teams: the Bleus' games only, not the 50 others of a Nations League week.
+        }.distinctBy { it.id }.filter { !it.league.national || listOfNotNull(it.home?.name, it.away?.name).any { n -> n.startsWith("France") } }
+            .filter { it.state == "in" || (it.state == "pre" && it.start > now - 3 * 3_600_000L && it.start < end) }
             .sortedWith(compareBy({ !it.live }, { it.start }))
     }
 
@@ -265,7 +296,9 @@ class FixtureClient(
             fun team(c: JsonObject?): Team? {
                 val t = (c?.get("team") as? JsonObject) ?: (c?.get("athlete") as? JsonObject) ?: return null
                 val name = t.s("displayName") ?: return null
-                return Team(name, t.s("shortDisplayName"), t.s("abbreviation"), t.s("logo"))
+                // National teams by their French name ("Italy" → "Italie"), as on screen and in the TV guides.
+                val fr = Team.country(name)
+                return Team(fr ?: name, if (fr != null) fr else t.s("shortDisplayName"), t.s("abbreviation"), t.s("logo"))
             }
             Fixture(
                 id = o.s("id") ?: return@mapNotNull null, league = l, start = start, state = state,
@@ -392,10 +425,17 @@ class FixtureClient(
             League("esp1", "football", "Liga", "soccer/esp.1", "beIN Sports"),
             League("ita1", "football", "Serie A", "soccer/ita.1", "beIN Sports"),
             League("ger1", "football", "Bundesliga", "soccer/ger.1", "beIN Sports"),
+            // National teams: the Bleus' games were missing.
+            League("unl", "football", "Équipe de France : Ligue des nations", "soccer/uefa.nations", "TF1", national = true),
+            League("euroq", "football", "Équipe de France : qualifications Euro", "soccer/uefa.euroq", "TF1", national = true),
+            League("wcq", "football", "Équipe de France : qualifications Mondial", "soccer/fifa.worldq.uefa", "TF1", national = true),
+            League("friendly", "football", "Équipe de France : matchs amicaux", "soccer/fifa.friendly", "TF1", national = true),
             League("top14", "rugby", "Top 14", "rugby/270559", "Canal+", badgesFrom = "4430"),
             League("prod2", "rugby", "Pro D2", "5172", "Canal+", sportsDb = true, lnr = "https://prod2.lnr.fr/calendrier-et-resultats"),
             League("rcc", "rugby", "Champions Cup (rugby)", "rugby/271937", "France Télévisions ou beIN Sports"),
             League("6n", "rugby", "Six Nations", "rugby/180659", "France 2"),
+            League("nations", "rugby", "XV de France : tests de juillet et novembre", "rugby/17567", "France 2", national = true),
+            League("tests", "rugby", "XV de France : tests", "rugby/289234", "France 2", national = true),
             League("nba", "basket", "NBA", "basketball/nba", "beIN Sports"),
             League("f1", "moteur", "Formule 1", "racing/f1", "Canal+"),
             League("nfl", "nfl", "NFL", "football/nfl"),
