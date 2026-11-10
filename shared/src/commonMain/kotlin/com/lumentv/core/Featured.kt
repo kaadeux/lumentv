@@ -120,8 +120,10 @@ object Featured {
     fun versionLabel(name: String): String {
         val tags = copyPrefix.find(name)?.groupValues?.get(1)?.split('-', '/')?.takeIf { t -> t.any { it in tagNames } }.orEmpty()
         // After the year: in Latin letters only ("قلب هیولا" is the same title in Persian).
-        val after = name.substringAfterLast(")", "").replace(Regex("[^\\p{L}\\p{N} +\\-]|[\\u0590-\\u08FF]"), " ")
-            .replace(Regex("^[\\s\\-|:]+"), "").replace(Regex("\\s+"), " ").trim()
+        // Letter by letter, not with a Unicode regex: the iPhone's regex engine is not Android's.
+        val after = name.substringAfterLast(")", "")
+            .map { c -> if ((c.isLetterOrDigit() && c.code !in 0x0590..0x08FF) || c == '+' || c == '-') c else ' ' }
+            .joinToString("").trimStart(' ', '-').split(' ').filter { it.isNotEmpty() }.joinToString(" ")
         val label = (tags.map { tagNames[it] ?: it } + listOfNotNull(after.takeIf { it.isNotEmpty() })).joinToString(" · ")
         return label.ifBlank { name.substringAfter(" | ", "").trim() }.ifBlank { "Version" }
     }
