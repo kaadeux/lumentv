@@ -60,7 +60,13 @@ object Featured {
     fun <T> frenchFirst(list: List<T>, name: (T) -> String): List<T> = list.sortedBy { frenchRank(name(it)) }
 
     /** "FR - Heart of the Beast (2026)" → "Heart of the Beast (2026)". */
-    fun untagged(name: String): String = name.replaceFirst(langTag, "").ifBlank { name }
+    fun untagged(name: String): String {
+        // The copy's tags too ("TOP - ", "4K-TOP - ", "SE-CAM - "): the same film, not another one in the search.
+        copyPrefix.find(name)?.let { m ->
+            if (m.groupValues[1].split('-', '/').any { it in tagNames || it == "CAM" }) return name.substring(m.range.last + 1).ifBlank { name }
+        }
+        return name.replaceFirst(langTag, "").ifBlank { name }
+    }
 
     /** "The Dog Stars (2026) 4K MULTI", "The Dog Stars (2026) SUBT AR" and "FR - The Dog Stars" are one title: "the dog stars". */
     fun baseTitle(name: String): String =

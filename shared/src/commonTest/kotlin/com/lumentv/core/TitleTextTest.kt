@@ -36,3 +36,13 @@ class TitleTextTest {
         assertTrue(!SmartSearch.Entry(1, "Spider-man (IT)").english)
     }
 }
+
+class CopiesTest {
+    @Test fun oneFilmWhateverTheCopy() {
+        val names = listOf("4K-TOP - Spider-Man: Brand New Day (2026)", "TOP - Spider-Man: Brand New Day (2026)",
+            "EN - Spider-Man: Brand New Day  (2026)", "FR - Spider-Man: Brand New Day (2026)", "SE-CAM - Spider-Man: Brand New Day (2026)")
+        assertEquals(1, names.map { Featured.baseTitle(it) }.distinct().size)
+        assertEquals("From Scratch", Featured.untagged("NF - From Scratch"))
+        assertEquals("LOL - Qui rit sort", Featured.untagged("LOL - Qui rit sort"))
+    }
+}
