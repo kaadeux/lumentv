@@ -650,7 +650,7 @@ class PlayerWindow private constructor(private val state: AppState) {
                 }.getOrNull()
                 SwingUtilities.invokeLater {
                     if (warning == null) return@invokeLater show(state, item)
-                    val choice = JOptionPane.showOptionDialog(null, "<html><body style='width:360px'>$warning</body></html>", "Un autre écran regarde déjà",
+                    val choice = JOptionPane.showOptionDialog(null, "<html><body style='width:360px'>${warning.replace("\n", "<br>")}</body></html>", "Un autre écran regarde déjà",
                         JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, null, arrayOf("Lancer quand même", "Annuler"), "Annuler")
                     if (choice == 0) show(state, item)
                 }

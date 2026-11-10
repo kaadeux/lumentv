@@ -3,6 +3,7 @@ package com.lumentv.desktop
 import androidx.compose.runtime.mutableStateListOf
 import com.lumentv.core.userMessage
 import com.lumentv.data.xtream.Presence
+import com.lumentv.data.xtream.ScreenGuard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -100,7 +101,9 @@ class Downloads(private val scope: CoroutineScope, http: OkHttpClient, private v
         val req = Request.Builder().url(t.url).header("User-Agent", t.userAgent.ifBlank { "Lumen TV" })
             .apply { if (have > 0) header("Range", "bytes=$have-") }.build()
         val key = presenceKeyOf(t.playlist)
-        http.newCall(req).execute().use { r ->
+        // A download takes a screen at the provider like a stream: the screen check before playing knows it is this PC's.
+        ScreenGuard.started()
+        try { http.newCall(req).execute().use { r ->
             if (!r.isSuccessful) throw com.lumentv.core.HttpStatusException(r.code)
             if (r.code != 206) have = 0 // the server restarted from the beginning
             val total = (r.body!!.contentLength().takeIf { it > 0 } ?: 0) + have
@@ -128,7 +131,7 @@ class Downloads(private val scope: CoroutineScope, http: OkHttpClient, private v
                 }
                 withContext(Dispatchers.Main) { update(t.id) { it.copy(done = done, total = if (total > 0) total else done) } }
             }
-        }
+        } } finally { ScreenGuard.stopped() }
         key?.let { presence.leave(it) }
     }
 

@@ -10,8 +10,11 @@ import kotlinx.atomicfu.locks.synchronized
  * zapping or a stream that just stopped (the provider counts it for a little while longer) do not trigger the warning.
  */
 object ScreenGuard {
-    /** How long the provider may keep counting a stream after it stopped. */
-    private const val GRACE_MS = 90_000L
+    /**
+     * How long the provider may keep counting a stream after it stopped: several minutes on some servers (seen on
+     * Strong IPTV, 2026-11-10: still "1/1" a few minutes after the PC closed a film).
+     */
+    private const val GRACE_MS = 5 * 60_000L
 
     private val lock = SynchronizedObject()
     private var active = 0
@@ -30,7 +33,8 @@ object ScreenGuard {
         if (max <= 0 || used < max) return null
         val screens = if (max == 1) "un seul écran" else "$max écrans"
         return "Votre abonnement permet $screens et il est déjà utilisé sur un autre appareil ($used/$max). " +
-            "Si vous lancez la lecture ici, l'autre appareil risque d'être coupé, ou ce flux d'être refusé."
+            "Si vous lancez la lecture ici, l'autre appareil risque d'être coupé, ou ce flux d'être refusé.\n\n" +
+            "Si une lecture vient d'être arrêtée, le fournisseur peut mettre quelques minutes à libérer l'écran."
     }
 
     const val REFUSED = "Limite d'écrans atteinte : votre abonnement est déjà utilisé sur un autre appareil. Arrêtez la lecture là-bas puis réessayez."
