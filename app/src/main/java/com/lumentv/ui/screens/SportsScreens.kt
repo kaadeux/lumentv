@@ -59,6 +59,8 @@ fun SportsScreen(vm: MainViewModel) {
     val active by vm.active.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val p = active ?: return EmptyState("Aucune playlist", "")
+    if (p.lastEpgRefresh == 0L) return EmptyState("Sports pas encore prêts",
+        "Les matchs s'affichent dès que le guide TV est téléchargé : quelques minutes pour une grosse liste. Les chaînes se regardent déjà depuis l'onglet TV.")
     val prefs = SportPrefs.of(settings)
     // Same system as the PC: the official calendar.
     OfficialSports(vm, p.id, prefs)

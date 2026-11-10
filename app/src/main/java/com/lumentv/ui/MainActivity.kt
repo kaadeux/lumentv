@@ -175,11 +175,13 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
     val mini by vm.graph.miniPlayer.collectAsStateWithLifecycle()
     // V2: the screens under a bar of tabs at the top, a picture behind the films and series.
     val tabs = buildList {
-        if (p == null || p.channelCount > 0) add(TopTab(Screen.Live, "TV"))
-        if (p != null && p.channelCount > 0 && p.lastEpgRefresh > 0) add(TopTab(Screen.Guide, "Guide"))
-        if (p != null && p.channelCount > 0 && p.lastEpgRefresh > 0) add(TopTab(Screen.Sports, "Sports"))
-        if (p != null && p.movieCount > 0) add(TopTab(Screen.Movies, "Films"))
-        if (p != null && p.seriesCount > 0) add(TopTab(Screen.Series, "Séries"))
+        // Always the five tabs, in the same place: they used to appear one after the other while the list and its
+        // guide loaded (after a reload, or the box switched back on). A tab not ready yet says so.
+        add(TopTab(Screen.Live, "TV"))
+        add(TopTab(Screen.Guide, "Guide"))
+        add(TopTab(Screen.Sports, "Sports"))
+        add(TopTab(Screen.Movies, "Films"))
+        add(TopTab(Screen.Series, "Séries"))
     }
     val icons = buildList {
         if (mini != null) add(TopIcon(null, "Mini-lecteur", Icons.Filled.PlayArrow) { miniMenu = true })

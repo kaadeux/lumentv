@@ -140,6 +140,7 @@ fun MoviesScreen(vm: MainViewModel) {
     val history by vm.vodHistory.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val p = active ?: return EmptyState("Aucune playlist", "")
+    if (p.movieCount == 0) return EmptyState("Pas encore de films", "La liste est en cours de chargement, ou elle ne contient pas de films.")
     var cat by remember(p.id) { mutableStateOf(vm.movieCategory ?: RECENT) }
     val resume = resumeMovies(vm, p.id, history)
     var catMenu by remember { mutableStateOf<String?>(null) }
@@ -230,6 +231,7 @@ fun SeriesScreen(vm: MainViewModel) {
     val scope = rememberCoroutineScope()
     val history by vm.vodHistory.collectAsStateWithLifecycle()
     val p = active ?: return EmptyState("Aucune playlist", "")
+    if (p.seriesCount == 0) return EmptyState("Pas encore de séries", "La liste est en cours de chargement, ou elle ne contient pas de séries.")
     var cat by remember(p.id) { mutableStateOf(vm.seriesCategory ?: ALL) }
     val resume = resumeSeries(vm, p.id, history)
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()

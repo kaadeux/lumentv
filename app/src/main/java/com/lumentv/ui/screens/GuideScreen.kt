@@ -88,6 +88,8 @@ fun GuideScreen(vm: MainViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val p = active ?: return EmptyState("Aucune playlist", "Ajoutez une playlist dans les paramètres.")
+    if (p.lastEpgRefresh == 0L) return EmptyState("Guide TV pas encore chargé",
+        "Il s'affiche dès qu'il est téléchargé : quelques minutes pour une grosse liste. Les chaînes se regardent déjà depuis l'onglet TV.")
     val phone = com.lumentv.ui.LocalPhone.current
     val screenWidth = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
     if (phone) { Grid.windowMin = 90; Grid.channelCol = 58; Grid.dpPerMin = ((screenWidth - 24 - 58 - 6) / 90f).coerceAtLeast(2f) }
