@@ -32,6 +32,8 @@ class LibraryIndex(private val db: AppDatabase) {
             val channels = withContext(IoDispatcher) { db.channels().channelIndex(pid) }
             Index(movies, series, channels.map { SmartSearch.Entry(it, it.name) })
         }
+        // Only the list in use: two big lists side by side ran the TV out of memory.
+        built.clear()
         built[pid] = stamp to i
         i
     }
