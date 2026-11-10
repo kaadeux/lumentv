@@ -276,10 +276,10 @@ fun HistoryScreen(vm: MainViewModel) {
                     Logo(e.image, e.title, size = 40.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(e.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (e.kind == HistoryKind.CHANNEL) e.title else com.lumentv.core.Featured.shortTitle(e.title), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(listOfNotNull(
                             when (e.kind) { HistoryKind.CHANNEL -> "Chaîne"; HistoryKind.MOVIE -> "Film"; HistoryKind.FILE -> "Enregistrement"; else -> "Épisode" },
-                            e.subtitle, dayLabel(e.watchedAt) + " " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(e.watchedAt)),
+                            if (e.kind == HistoryKind.EPISODE) com.lumentv.core.Featured.episodeLine(e.subtitle) else e.subtitle, dayLabel(e.watchedAt) + " " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(java.util.Date(e.watchedAt)),
                         ).joinToString(" · "), style = MaterialTheme.typography.bodySmall, maxLines = 1)
                         if (e.durationMs > 0) ProgressLine(e.positionMs.toFloat() / e.durationMs, Modifier.fillMaxWidth(0.4f).padding(top = 4.dp))
                     }

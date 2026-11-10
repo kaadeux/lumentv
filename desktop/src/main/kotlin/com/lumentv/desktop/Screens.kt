@@ -534,8 +534,10 @@ fun HistoryScreen(state: AppState) {
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     AsyncImage(h.image, null, Modifier.size(48.dp).clip(RoundedCornerShape(6.dp)).background(Pal.panelHigh), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
                     Column(Modifier.weight(1f)) {
-                        Text(h.title, color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(listOfNotNull(when (h.kind) { Kind.CHANNEL -> "Chaîne"; Kind.MOVIE -> "Film"; else -> "Épisode" }, h.subtitle, fmt.format(Date(h.watchedAt))).joinToString(" · "),
+                        // The name without the copy's tags ("4K-TOP - Heart of the Beast (2026)" → "Heart of the Beast").
+                        Text(if (h.kind == Kind.CHANNEL) h.title else com.lumentv.core.Featured.shortTitle(h.title), color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(listOfNotNull(when (h.kind) { Kind.CHANNEL -> "Chaîne"; Kind.MOVIE -> "Film"; else -> "Épisode" },
+                            if (h.kind == Kind.CHANNEL || h.kind == Kind.MOVIE) h.subtitle else com.lumentv.core.Featured.episodeLine(h.subtitle), fmt.format(Date(h.watchedAt))).joinToString(" · "),
                             color = Pal.dim, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                         ratio(h)?.let { LinearProgressIndicator({ it }, Modifier.width(260.dp).height(3.dp).padding(top = 4.dp)) }
                     }
@@ -557,7 +559,7 @@ private class ResumeItem(val key: String, val title: String, val line: String?, 
 @Composable
 private fun resumeMovies(state: AppState): List<ResumeItem> = remember(state.doc.history, state.activeKey) {
     state.historyOf(Kind.MOVIE).filter { com.lumentv.core.Resume.movieToResume(it.positionMs, it.durationMs) }.take(com.lumentv.core.Resume.LIMIT).map { h ->
-        ResumeItem(h.uid, h.title, com.lumentv.core.Resume.remaining(h.positionMs, h.durationMs), h.image, ratio(h), { state.resume(h) }, Kind.MOVIE, listOf(h.uid))
+        ResumeItem(h.uid, com.lumentv.core.Featured.shortTitle(h.title), com.lumentv.core.Resume.remaining(h.positionMs, h.durationMs), h.image, ratio(h), { state.resume(h) }, Kind.MOVIE, listOf(h.uid))
     }
 }
 

@@ -84,7 +84,7 @@ internal fun HistoryPage(core: AppCore, player: VideoPlayer, open: (Route) -> Un
                     }
                     Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(Featured.shortTitle(e.title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(listOfNotNull(if (e.kind == HistoryKind.MOVIE) "Film" else "Série", e.subtitle).joinToString(" · "),
+                        Text(listOfNotNull(if (e.kind == HistoryKind.MOVIE) "Film" else "Série", if (e.kind == HistoryKind.EPISODE) Featured.episodeLine(e.subtitle) else e.subtitle).joinToString(" · "),
                             color = Palette.TextDim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(dayLabel(e.watchedAt) + " à " + hm(e.watchedAt), color = Palette.TextDim, fontSize = 12.sp)
                         if (e.durationMs > 0) ProgressLine((e.positionMs.toFloat() / e.durationMs).coerceIn(0f, 1f), Modifier.fillMaxWidth(0.6f).padding(top = 4.dp))

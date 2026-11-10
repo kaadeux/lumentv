@@ -46,3 +46,13 @@ class CopiesTest {
         assertEquals("LOL - Qui rit sort", Featured.untagged("LOL - Qui rit sort"))
     }
 }
+
+class HistoryNamesTest {
+    @Test fun readableNames() {
+        assertEquals("Heart of the Beast", Featured.shortTitle("4K-TOP - Heart of the Beast (2026)"))
+        assertEquals("FROM", Featured.shortTitle("FR - FROM (2022) (US)"))
+        assertEquals("S1 E8 · Le Changement de ligne", Featured.episodeLine("S1 E8 · FR - Off Campus (2026) (US) - S01E08 - Le Changement de ligne"))
+        assertEquals("S1 E1 · Long Day's Journey Into Night", Featured.episodeLine("S1 E1 · FR - From - S01E01 - Long Day's Journey Into Night"))
+        assertEquals("S2 E3 · Le retour", Featured.episodeLine("S2 E3 · Le retour"))
+    }
+}

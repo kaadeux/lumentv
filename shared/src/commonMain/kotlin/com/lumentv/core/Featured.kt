@@ -59,6 +59,21 @@ object Featured {
     /** The groups in French first, each part in the provider's order: the same on every app. */
     fun <T> frenchFirst(list: List<T>, name: (T) -> String): List<T> = list.sortedBy { frenchRank(name(it)) }
 
+    /**
+     * An episode's line as the history keeps it, readable: "S1 E8 · FR - Off Campus (2026) (US) - S01E08 - Le Changement
+     * de ligne" → "S1 E8 · Le Changement de ligne" (the provider repeats the series and the number in the title).
+     */
+    fun episodeLine(line: String?): String? {
+        if (line.isNullOrBlank()) return line
+        val head = line.substringBefore(" · ", "")
+        val rest = if (head.isEmpty()) line else line.substringAfter(" · ")
+        val name = episodeNumber.find(rest)?.let { rest.substring(it.range.last + 1).trim(' ', '-', '|', ':', '·') }?.takeIf { it.isNotBlank() }
+            ?: untagged(rest)
+        return if (head.isEmpty()) name else "$head · $name"
+    }
+
+    private val episodeNumber = Regex("\\bS\\d{1,2}\\s*E\\d{1,3}\\b", RegexOption.IGNORE_CASE)
+
     /** "FR - Heart of the Beast (2026)" → "Heart of the Beast (2026)". */
     fun untagged(name: String): String {
         // The copy's tags too ("TOP - ", "4K-TOP - ", "SE-CAM - "): the same film, not another one in the search.
