@@ -60,6 +60,9 @@ interface ChannelDao {
     @Query("SELECT id, name, number FROM channels WHERE playlistId = :pid")
     suspend fun channelIndex(pid: Long): List<ChannelLite>
 
+    @Query("SELECT id, name, groupName FROM channels WHERE playlistId = :pid")
+    suspend fun namesAndGroups(pid: Long): List<ChannelNameGroup>
+
     @Query("$CH_SELECT WHERE c.id IN (:ids) AND IFNULL(p.hidden, 0) = 0")
     suspend fun byIds(ids: List<Long>): List<ChannelRow>
 

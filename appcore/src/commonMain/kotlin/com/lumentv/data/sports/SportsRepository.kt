@@ -13,6 +13,7 @@ import com.lumentv.data.repo.LibraryRepository
 import com.lumentv.data.settings.Settings
 import com.lumentv.data.settings.SettingsStore
 import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 data class SportPrefs(val sports: Set<String>, val competitions: List<String>, val teams: List<String>, val days: Int,
@@ -33,6 +34,23 @@ class SportsRepository(
     private val fixtures: FixtureClient,
     private val frenchGuide: FrenchTvGuide,
 ) {
+    /**
+     * The playlist's French channels, not hidden: the only ones the panel shows. Picked by name and group first, then
+     * read in full: reading the 56 000 channels of a big list, twice, took most of the 25 s the panel waited for.
+     */
+    private val frenchLock = kotlinx.coroutines.sync.Mutex()
+    @kotlin.concurrent.Volatile private var french: Triple<Long, String, List<ChannelRow>>? = null
+
+    private suspend fun frenchChannels(pid: Long): List<ChannelRow> = frenchLock.withLock {
+        val version = "${db.playlists().get(pid)?.lastRefresh}:${library.changes.value}"
+        french?.let { (p, v, list) -> if (p == pid && v == version) return@withLock list }
+        val ids = db.channels().namesAndGroups(pid).filter { FrenchTvGuide.french(it.name, it.groupName) }.map { it.id }
+        ids.chunked(500).flatMap { db.channels().byIds(it) }.sortedBy { it.ch.number }.also { french = Triple(pid, version, it) }
+    }
+
+    /** "(2026-10-30 17:28:00)" in a name: a pay-per-view event channel. */
+    private val dated = Regex("20[0-9][0-9]-[01][0-9]-[0-3][0-9]")
+
     /** epg key -> channels of the playlist that show it, rebuilt when the guide changes. */
     private var channelIndex: Triple<Long, Int, Map<String, List<ChannelRow>>>? = null
 
@@ -41,7 +59,7 @@ class SportsRepository(
         channelIndex?.let { (p, v, map) -> if (p == pid && v == version) return map }
         val m = epg.matcher(pid)
         val out = HashMap<String, MutableList<ChannelRow>>()
-        db.channels().inGroup(pid, null).filter { !it.isHidden }.forEach { c ->
+        frenchChannels(pid).forEach { c ->
             m.keyFor(c.epgOverride, c.ch.epgId, c.ch.name)?.let { out.getOrPut(it) { ArrayList() } += c }
         }
         return out.also { channelIndex = Triple(pid, version, it) }
@@ -78,10 +96,10 @@ class SportsRepository(
         val version = "${db.playlists().get(pid)?.lastRefresh}:${library.changes.value}"
         maps?.let { (p, v, m) -> if (p == pid && v == version) return@coroutineScope m }
         val named = async {
-            db.channels().withDates(pid).filter { !it.isHidden }.mapNotNull { r -> EventChannelParser.parse(r.ch.name)?.let { (l, t) -> Triple(r, normalize(l), t) } }
+            frenchChannels(pid).filter { dated.containsMatchIn(it.ch.name) }.mapNotNull { r -> EventChannelParser.parse(r.ch.name)?.let { (l, t) -> Triple(r, normalize(l), t) } }
         }
         val byKey = async {
-            db.channels().inGroup(pid, null).filter { !it.isHidden && FrenchTvGuide.frenchOrPlain(it.ch.name) }.groupBy { FrenchTvGuide.channelKey(it.ch.name) }
+            frenchChannels(pid).groupBy { FrenchTvGuide.channelKey(it.ch.name) }
         }
         ChannelMaps(named.await(), byKey.await()).also { maps = Triple(pid, version, it) }
     }

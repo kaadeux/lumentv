@@ -142,8 +142,12 @@ class FrenchTvGuide(private val http: Http, private val cacheFile: TextFile, pri
             if ((name + group).any { it in '؀'..'ۿ' }) return false
             val words = (com.lumentv.core.normalize(name) + " " + com.lumentv.core.normalize(group)).split(' ').toSet()
             // "Borussia Dortmund v Real Madrid": the English way of writing a game (French channels write "-" or "/").
-            return words.none { it in foreign } && !Regex("\\S \\bv\\b \\S").containsMatchIn(name)
+            return words.none { it in foreign } && !englishGame.containsMatchIn(name)
         }
+
+        // Made once: built at each call, they took seconds over the 56 000 channels of a big list.
+        private val englishGame = Regex("\\S \\bv\\b \\S")
+        private val countryPrefix = Regex("^\\s*([A-Za-z0-9]{2,3})\\s*[|:]")
 
         private val foreign = setOf("ar", "arab", "arabic", "arabe", "uk", "us", "usa", "es", "esp", "espana", "spain", "it", "ita", "italia",
             "de", "ger", "germany", "deutsch", "pt", "portugal", "br", "brasil", "nl", "tr", "turk", "turkey", "pl", "ru", "en", "eng", "english",
@@ -151,7 +155,7 @@ class FrenchTvGuide(private val http: Http, private val cacheFile: TextFile, pri
 
         /** A playlist channel the viewer can use for a French broadcast: no country prefix, or FR. */
         fun frenchOrPlain(name: String): Boolean {
-            val m = Regex("^\\s*([A-Za-z0-9]{2,3})\\s*[|:]").find(name) ?: return true
+            val m = countryPrefix.find(name) ?: return true
             return m.groupValues[1].equals("FR", true)
         }
     }
