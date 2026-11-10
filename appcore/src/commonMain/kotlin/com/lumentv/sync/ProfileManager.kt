@@ -15,6 +15,7 @@ import com.lumentv.data.db.PlaylistEntity
 import com.lumentv.data.db.PrefEntity
 import com.lumentv.data.db.RatingEntity
 import com.lumentv.data.repo.EpgRepository
+import com.lumentv.data.repo.HistoryTransfer
 import com.lumentv.data.repo.LibraryRepository
 import com.lumentv.data.repo.PlaylistRepository
 import com.lumentv.data.settings.Keys
@@ -147,7 +148,8 @@ class ProfileManager(
     /** This TV's state as a profile, every `at` = 0. Items of playlists this TV does not have are carried over. */
     private suspend fun currentDoc(synced: ProfileDoc?): ProfileDoc {
         val pls = db.playlists().all()
-        val keys = pls.associate { it.id to keyOf(it) }
+        // The history kept aside (a list removed) goes with the profile too: a reinstalled app finds it again.
+        val keys = pls.associate { it.id to keyOf(it) } + (HistoryTransfer.RESERVE to RESERVE_KEY)
         val here = keys.values.toSet()
         val favorites = db.prefs().everything().filter { it.favorite && it.playlistId in keys }.associate {
             val pk = keys.getValue(it.playlistId)
@@ -164,7 +166,7 @@ class ProfileManager(
         } + synced?.ratings.orEmpty().filterValues { it.playlist !in here }
         return ProfileDoc(
             playlists = pls.associate { p ->
-                keys.getValue(p.id) to SyncPlaylist(p.name, p.type, SecretBox.decrypt(p.sourceEnc), p.username, SecretBox.decrypt(p.passwordEnc),
+                keyOf(p) to SyncPlaylist(p.name, p.type, SecretBox.decrypt(p.sourceEnc), p.username, SecretBox.decrypt(p.passwordEnc),
                     SecretBox.decrypt(p.epgUrlEnc), p.epgOffsetMinutes, p.userAgent, p.liveFormat, p.refreshHours, p.dedupe)
             },
             favorites = favorites,
@@ -192,7 +194,7 @@ class ProfileManager(
                 p.epgOffsetMinutes != sp.epgOffsetMinutes || p.userAgent != sp.userAgent || p.liveFormat != sp.liveFormat ||
                 p.refreshHours != sp.refreshHours || p.dedupe != sp.dedupe) { playlists.save(wanted); changed = true }
         }
-        val ids = db.playlists().all().associate { keyOf(it) to it.id }
+        val ids = db.playlists().all().associate { keyOf(it) to it.id } + (RESERVE_KEY to HistoryTransfer.RESERVE)
         for (f in d.favorites.values) {
             val pid = ids[f.playlist] ?: continue
             val cur = db.prefs().get(pid, f.kind, f.uid)
@@ -225,5 +227,9 @@ class ProfileManager(
         }
     }
 
-    private companion object { const val TAG = "ProfileManager" }
+    private companion object {
+        const val TAG = "ProfileManager"
+        /** The profile's name for the history kept aside: no real list has it (theirs are "type|source|user"). */
+        const val RESERVE_KEY = "~reserve"
+    }
 }
