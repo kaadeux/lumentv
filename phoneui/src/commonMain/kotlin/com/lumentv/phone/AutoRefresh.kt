@@ -22,6 +22,11 @@ object AutoRefresh {
         if (started) return
         started = true
         core.scope.launch { while (true) { check(core); delay(30 * 60_000L) } }
+        // A crash of an earlier session, sent to the sync server where the developer reads it (CrashReports).
+        core.scope.launch(com.lumentv.core.IoDispatcher) {
+            delay(5_000)
+            com.lumentv.core.CrashReports.send(com.lumentv.core.CrashReports.fileIn(core.platform.filesDir), core.platform.http, core.platform.syncUrl)
+        }
         // The search ready before the viewer opens it, once the first screen is drawn.
         core.scope.launch { delay(10_000); prewarm(core) }
     }

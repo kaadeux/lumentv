@@ -87,11 +87,49 @@ class AppGraph(app: Application) {
 }
 
 class LumenApp : Application(), ImageLoaderFactory {
+    /**
+     * A crash is written down before the app closes, and sent at the next start (CrashReports, shared with the iPhone
+     * and the PC). The system's own records add what Kotlin cannot catch: a freeze (ANR), a crash in the video
+     * decoder, a kill for lack of memory.
+     */
+    private fun installCrashReports() {
+        val app = com.lumentv.core.CrashReports.App(
+            if (com.lumentv.ui.Device.isTv(this)) "tv" else "android", BuildConfig.VERSION_NAME,
+            android.provider.Settings.Global.getString(contentResolver, "device_name") ?: "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+            "Android ${android.os.Build.VERSION.RELEASE} · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+        val file = com.lumentv.core.CrashReports.fileIn(filesDir.path)
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, e ->
+            com.lumentv.core.CrashReports.record(file, e, app)
+            previous?.uncaughtException(thread, e)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 30) Thread {
+            runCatching {
+                val prefs = getSharedPreferences("crash", MODE_PRIVATE)
+                val since = prefs.getLong("exitsSeen", 0)
+                val am = getSystemService(android.app.ActivityManager::class.java)
+                val exits = am.getHistoricalProcessExitReasons(packageName, 0, 10).filter { it.timestamp > since }
+                // The first time: only remember where we are (old exits are not news).
+                if (since > 0) exits.filter { it.reason in setOf(android.app.ApplicationExitInfo.REASON_ANR,
+                    android.app.ApplicationExitInfo.REASON_CRASH_NATIVE, android.app.ApplicationExitInfo.REASON_LOW_MEMORY) }.forEach { x ->
+                    val kind = when (x.reason) { android.app.ApplicationExitInfo.REASON_ANR -> "Gel (ANR)"
+                        android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "Plantage natif"; else -> "Fermée faute de mémoire" }
+                    val trace = if (x.reason == android.app.ApplicationExitInfo.REASON_ANR)
+                        runCatching { x.traceInputStream?.bufferedReader()?.use { it.readText() } }.getOrNull().orEmpty().take(30_000) else ""
+                    com.lumentv.core.CrashReports.recordText(file, "$kind : ${x.description.orEmpty()}",
+                        "processus ${x.processName} · mémoire ${x.pss / 1024} Mo\n$trace", app, x.timestamp)
+                }
+                prefs.edit().putLong("exitsSeen", maxOf(since, exits.maxOfOrNull { it.timestamp } ?: System.currentTimeMillis())).apply()
+            }
+        }.start()
+    }
+
     lateinit var graph: AppGraph
         private set
 
     override fun onCreate() {
         super.onCreate()
+        installCrashReports()
         graph = AppGraph(this)
         graph.profile.startWithAppLifecycle(graph.appScope)
         // Request counters, for measuring: "adb shell setprop log.tag.LumenNet DEBUG" writes them every minute.

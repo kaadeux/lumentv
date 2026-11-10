@@ -137,6 +137,7 @@ fun AppShell(vm: MainViewModel, firstLaunch: Boolean) {
     // A sub-screen (details, playlist form…) takes the focus as soon as it opens, instead of leaving it on the menu.
     var contentHasFocus by remember { mutableStateOf(false) }
     LaunchedEffect(vm.current) {
+        com.lumentv.core.CrashReports.where = vm.current.toString()
         if (vm.stack.size > 1 || vm.focusContent) {
             vm.focusContent = false
             // The screen may still be loading (nothing focusable yet): try again until the focus is inside it.

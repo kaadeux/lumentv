@@ -111,6 +111,7 @@ fun PhoneShell(vm: MainViewModel, firstLaunch: Boolean, screen: @Composable (Scr
     }
 
     val loading by vm.loading.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(vm.current) { com.lumentv.core.CrashReports.where = vm.current.toString() }
     Column(Modifier.fillMaxSize().background(Palette.Background)) {
         loading?.let { com.lumentv.ui.kit.KitLoadingBar(it.label, it.fraction, Modifier.padding(horizontal = 12.dp, vertical = 6.dp).fillMaxWidth()) }
         // Title bar

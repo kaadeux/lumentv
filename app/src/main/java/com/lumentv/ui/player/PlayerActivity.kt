@@ -99,6 +99,7 @@ class PlayerActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        com.lumentv.core.CrashReports.where = "Lecteur"
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         phone = !com.lumentv.ui.Device.isTv(this)

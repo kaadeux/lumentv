@@ -209,6 +209,8 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
     Column(Modifier.fillMaxSize().background(Palette.Background).windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
         androidx.compose.foundation.layout.WindowInsetsSides.Top + androidx.compose.foundation.layout.WindowInsetsSides.Horizontal))) {
         val route = stack.lastOrNull()
+        // Where a crash happens, for its report.
+        androidx.compose.runtime.SideEffect { com.lumentv.core.CrashReports.where = route?.let { it::class.simpleName } ?: tab.name }
         TitleBar(if (route == null) null else titleOf(route), tab.label, onBack = back, onSearch = if (tab != Tab.SEARCH || route != null) ({
             tab = Tab.SEARCH; stack.clear(); memory.clear()
         }) else null)

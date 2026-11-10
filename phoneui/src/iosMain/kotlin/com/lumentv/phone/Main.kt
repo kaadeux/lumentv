@@ -71,8 +71,25 @@ private fun Images() = setSingletonImageLoaderFactory { context ->
         .build()
 }
 
+/**
+ * An error Kotlin does not catch closes the app (the Films tab of 0.16.14): written down first, then sent at the next
+ * start (CrashReports, the same as on Android and the PC).
+ */
+@OptIn(kotlin.experimental.ExperimentalNativeApi::class)
+private fun installCrashReports() {
+    val app = com.lumentv.core.CrashReports.App("iphone", plist("CFBundleShortVersionString") + " (" + plist("CFBundleVersion") + ")",
+        UIDevice.currentDevice.name, "iOS " + UIDevice.currentDevice.systemVersion + " · " + UIDevice.currentDevice.model)
+    val file = com.lumentv.core.CrashReports.fileIn(folder(NSDocumentDirectory))
+    var previous: kotlin.native.ReportUnhandledExceptionHook? = null
+    previous = kotlin.native.setUnhandledExceptionHook { e ->
+        com.lumentv.core.CrashReports.record(file, e, app)
+        previous?.invoke(e)
+    }
+}
+
 /** Called by the Swift app (iosApp/): the whole app as one view controller; [player] is KSPlayer, Swift side. */
 fun MainViewController(player: VideoPlayer, downloader: FileDownloader): UIViewController {
+    installCrashReports()
     IosApp.downloads.downloader = downloader
     return ComposeUIViewController {
         Images()

@@ -56,7 +56,14 @@ enum class Section(val label: String, val icon: ImageVector) {
     Settings("Paramètres", Icons.Filled.Settings),
 }
 
+/** A crash is written down before the app closes, and sent at the next start (CrashReports, as on the TV and the iPhone). */
+val crashApp = com.lumentv.core.CrashReports.App("pc", BuildInfo.VERSION, System.getenv("COMPUTERNAME") ?: "PC",
+    "${System.getProperty("os.name")} ${System.getProperty("os.version")}")
+val crashFile get() = com.lumentv.core.CrashReports.fileIn(Store.dir.path)
+
 fun main() {
+    val previous = Thread.getDefaultUncaughtExceptionHandler()
+    Thread.setDefaultUncaughtExceptionHandler { t, e -> com.lumentv.core.CrashReports.record(crashFile, e, crashApp); previous?.uncaughtException(t, e) }
     // DirectX (Skiko's default on Windows) leaves black strips on hover effects with some graphics cards: OpenGL unless
     // the user picked another mode in Settings (or LUMEN_RENDER is set).
     System.setProperty("skiko.renderApi", System.getenv("LUMEN_RENDER") ?: Store.renderApi)
@@ -90,6 +97,7 @@ fun Shell(state: AppState) {
     // LUMEN_SECTION opens a given screen at launch (used for screenshots).
     val start = System.getenv("LUMEN_SECTION")?.let { s -> Section.entries.firstOrNull { it.name.equals(s, true) } }
     var section by remember { mutableStateOf(start ?: if (state.playlists.isEmpty()) Section.Settings else Section.Live) }
+    androidx.compose.runtime.SideEffect { com.lumentv.core.CrashReports.where = section.name }
     val sectionStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     Row(Modifier.fillMaxSize().background(Pal.bg)) {
         Column(Modifier.width(220.dp).fillMaxHeight().background(Pal.side).padding(12.dp)) {

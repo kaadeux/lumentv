@@ -14,6 +14,11 @@
 //   GET    /v1/presence/:id?device=<own id>   -> 200 {others: [{name, until}]}
 //   PUT    /v1/presence/:id   {device, name, ttl}   -> 204   (heartbeat while playing)
 //   DELETE /v1/presence/:id?device=<own id>   -> 204   (stopped)
+//
+// Crash reports: an app that crashed sends what happened at its next start (the error, the app and version, the
+// device; accounts and addresses masked on the device). Write only: nobody reads them back through the web, the
+// developer reads them with wrangler (kv key list --prefix crash:). Kept 30 days.
+//   POST   /v1/crash   {app, version, device, os, time, where, error, trace}   -> 204
 
 const MAX_BYTES = 4 * 1024 * 1024;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -22,6 +27,8 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/" || url.pathname === "/v1/health") return json({ ok: true, service: "lumentv-sync" });
+
+    if (url.pathname === "/v1/crash") return crash(request, env);
 
     const pr = url.pathname.match(/^\/v1\/presence\/([0-9a-f]{64})$/);
     if (pr) return presence(request, env, pr[1]);
@@ -150,4 +157,25 @@ async function presence(request, env, id) {
     return new Response(null, { status: 204 });
   }
   return json({ error: "method" }, 405);
+}
+
+const CRASH_BYTES = 64 * 1024;
+
+async function crash(request, env) {
+  if (request.method !== "POST") return json({ error: "method" }, 405);
+  if (Number(request.headers.get("Content-Length") || 0) > CRASH_BYTES) return json({ error: "too large" }, 413);
+  const text = await request.text();
+  if (text.length > CRASH_BYTES) return json({ error: "too large" }, 413);
+  let b;
+  try { b = JSON.parse(text); } catch { return json({ error: "bad json" }, 400); }
+  const cut = (v, n) => String(v ?? "").slice(0, n);
+  const report = {
+    app: cut(b.app, 20), version: cut(b.version, 30), device: cut(b.device, 60), os: cut(b.os, 60),
+    time: Number(b.time) || Date.now(), where: cut(b.where, 80), error: cut(b.error, 500), trace: cut(b.trace, 48000),
+    received: Date.now(),
+  };
+  if (!report.app || !report.error) return json({ error: "bad body" }, 400);
+  const key = `crash:${new Date(report.time).toISOString()}:${report.app}:${crypto.randomUUID().slice(0, 8)}`;
+  await env.IOS.put(key, JSON.stringify(report), { expirationTtl: 30 * 86400 });
+  return new Response(null, { status: 204 });
 }
