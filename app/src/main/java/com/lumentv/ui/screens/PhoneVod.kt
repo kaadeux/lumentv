@@ -95,7 +95,7 @@ internal fun PhoneVodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow
     // The banner: the first titles TMDB puts forward (not the resume row, already a row of its own).
     val heroes = remember(shown.map { it.key }) {
         (listOf("Recommandé pour vous", "Tendances du moment").firstNotNullOfOrNull { t -> shown.firstOrNull { it.title == t } }
-            ?: shown.firstOrNull { it.key.startsWith("shelf") && it.title != "Vos notes" } ?: shown.firstOrNull())?.tiles?.take(5).orEmpty()
+            ?: shown.firstOrNull { it.key.startsWith("shelf") && it.title != com.lumentv.data.discover.DiscoverEngine.NEW_EPISODES } ?: shown.firstOrNull())?.tiles?.take(5).orEmpty()
     }
     val list = androidx.compose.foundation.lazy.rememberLazyListState(
         (vm.memo["$memoKey:index"] as? Int) ?: 0, (vm.memo["$memoKey:offset"] as? Int) ?: 0)
@@ -192,6 +192,7 @@ private fun PhoneRow(row: HomeRow) {
                     Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(8.dp)).combinedClickable(onClick = t.onClick, onLongClick = t.onLong)) {
                         Poster(t.image, t.title, Modifier.fillMaxSize(), t.search)
                         t.progress?.takeIf { it > 0f }?.let { ProgressLine(it, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp)) }
+                        t.badge?.let { com.lumentv.ui.kit.KitBadge(it, Modifier.align(Alignment.TopStart).padding(5.dp)) }
                     }
                     // "Reprendre la lecture": which episode, how long is left.
                     if (resume) t.hero.meta.firstOrNull()?.let {

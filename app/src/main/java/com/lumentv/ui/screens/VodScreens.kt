@@ -261,7 +261,7 @@ fun SeriesScreen(vm: MainViewModel) {
         val catRows = cats.orEmpty().filter { !com.lumentv.core.Featured.foreign("", it.category) }.take(10)
         val rows = buildList {
             if (resume.isNotEmpty()) add(HomeRow("resume", "Reprendre la lecture", resume.map { r -> resumeTile(vm, r, true) { forget = r } }))
-            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { seriesTile(vm, "f:" + sh.title, it) })) }
+            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { seriesTile(vm, "f:" + sh.title, it, sh.badges[it.s.id]) })) }
             catRows.forEach { c ->
                 val items = memoState(vm, "cat:s:${p.id}:${c.category}", p.id, p.lastRefresh, changes, c.category) { vm.graph.library.categorySeries(p.id, c.category) }
                 add(HomeRow("cat:" + c.category, c.category, items.map { seriesTile(vm, "c:" + c.category, it) }))
@@ -501,7 +501,9 @@ internal class HeroItem(
 )
 
 internal class HomeTile(val key: String, val title: String, val image: String?, val progress: Float?, val hero: HeroItem,
-                       val onClick: () -> Unit, val onLong: (() -> Unit)? = null) {
+                       val onClick: () -> Unit, val onLong: (() -> Unit)? = null,
+                       /** A pill on the poster: "Nouvelle saison", "Nouvel épisode". */
+                       val badge: String? = null) {
     /** For TMDB's poster when the provider's is missing. */
     val search get() = com.lumentv.ui.components.PosterSearch(hero.series, hero.title, hero.tmdb, hero.year)
 }
@@ -526,7 +528,7 @@ private fun movieTile(vm: MainViewModel, rowKey: String, r: MovieRow, progress: 
 }
 
 @Composable
-private fun seriesTile(vm: MainViewModel, rowKey: String, r: SeriesRow): HomeTile {
+private fun seriesTile(vm: MainViewModel, rowKey: String, r: SeriesRow, badge: String? = null): HomeTile {
     val scope = rememberCoroutineScope()
     val pid = r.s.playlistId
     val open = { vm.openFrom("$rowKey:s:${r.s.uid}", Screen.SeriesDetail(pid, r.s.uid)) }
@@ -534,7 +536,8 @@ private fun seriesTile(vm: MainViewModel, rowKey: String, r: SeriesRow): HomeTil
         HeroItem("s:${r.s.uid}", r.s.name, metaOf(null, r.s.year, r.s.category), r.s.plot, r.s.backdrop ?: r.s.cover, rating = r.s.rating,
             playLabel = "Voir la série", play = open, more = open, series = true, tmdb = r.s.tmdb, year = com.lumentv.core.Featured.year(r.s.year)),
         onClick = open,
-        onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(pid, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } })
+        onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(pid, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } },
+        badge = badge)
 }
 
 @Composable
@@ -672,6 +675,7 @@ private fun HomePoster(vm: MainViewModel, t: HomeTile, modifier: Modifier = Modi
         onLongClick = t.onLong, focusedScale = 1.08f, shape = RoundedCornerShape(10.dp)) {
         Poster(t.image, t.title, Modifier.fillMaxSize(), t.search)
         t.progress?.takeIf { it > 0f }?.let { ProgressLine(it, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp)) }
+        t.badge?.let { com.lumentv.ui.kit.KitBadge(it, Modifier.align(Alignment.TopStart).padding(5.dp)) }
     }
 }
 

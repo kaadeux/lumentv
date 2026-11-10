@@ -19,6 +19,8 @@ import com.lumentv.data.discover.Row
 import com.lumentv.data.discover.VodLite
 import com.lumentv.data.repo.LibraryRepository.Shelf
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
@@ -30,7 +32,7 @@ import kotlinx.coroutines.flow.map
  * The rows of the Films and Séries homes on this device: the playlist, history and ratings from the database, given
  * to [DiscoverEngine] (shared with the PC, which explains the rows), then the full film / series rows of each title.
  */
-class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val index: LibraryIndex) {
+class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val index: LibraryIndex, private val playlists: PlaylistRepository) {
     private val engine = DiscoverEngine(tmdb)
 
     fun movies(pid: Long, history: List<HistoryEntity>, ratings: List<RatingEntity>): Flow<List<Shelf<MovieRow>>> =
@@ -46,7 +48,7 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
         }
 
     private fun <T : Any> shelves(rows: List<Row>, full: (VodLite) -> T?): List<Shelf<T>> =
-        rows.map { r -> Shelf(r.title, r.items.mapNotNull(full).take(DiscoverEngine.ROW)) }.filter { DiscoverEngine.keep(it.title, it.items.size) }
+        rows.map { r -> Shelf(r.title, r.items.mapNotNull(full).take(DiscoverEngine.ROW), r.badges) }.filter { DiscoverEngine.keep(it.title, it.items.size) }
 
     private fun rows(series: Boolean, pid: Long, history: List<HistoryEntity>, ratings: List<RatingEntity>): Flow<List<Row>> = flow {
         val kind = if (series) "se" else HistoryKind.MOVIE
@@ -62,9 +64,39 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
         else history.filter { it.kind == HistoryKind.MOVIE && it.playlistId == pid }
             .forEach { h -> watched[h.uid] = if (h.durationMs > 0) (h.positionMs.toDouble() / h.durationMs).coerceIn(0.0, 1.0) else 0.5 }
         val input = DiscoverInput(series, indexed.await(), recent,
-            ratings.filter { it.playlistId == pid && it.kind == kind }.map { Rated(it.uid, it.stars, it.ratedAt) }, watched, hidden) { link(series, pid, it) }
+            ratings.filter { it.playlistId == pid && it.kind == kind }.map { Rated(it.uid, it.stars, it.ratedAt) }, watched, hidden,
+            { link(series, pid, it) }, if (series) ({ newEpisodes(pid, history) }) else null)
         emitAll(engine.rows(input))
     }.flowOn(IoDispatcher)
+
+    /**
+     * The series followed that have something new, with what to say on the poster: the last episode watched (the
+     * furthest, seen to the end), and the playlist has episodes after it. Xtream lists give their episodes only per
+     * series: asked again (and cached) only for a series the provider changed since it was watched, a few at a time.
+     */
+    private suspend fun newEpisodes(pid: Long, history: List<HistoryEntity>): List<Pair<VodLite, String>> = kotlinx.coroutines.coroutineScope {
+        val p = db.playlists().get(pid) ?: return@coroutineScope emptyList()
+        val gate = kotlinx.coroutines.sync.Semaphore(3)
+        history.filter { it.kind == HistoryKind.EPISODE && it.playlistId == pid && it.parentUid != null }
+            .groupBy { it.parentUid!! }.entries.sortedByDescending { (_, eps) -> eps.maxOf { it.watchedAt } }.take(30)
+            .map { (uid, seen) -> async {
+                val row = db.vod().seriesByUid(pid, uid) ?: return@async null
+                var eps = db.vod().episodes(pid, uid)
+                val lastWatch = seen.maxOf { it.watchedAt }
+                if (p.type == com.lumentv.data.db.PlaylistType.XTREAM && row.s.seriesId > 0 && (eps.isEmpty() || row.s.updatedAt > lastWatch))
+                    eps = runCatching { gate.withPermit { playlists.loadXtreamEpisodes(p, uid, row.s.seriesId) } }.getOrDefault(eps)
+                val byUid = eps.associateBy { it.uid }
+                val furthest = seen.mapNotNull { h -> byUid[h.uid]?.let { it to h } }
+                    .maxWithOrNull(compareBy({ it.first.season }, { it.first.episode })) ?: return@async null
+                // Caught up: the furthest episode was watched to the end, and some come after it.
+                if (!Resume.watched(furthest.second.positionMs, furthest.second.durationMs)) return@async null
+                val (s, e) = furthest.first.season to furthest.first.episode
+                val after = eps.filter { it.season > s || (it.season == s && it.episode > e) }
+                if (after.isEmpty()) return@async null
+                val badge = com.lumentv.data.discover.NewEpisodes.badge(s, after.map { it.season })
+                Triple(VodLite(row.s.id, row.s.uid, row.s.name, row.s.category, row.s.year, row.s.rating), badge, maxOf(row.s.updatedAt, lastWatch))
+            } }.awaitAll().filterNotNull().sortedByDescending { it.third }.map { it.first to it.second }
+    }
 
     /** The TMDB id of a playlist title: the provider's when it gives one, else a search by title and year; kept in the database. */
     private suspend fun link(series: Boolean, pid: Long, v: VodLite): String? {

@@ -17,7 +17,7 @@ class DiscoverRetryTest {
     private val film = VodLite(1, "x:1", "Le Film Test", "Action", "2026", null)
     private val other = VodLite(2, "x:2", "Autre Film", "Action", "2026", null)
 
-    private fun input() = DiscoverInput(false, TitleIndex(listOf(film, other), emptyList()), listOf(film), emptyList(), LinkedHashMap(), emptySet()) { null }
+    private fun input() = DiscoverInput(false, TitleIndex(listOf(film, other), emptyList()), listOf(film), emptyList(), LinkedHashMap(), emptySet(), link = { null })
 
     /** TMDB's answer: the two titles of the playlist, on any list. */
     private val answer = """{"results":[{"id":1,"title":"Le Film Test","original_title":"Le Film Test","release_date":"2026-01-01"},

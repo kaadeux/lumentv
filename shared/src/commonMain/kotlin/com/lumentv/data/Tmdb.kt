@@ -46,6 +46,15 @@ class Tmdb(private val http: Http, private val key: String) {
         }.distinctBy { it.id }
     }
 
+    /** The films of a saga (TMDB collection), in their order of release: "Harry Potter", "Mission Impossible"… */
+    fun collection(id: Int): List<Item> {
+        if (!enabled) return emptyList()
+        val o = get("https://api.themoviedb.org/3/collection/$id", "language" to "fr-FR") ?: return emptyList()
+        return (o["parts"] as? JsonArray).orEmpty().mapNotNull { p -> (p as? JsonObject)?.let { it to item(it) } }
+            .filter { (o, it) -> it != null && !o.s("release_date").isNullOrBlank() }
+            .sortedBy { (o, _) -> o.s("release_date") }.mapNotNull { it.second }
+    }
+
     /** Titles TMDB recommends to who liked this one (its users' viewing), best first. */
     fun recommendations(series: Boolean, id: String): List<Item> = list((if (series) "tv" else "movie") + "/$id/recommendations")
 

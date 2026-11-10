@@ -70,7 +70,7 @@ class Vod(private val state: AppState) {
         else state.historyOf(Kind.MOVIE).forEach { h -> watched[h.uid] = if (h.durationMs > 0) (h.positionMs.toDouble() / h.durationMs).coerceIn(0.0, 1.0) else 0.5 }
         val kind = if (series) Kind.SERIES else Kind.MOVIE
         val rated = state.ratings(kind).map { Rated(it.uid, it.stars, it.ratedAt) }
-        return DiscoverInput(series, idx.titles, recent, rated, watched) { v -> link(series, v, if (series) idx.series(v)?.tmdb else null) }
+        return DiscoverInput(series, idx.titles, recent, rated, watched, link = { v -> link(series, v, if (series) idx.series(v)?.tmdb else null) })
     }
 
     /** The TMDB id of a playlist title: the provider's when it gives one, else a search by title and year (kept for the session). */

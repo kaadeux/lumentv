@@ -62,7 +62,7 @@ class AppCore(val db: AppDatabase, val settings: SettingsStore, val platform: Pl
     val logos = TitleLogos(platform.tmdbHttp, platform.tmdbKey)
     /** The whole library, light, in memory: search and TMDB matching. */
     val index = LibraryIndex(db)
-    val discover = Discover(db, tmdb, index)
+    val discover = Discover(db, tmdb, index, playlists)
     /** Which French channel shows each game, days ahead (xmltvfr.fr, sports channels only, twice a day at most). */
     val frenchGuide = FrenchTvGuide(platform.http, TextFile(platform.cacheDir + "/sports_tv.json"), platform.utf8XmlReader)
     val sports = SportsRepository(db, settings, epg, library, FixtureClient(platform.fixtureHttp), frenchGuide)

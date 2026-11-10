@@ -14,8 +14,18 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-/** A row of the Films / Séries home. */
-class Row(val title: String, val items: List<VodLite>)
+/** A row of the Films / Séries home; [badges]: what a poster says on top of it ("Nouvelle saison"), by title id. */
+class Row(val title: String, val items: List<VodLite>, val badges: Map<Long, String> = emptyMap())
+
+/** What the poster of a series followed says when something new came out. */
+object NewEpisodes {
+    /** [lastSeason]: the season of the last episode watched; [after]: the seasons of the episodes after it. */
+    fun badge(lastSeason: Int, after: List<Int>): String = when {
+        after.any { it > lastSeason } -> "Nouvelle saison"
+        after.size > 1 -> "${after.size} nouveaux épisodes"
+        else -> "Nouvel épisode"
+    }
+}
 
 /** A personal rating (1 to 5 stars) of a playlist title. */
 class Rated(val uid: String, val stars: Int, val ratedAt: Long)
@@ -33,6 +43,11 @@ class DiscoverInput(
     val hidden: Set<String> = emptySet(),
     /** The TMDB id of a playlist title (the provider's, or found by title and year), cached by the caller. */
     val link: suspend (VodLite) -> String?,
+    /**
+     * Series: those the viewer follows that have episodes after the last one watched, newest first ("Nouveaux
+     * épisodes de vos séries"). Null: not known on this app.
+     */
+    val newEpisodes: (suspend () -> List<Pair<VodLite, String>>)? = null,
 )
 
 /**
@@ -40,8 +55,9 @@ class DiscoverInput(
  * playlist really has (found through [TitleIndex]); TMDB only says what to put forward. Three steps, each emitted as
  * soon as it is ready:
  *
- * 1. from the playlist alone: "Ajoutés récemment", "Vos notes";
- * 2. TMDB and the viewer's taste: "Recommandé pour vous", trending, "Parce que vous avez aimé…", new releases, popular,
+ * 1. from the playlist alone: "Ajoutés récemment", and for the series "Nouveaux épisodes de vos séries";
+ * 2. TMDB and the viewer's taste: for the films "Pour continuer vos sagas" (the next film of a saga watched),
+ *    "Recommandé pour vous", trending, "Parce que vous avez aimé…", new releases, popular,
  *    "Dans vos genres préférés", "À découvrir", best rated, "Vous pourriez aussi aimer";
  * 3. one row per genre and per streaming service (available in France according to TMDB / JustWatch).
  *
@@ -62,12 +78,12 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
         // Not a copy in another language ("DE - …", "(ITA)"): the rows are for a French family.
         fun ok(v: VodLite) = v.category !in input.hidden && !Featured.foreign(v.name, v.category) && !Featured.otherLanguage(v.name)
 
-        // 1. The playlist alone
-        val local = listOf(
-            Row(if (series) "Ajoutées récemment" else "Ajoutés récemment", one(input.recent.filter(::ok))),
-            Row(MY_RATINGS, input.rated.sortedWith(compareByDescending<Rated> { it.stars }.thenByDescending { it.ratedAt }).mapNotNull { byUid[it.uid] }),
-        )
-        emit(local)
+        // 1. The playlist alone; the series followed with new episodes as soon as they are known (the list may be asked).
+        val recentRow = Row(if (series) "Ajoutées récemment" else "Ajoutés récemment", one(input.recent.filter(::ok)))
+        emit(listOf(recentRow))
+        val followed = input.newEpisodes?.let { f -> runCatching { f() }.getOrDefault(emptyList()) }.orEmpty().filter { ok(it.first) }
+        val local = listOfNotNull(if (followed.isEmpty()) null else Row(NEW_EPISODES, followed.map { it.first }.distinctBy { it.id }, followed.associate { it.first.id to it.second }), recentRow)
+        if (followed.isNotEmpty()) emit(local)
         if (!tmdb.enabled) return@flow
 
         // TMDB out of reach for a moment (a TV just out of sleep, say) must not leave the home without its rows until
@@ -126,7 +142,12 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
                     Row((if (s.rated) "Parce que vous avez aimé " else "Parce que vous avez regardé ") + s.title, pick(d.recommendations + d.similar, shown))
                 }
                 val genreNames = genres.mapNotNull { Tmdb.GENRE_NAMES[it] }
+                // Films: the next film of each saga the viewer watched (the first one of it not seen yet).
+                val sagas = if (series) emptyList() else details.mapNotNull { (_, d) -> d.collection }.distinct().take(8)
+                    .map { c -> async { limited { tmdb.collection(c) } } }.awaitAll()
+                    .mapNotNull { parts -> parts.indexOfLast { it.id in profile.seenIds }.takeIf { it >= 0 }?.let { last -> parts.drop(last + 1).firstOrNull { it.id !in profile.seenIds } } }
                 listOfNotNull(
+                    if (series) null else Row(SAGAS, pick(sagas)),
                     Row("Recommandé pour vous", forYou.take(ROW)),
                     Row("Tendances du moment", pick(trendingList)),
                     because,
@@ -222,12 +243,13 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
         const val MIN_ROW = 3
         /** TMDB asked again this many times when a call failed. */
         const val RETRIES = 6
-        /** Shown from the first rating. */
-        const val MY_RATINGS = "Vos notes"
+        /** Shown from the first title: what the viewer follows. */
+        const val NEW_EPISODES = "Nouveaux épisodes de vos séries"
+        const val SAGAS = "Pour continuer vos sagas"
         const val MAX_SEEDS = 12
 
         /** Whether a row with [shown] titles goes on the home. */
-        fun keep(title: String, shown: Int) = shown >= MIN_ROW || (title == MY_RATINGS && shown > 0)
+        fun keep(title: String, shown: Int) = shown >= MIN_ROW || ((title == NEW_EPISODES || title == SAGAS) && shown > 0)
     }
 }
 

@@ -101,3 +101,11 @@ fun KitLoadingBar(label: String, fraction: Float?, modifier: Modifier = Modifier
         }
     }
 }
+
+/** A small pill on a poster ("Nouvelle saison", "Nouvel épisode"), the same on every app. */
+@Composable
+fun KitBadge(text: String, modifier: Modifier = Modifier) {
+    val c = LocalKitColors.current
+    Text(text, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1,
+        modifier = modifier.clip(RoundedCornerShape(6.dp)).background(c.accent).padding(horizontal = 6.dp, vertical = 2.dp))
+}

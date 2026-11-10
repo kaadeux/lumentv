@@ -123,20 +123,25 @@ internal fun SeriesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
         val ratings = core.library.observeRatings().first()
         core.discover.series(p.id, history, ratings).collect { list ->
             val rows = withContext(kotlinx.coroutines.Dispatchers.Default) {
-                list.map { Shelf(it.title, oneEach(it.items, { s -> s.s.name }, { s -> s.s.category })) }.filter { it.items.isNotEmpty() }
+                list.map { Shelf(it.title, oneEach(it.items, { s -> s.s.name }, { s -> s.s.category }), it.badges) }.filter { it.items.isNotEmpty() }
             }
             if (rows.size >= (shelves?.size ?: 0)) { shelves = rows; HomeCache.rows[key] = rows }
         }
         HomeCache.done += key
     }
     val scope = rememberCoroutineScope()
+    val badges = remember(shelves) { shelves.orEmpty().flatMap { it.badges.entries }.associate { it.key to it.value } }
     val heroes = shelves?.firstOrNull()?.items.orEmpty().take(6).map { s ->
         Hero("se:" + s.s.id, Featured.shortTitle(s.s.name), true, s.s.tmdb, Featured.yearOf(s.s.year, s.s.name), s.s.backdrop ?: s.s.cover,
             Featured.posterLine(s.s.year, s.s.rating, null), play = null) { open(Route.Series(s)) }
     }
     HomeList(core, "Séries", heroes, shelves, onCategories = { open(Route.Categories(true)) },
         resume = { ResumeRow(core, p, HistoryKind.EPISODE) { h -> scope.launch { h.parentUid?.let { core.library.seriesByUid(p.id, it) }?.let { open(Route.Series(it)) } } } },
-        row = { items -> items(items, key = { it.s.id }) { s -> Box(Modifier.width(104.dp)) { Poster(s.s.cover, Featured.shortTitle(s.s.name), french = core.frenchOf(s)) { open(Route.Series(s)) } } } })
+        row = { items -> items(items, key = { it.s.id }) { s -> Box(Modifier.width(104.dp)) {
+            Poster(s.s.cover, Featured.shortTitle(s.s.name), french = core.frenchOf(s)) { open(Route.Series(s)) }
+            // "Nouvelle saison", "Nouvel épisode": a series followed with something new.
+            badges[s.s.id]?.let { com.lumentv.ui.kit.KitBadge(it, Modifier.align(Alignment.TopStart).padding(5.dp)) }
+        } } })
 }
 
 /** Plays a film from the banner: where it was left, else from the start; the position is kept on closing. */
