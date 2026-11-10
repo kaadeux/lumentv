@@ -56,7 +56,7 @@ private class PcSettingsModel(private val app: AppState, private val onAdd: (Str
             app.playlists.map { (key, p) ->
                 val c = catalog?.takeIf { p == app.active }
                 SettingsList(key, p.name, p.type == "xtream", key == app.activeKeyOrFirst, c?.channels?.size ?: 0, c?.movies?.size ?: 0, c?.series?.size ?: 0,
-                    c?.let { day(it.loadedAt) }, null, p.refreshHours, app.loading && p == app.active, app.loadError?.takeIf { p == app.active }, false, " par Windows")
+                    c?.let { day(it.loadedAt) }, c?.account, p.refreshHours, app.loading && p == app.active, app.loadError?.takeIf { p == app.active }, false, " par Windows")
             },
             app.setting("auto_next", "true") != "false", app.setting("auto_quality", "true") != "false", app.setting("buffer") == "stable", app.setting("subs_on") == "true",
             app.setting("audio_lang"), app.setting("sub_lang"), app.setting("resize", "0").toIntOrNull() ?: 0, app.setting("startup", "home"), app.setting("user_agent"),

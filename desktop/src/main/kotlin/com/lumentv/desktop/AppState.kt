@@ -205,6 +205,14 @@ class AppState(private val scope: CoroutineScope) {
                     .onFailure { loadError = userMessage(it) }
             }
             loading = false
+            // A list read from the cache, from before the account was kept: its state asked alone (end date in Settings).
+            catalog?.takeIf { p.type == "xtream" && it.account == null }?.let { c ->
+                runCatching { library.account(p) }.getOrNull()?.let { a ->
+                    val withAccount = c.copy(account = a)
+                    if (activeKey == key) catalog = withAccount
+                    withContext(Dispatchers.IO) { Store.saveCatalog(key, withAccount) }
+                }
+            }
             catalog?.let { c ->
                 playStartupChannel(c)
                 if (stale || guide.isEmpty()) loadStep = "Chargement du guide TV" to null

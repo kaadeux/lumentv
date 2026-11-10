@@ -64,6 +64,8 @@ data class Catalog(
     val epgUrl: String? = null,
     /** Xtream: the server's time zone, in which catch-up addresses are written. */
     val serverZone: String? = null,
+    /** Xtream: the account as the TV shows it, "Active · expire le 11/11/2026 · connexions 0/1". */
+    val account: String? = null,
 )
 
 data class Prog(val start: Long, val stop: Long, val title: String, val description: String?)
@@ -75,6 +77,9 @@ class Library(private val http: OkHttpClient) {
     private fun xtream(p: SyncPlaylist) = XtreamApi(http.asHttp(), XtreamCredentials(p.source, p.username, p.password), p.ua.ifBlank { null })
 
     /** [step]: "Chargement des films · 12 000" and how far along (0..1, null: not known), for the bar at the top. */
+    /** The account's state alone (status, end date, connections), for a list read from the cache. */
+    suspend fun account(p: SyncPlaylist): String? = withContext(Dispatchers.IO) { xtream(p).authenticate().summary().ifBlank { null } }
+
     suspend fun load(p: SyncPlaylist, step: (String, Float?) -> Unit = { _, _ -> }): Catalog =
         withContext(Dispatchers.IO) { if (p.type == "xtream") loadXtream(p, step) else loadM3u(p, step) }
 
@@ -99,6 +104,7 @@ class Library(private val http: OkHttpClient) {
             series = ser.map { x -> Se("x:${x.seriesId}", x.name, serCats[x.categoryId] ?: NO_GROUP, x.cover, x.seriesId, x.plot, x.year, x.rating, x.tmdb, x.updated, x.backdrop) },
             epgUrl = p.epgUrl.ifBlank { XtreamApi.xmltvUrl(XtreamCredentials(XtreamApi.normalizeServer(p.source), p.username, p.password)) },
             serverZone = account.timeZone,
+            account = account.summary().ifBlank { null },
         )
     }
 
