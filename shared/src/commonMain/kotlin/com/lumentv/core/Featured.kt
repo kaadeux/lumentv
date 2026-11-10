@@ -16,6 +16,15 @@ object Featured {
      */
     private val langTag = Regex("^\\s*(?:[48]K[-/])?([A-Z]{2})(?:[-/][A-Z]{2,4}){0,2}\\s*(?:-\\s+|\\|\\s*)")
 
+    /**
+     * The tags of a copy written for another language than French or English ("DE - …", "IT|…"). A list, not "every
+     * tag but FR and EN": "NF - From Scratch" is Netflix's series, not a language, and was left out of the search.
+     */
+    val foreignTags: Set<String> = setOf("DE", "NL", "GR", "SC", "SE", "NO", "DK", "FI", "IS", "AL", "IR", "AR", "ES", "IT", "PT", "BR", "TR", "PL", "RU", "IN", "RO", "HU", "CZ", "SK", "BG", "HR", "RS", "SI", "UA", "IL", "KR", "JP", "CN", "TH", "VN", "PH", "ID", "MY", "PK", "BD", "AF", "KU", "LA", "MX", "EX", "BS", "MK", "LT", "LV", "EE", "GE", "AM", "AZ", "KZ", "UZ", "TW", "HK")
+
+    /** A copy written for another language ("DE - Dune"): out of the search and the rows. "EN - FROM (US)" stays. */
+    fun otherLanguage(name: String): Boolean = langTag(name) in foreignTags
+
     /** "FR - Heart of the Beast (2026)" → "FR"; null without such a tag. */
     fun langTag(name: String): String? = langTag.find(name)?.groupValues?.get(1)?.uppercase()
 

@@ -60,6 +60,9 @@ interface ChannelDao {
     @Query("SELECT id, name, number FROM channels WHERE playlistId = :pid")
     suspend fun channelIndex(pid: Long): List<ChannelLite>
 
+    @Query("SELECT c.id AS id, c.name AS name, c.epgId AS epgId, p.epgOverride AS epgOverride FROM channels c LEFT JOIN prefs p ON p.playlistId = c.playlistId AND p.kind = 'ch' AND p.uid = c.uid WHERE c.playlistId = :pid")
+    suspend fun guideKeys(pid: Long): List<ChannelGuideKey>
+
     @Query("SELECT id, name, groupName FROM channels WHERE playlistId = :pid")
     suspend fun namesAndGroups(pid: Long): List<ChannelNameGroup>
 
@@ -115,13 +118,16 @@ data class VodIndexRow(val id: Long, val uid: String, val name: String, val cate
     fun lite() = com.lumentv.data.discover.VodLite(id, uid, name, category, year, rating)
 }
 
+/** [com.lumentv.core.Featured.foreignTags], for the database: platform tags ("NF - ") are not languages. */
+private const val OTHER_LANGUAGES = "'DE', 'NL', 'GR', 'SC', 'SE', 'NO', 'DK', 'FI', 'IS', 'AL', 'IR', 'AR', 'ES', 'IT', 'PT', 'BR', 'TR', 'PL', 'RU', 'IN', 'RO', 'HU', 'CZ', 'SK', 'BG', 'HR', 'RS', 'SI', 'UA', 'IL', 'KR', 'JP', 'CN', 'TH', 'VN', 'PH', 'ID', 'MY', 'PK', 'BD', 'AF', 'KU', 'LA', 'MX', 'EX', 'BS', 'MK', 'LT', 'LV', 'EE', 'GE', 'AM', 'AZ', 'KZ', 'UZ', 'TW', 'HK'"
+
 @Dao
 interface VodDao {
     /** The index's titles: not the copies written for another language ("DE - …"), which it leaves out anyway. */
-    @Query("SELECT id, uid, name, category, year, rating FROM movies WHERE playlistId = :pid AND NOT ((name GLOB '[A-Z][A-Z] - *' OR name GLOB '[A-Z][A-Z]|*' OR name GLOB '[A-Z][A-Z] |*' OR name GLOB '[A-Z][A-Z]-[A-Z]* - *') AND substr(name, 1, 2) NOT IN ('FR', 'EN'))")
+    @Query("SELECT id, uid, name, category, year, rating FROM movies WHERE playlistId = :pid AND NOT ((name GLOB '[A-Z][A-Z] - *' OR name GLOB '[A-Z][A-Z]|*' OR name GLOB '[A-Z][A-Z] |*' OR name GLOB '[A-Z][A-Z]-[A-Z]* - *') AND substr(name, 1, 2) IN ($OTHER_LANGUAGES))")
     suspend fun movieIndex(pid: Long): List<VodIndexRow>
 
-    @Query("SELECT id, uid, name, category, year, rating FROM series WHERE playlistId = :pid AND NOT ((name GLOB '[A-Z][A-Z] - *' OR name GLOB '[A-Z][A-Z]|*' OR name GLOB '[A-Z][A-Z] |*' OR name GLOB '[A-Z][A-Z]-[A-Z]* - *') AND substr(name, 1, 2) NOT IN ('FR', 'EN'))")
+    @Query("SELECT id, uid, name, category, year, rating FROM series WHERE playlistId = :pid AND NOT ((name GLOB '[A-Z][A-Z] - *' OR name GLOB '[A-Z][A-Z]|*' OR name GLOB '[A-Z][A-Z] |*' OR name GLOB '[A-Z][A-Z]-[A-Z]* - *') AND substr(name, 1, 2) IN ($OTHER_LANGUAGES))")
     suspend fun seriesIndex(pid: Long): List<VodIndexRow>
 
     @Query("""SELECT m.*, p.favorite AS favorite FROM movies m LEFT JOIN prefs p ON p.playlistId = m.playlistId AND p.kind = 'mv' AND p.uid = m.uid

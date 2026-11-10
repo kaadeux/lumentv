@@ -17,7 +17,8 @@ open class TitleIndex(movies: List<VodLite>, series: List<VodLite>) {
     // country they were most of the titles, too many for a TV's memory.
     private val movieList = movies.filter { keep(it) }
     private val seriesList = series.filter { keep(it) }
-    private fun keep(v: VodLite) = !Featured.foreign(v.name, v.category) && SmartSearch.languageRank(v.name) < 2
+    // "(US)" or "(EN)" after the title only puts the copy after the French ones: "EN - FROM (2022) (US)" is the series.
+    private fun keep(v: VodLite) = !Featured.foreign(v.name, v.category) && !Featured.otherLanguage(v.name)
     val movies: List<SmartSearch.Entry<VodLite>> = movieList.map { SmartSearch.Entry(it, it.name) }
     val series: List<SmartSearch.Entry<VodLite>> = seriesList.map { SmartSearch.Entry(it, it.name) }
     // From the prepared titles: each title cleaned once, not twice (the time of a big list on a TV).

@@ -14,6 +14,7 @@ import com.lumentv.data.db.ProgramEntity
 import com.lumentv.data.db.SeriesRow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 data class GroupInfo(val name: String, val count: Int, val hidden: Boolean, val locked: Boolean)
@@ -217,9 +218,11 @@ class LibraryRepository(private val db: AppDatabase) {
         val q = normalize(query)
         if (q.length < 2) return@withContext SearchResults()
         val sq = com.lumentv.core.SmartSearch.Query(query)
-        val idx = pid?.let { index.of(it) }
+        val t0 = com.lumentv.core.nowMillis()
+        fun lap(what: String) = com.lumentv.core.logDebug("Search") { "$what +${com.lumentv.core.nowMillis() - t0} ms" }
+        val idx = pid?.let { index.of(it) }.also { lap("index") }
         // Films, series and people: the same search as the PC (TitleSearch).
-        val found = idx?.let { com.lumentv.data.discover.TitleSearch.search(query, it, tmdb, SEARCH_LIMIT) }
+        val found = idx?.let { com.lumentv.data.discover.TitleSearch.search(query, it, tmdb, SEARCH_LIMIT) }.also { lap("titles") }
         val people = found?.people.orEmpty().map { h ->
             val mv = db.vod().moviesByIds(h.movies.map { it.id }).associateBy { it.m.id }
             val se = db.vod().seriesByIds(h.series.map { it.id }).associateBy { it.s.id }
@@ -228,19 +231,13 @@ class LibraryRepository(private val db: AppDatabase) {
         val movieIds = found?.movies?.map { it.id }
         val seriesIds = found?.series?.map { it.id }
         val channelIds = idx?.let { com.lumentv.core.SmartSearch.search(sq, it.channels, SEARCH_LIMIT) }?.map { it.id }
-        val programs = db.epg().search(q, nowMillis(), SEARCH_LIMIT)
-        val byPlaylist = HashMap<Long, Map<String, ChannelRow>>()
-        val progPairs = programs.map { p ->
-            val map = byPlaylist.getOrPut(p.playlistId) {
-                val m = epg.matcher(p.playlistId)
-                val out = HashMap<String, ChannelRow>()
-                db.channels().inGroup(p.playlistId, null).forEach { c ->
-                    m.keyFor(c.epgOverride, c.ch.epgId, c.ch.name)?.let { if (it !in out) out[it] = c }
-                }
-                out
-            }
-            p to map[p.epgKey]
-        }
+        lap("channels")
+        val programs = db.epg().search(q, nowMillis(), SEARCH_LIMIT).also { lap("programmes") }
+        // The channel of each programme: only those rows are read (all 56 000 of a big list were, at every search).
+        val keys = programs.groupBy { it.playlistId }.mapValues { (plId, _) -> channelOfKey(plId, epg) }
+        val rows = programs.mapNotNull { keys[it.playlistId]?.get(it.epgKey) }.distinct().chunked(500)
+            .flatMap { db.channels().byIds(it) }.associateBy { it.ch.id }
+        val progPairs = programs.map { p -> p to keys[p.playlistId]?.get(p.epgKey)?.let { rows[it] } }.also { lap("programme channels") }
         // The search's order kept (the rows come back from the database in any order).
         fun <T, K> ordered(ids: List<K>, rows: List<T>, key: (T) -> K): List<T> { val m = rows.associateBy(key); return ids.mapNotNull { m[it] } }
         SearchResults(
@@ -251,6 +248,32 @@ class LibraryRepository(private val db: AppDatabase) {
             programs = progPairs,
             people = people,
         )
+    }
+
+    /**
+     * Readies the search of [pid] in the background: its channels prepared for the search and its programmes' channels.
+     * Done at the first search, they took 8 s of the 9 the box needed for it on a list of 56 000 channels.
+     */
+    suspend fun prewarmSearch(pid: Long, epg: EpgRepository, index: LibraryIndex) = withContext(IoDispatcher) {
+        runCatching { index.of(pid).channels.size }
+        runCatching { channelOfKey(pid, epg) }
+    }
+
+    /** Guide key → the first channel showing it, per playlist; made again when the list, the guide or a channel changes. */
+    private val guideChannels = HashMap<Long, Pair<String, Map<String, Long>>>()
+
+    private val guideLock = kotlinx.coroutines.sync.Mutex()
+
+    // Under a lock: the background preparation and a search may ask at the same time.
+    private suspend fun channelOfKey(pid: Long, epg: EpgRepository): Map<String, Long> = guideLock.withLock {
+        val version = "${db.playlists().get(pid)?.lastRefresh}:${epg.version.value}:${changes.value}"
+        guideChannels[pid]?.let { (v, m) -> if (v == version) return@withLock m }
+        val m = epg.matcher(pid)
+        val out = HashMap<String, Long>()
+        db.channels().guideKeys(pid).sortedBy { it.id }.forEach { c -> m.keyFor(c.epgOverride, c.epgId, c.name)?.let { if (it !in out) out[it] = c.id } }
+        guideChannels.clear()
+        guideChannels[pid] = version to out
+        out
     }
 
     companion object {

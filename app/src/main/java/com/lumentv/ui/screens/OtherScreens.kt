@@ -138,13 +138,17 @@ fun SearchScreen(vm: MainViewModel) {
     var query by remember { mutableStateOf(vm.lastSearch) }
     var tab by remember { mutableStateOf(vm.searchTab) }
     // On return from a film or a series, the results are there at once: the list keeps its place.
+    // "Recherche…" while it runs: "Aucun résultat" showed before the results came.
+    var searching by remember { mutableStateOf(false) }
     val results by produceState(vm.lastResults?.takeIf { it.first == query }?.second ?: SearchResults(), query) {
         vm.lastSearch = query
         if (vm.lastResults?.first == query) return@produceState
-        if (normalize(query).length < 2) { value = SearchResults(); return@produceState }
+        if (normalize(query).length < 2) { value = SearchResults(); searching = false; return@produceState }
+        searching = true
         delay(250)
-        value = vm.graph.library.search(query, vm.graph.epg, vm.active.value?.id, vm.graph.index, vm.graph.tmdb)
+        value = runCatching { vm.graph.library.search(query, vm.graph.epg, vm.active.value?.id, vm.graph.index, vm.graph.tmdb) }.getOrDefault(SearchResults())
         vm.lastResults = query to value
+        searching = false
     }
     fun select(t: SearchTab) { tab = t; vm.searchTab = t }
     val counts = mapOf(
@@ -170,7 +174,7 @@ fun SearchScreen(vm: MainViewModel) {
             }
         }
         if (normalize(query).length >= 2 && results.isEmpty) item {
-            Text("Aucun résultat pour « $query ».", color = Palette.TextDim, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 20.dp))
+            Text(if (searching) "Recherche…" else "Aucun résultat pour « $query ».", color = Palette.TextDim, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 20.dp))
         }
         if ((all || tab == SearchTab.CHANNELS) && results.channels.isNotEmpty()) {
             if (all) item { SectionHeader("Chaînes") }

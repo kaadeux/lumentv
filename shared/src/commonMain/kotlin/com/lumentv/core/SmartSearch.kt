@@ -14,6 +14,8 @@ object SmartSearch {
         val words: List<String> = norm.split(' ').filter { it.isNotEmpty() }
         /** Marked for another language than French ("(IT)", "[ES]", "SUBT AR", "ENG"…): goes after the other copies. */
         val otherLanguage: Boolean = otherLang.containsMatchIn(title)
+        /** Only marked English ("(US)", "(EN)"): understood here, so just after the French copies. */
+        val english: Boolean = otherLanguage && !otherLang.containsMatchIn(title.replace(englishMark, ""))
         private val wordCompacts = words.map { it }
         internal fun firstLetters(): Set<Char> = (wordCompacts.mapNotNull { it.firstOrNull() } + listOfNotNull(compact.firstOrNull())).toSet()
     }
@@ -56,6 +58,7 @@ object SmartSearch {
     const val INSIDE = 700
     const val ALL_WORDS = 600
     const val CLOSE = 400
+    private val englishMark = Regex("[(\\[](EN|ENG|US|UK)[)\\]]", RegexOption.IGNORE_CASE)
 
     /** 0 when the title does not match; higher = better. */
     fun score(q: Query, e: Entry<*>): Int {
@@ -70,8 +73,9 @@ object SmartSearch {
             else -> return 0
         }
         // Same level: the title nearer the query's length first ("Batman" before "Batman: The Killing Joke"); a copy in
-        // another language after the French ones.
-        return level - (e.compact.length - q.compact.length).coerceIn(0, 60) - (if (e.otherLanguage) 400 else 0)
+        // another language after the French ones. English stays within its level: 400 off put "FROM (US)" after
+        // every "From Scratch" and "Far from Home" though it is the title asked for.
+        return level - (e.compact.length - q.compact.length).coerceIn(0, 60) - when { e.english -> 70; e.otherLanguage -> 400; else -> 0 }
     }
 
     /** The best [limit] entries, best first. */

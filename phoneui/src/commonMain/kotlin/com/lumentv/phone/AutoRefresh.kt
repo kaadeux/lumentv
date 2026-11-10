@@ -22,6 +22,15 @@ object AutoRefresh {
         if (started) return
         started = true
         core.scope.launch { while (true) { check(core); delay(30 * 60_000L) } }
+        // The search ready before the viewer opens it, once the first screen is drawn.
+        core.scope.launch { delay(10_000); prewarm(core) }
+    }
+
+    /** The search of the list in use readied in the background (done again only after a reload). */
+    private suspend fun prewarm(core: AppCore) {
+        val lists = core.playlists.all()
+        val pid = core.settings.current().activePlaylistId.takeIf { id -> lists.any { it.id == id } } ?: lists.firstOrNull()?.id ?: return
+        core.library.prewarmSearch(pid, core.epg, core.index)
     }
 
     fun checkNow(core: AppCore) { core.scope.launch { check(core) } }
@@ -44,5 +53,6 @@ object AutoRefresh {
         } finally {
             running.unlock()
         }
+        prewarm(core)
     }
 }

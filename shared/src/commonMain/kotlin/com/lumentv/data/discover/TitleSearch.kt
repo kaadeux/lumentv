@@ -14,6 +14,8 @@ import kotlinx.coroutines.coroutineScope
 object TitleSearch {
     const val LIMIT = 60
     const val PERSON_LIMIT = 40
+    /** How long the search waits for TMDB (other titles, actors) before showing the playlist's own results. */
+    const val ONLINE_MS = 3_000L
 
     /** "Avec Tom Holland", "Réalisé par …" or "Créé par …": the playlist's titles of one person, in TMDB's order (most popular first). */
     class PersonHit(val key: String, val title: String, val movies: List<VodLite>, val series: List<VodLite>)
@@ -24,10 +26,11 @@ object TitleSearch {
         val sq = SmartSearch.Query(query)
         if (!sq.valid) return@coroutineScope Results(emptyList(), emptyList(), emptyList())
         val online = tmdb.enabled && sq.compact.length >= 3
-        val people = async { if (online) people(query, idx, tmdb) else emptyList() }
+        // TMDB at most 3 s: a slow server left the whole search on "Recherche…", the playlist's titles with it.
+        val people = async { if (online) kotlinx.coroutines.withTimeoutOrNull(ONLINE_MS) { people(query, idx, tmdb) }.orEmpty() else emptyList() }
         // Other titles: TMDB's French and original titles of what the query means ("seigneur des anneaux" → "The Lord of the Rings").
-        val otherMovies = async { if (online) runCatching { tmdb.search(false, query).take(8).mapNotNull { idx.find(false, it) } }.getOrDefault(emptyList()) else emptyList() }
-        val otherSeries = async { if (online) runCatching { tmdb.search(true, query).take(8).mapNotNull { idx.find(true, it) } }.getOrDefault(emptyList()) else emptyList() }
+        val otherMovies = async { if (online) kotlinx.coroutines.withTimeoutOrNull(ONLINE_MS) { runCatching { tmdb.search(false, query).take(8).mapNotNull { idx.find(false, it) } }.getOrDefault(emptyList()) }.orEmpty() else emptyList() }
+        val otherSeries = async { if (online) kotlinx.coroutines.withTimeoutOrNull(ONLINE_MS) { runCatching { tmdb.search(true, query).take(8).mapNotNull { idx.find(true, it) } }.getOrDefault(emptyList()) }.orEmpty() else emptyList() }
         fun merge(local: List<VodLite>, alt: List<VodLite>) = (local + alt).distinctBy { it.id }.distinctBy { Featured.baseTitle(it.name) }.take(limit)
         Results(
             merge(SmartSearch.search(sq, idx.movies, limit * 2), otherMovies.await()),

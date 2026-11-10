@@ -271,5 +271,8 @@ data class TmdbLinkEntity(
 /** Light rows of the channels, for the search ([com.lumentv.data.discover.VodLite] for films and series). */
 data class ChannelLite(val id: Long, val name: String, val number: Int)
 
+/** What finds a channel's guide ([com.lumentv.data.epg.EpgMatcher.keyFor]), without the rest of its row. */
+data class ChannelGuideKey(val id: Long, val name: String, val epgId: String?, val epgOverride: String?)
+
 /** A channel's name and group only, to pick the French ones before reading their full rows. */
 data class ChannelNameGroup(val id: Long, val name: String, val groupName: String)

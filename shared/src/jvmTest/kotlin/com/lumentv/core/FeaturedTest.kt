@@ -139,3 +139,31 @@ class DurationTest {
         org.junit.Assert.assertEquals(0, com.lumentv.data.xtream.XtreamApi.durationOf(null, null))
     }
 }
+
+class OtherLanguageTest {
+    @Test fun platformTagsAreNotLanguages() {
+        // "NF - " is Netflix: those series were left out of the search.
+        kotlin.test.assertFalse(Featured.otherLanguage("NF - From Scratch"))
+        kotlin.test.assertFalse(Featured.otherLanguage("EN - FROM (2022) (US)"))
+        kotlin.test.assertTrue(Featured.otherLanguage("DE - Dune (2021)"))
+        kotlin.test.assertTrue(Featured.otherLanguage("IN-EN - The Highest Stakes"))
+    }
+
+    @Test fun fromIsFound() {
+        val idx = com.lumentv.data.discover.TitleIndex(emptyList(), listOf(
+            com.lumentv.data.discover.VodLite(1, "a", "EN - FROM (2022) (US)", "EN - Séries", null, null),
+            com.lumentv.data.discover.VodLite(2, "b", "DE - FROM (2022)", "DE - Serien", null, null)))
+        val hits = SmartSearch.search(SmartSearch.Query("From"), idx.series, 10)
+        kotlin.test.assertEquals(listOf(1L), hits.map { it.id })
+    }
+}
+
+class SearchRankTest {
+    @Test fun theTitleAskedForComesFirst() {
+        val idx = com.lumentv.data.discover.TitleIndex(emptyList(), listOf(
+            com.lumentv.data.discover.VodLite(1, "a", "NF - From Scratch", "Netflix", null, null),
+            com.lumentv.data.discover.VodLite(2, "b", "NF - Far from Home", "Netflix", null, null),
+            com.lumentv.data.discover.VodLite(3, "c", "EN - FROM (2022) (US)", "EN - Séries", null, null)))
+        kotlin.test.assertEquals(3L, SmartSearch.search(SmartSearch.Query("From"), idx.series, 10).first().id)
+    }
+}
