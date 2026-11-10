@@ -205,6 +205,7 @@ class AppState(private val scope: CoroutineScope) {
                     .onFailure { loadError = userMessage(it) }
             }
             loading = false
+            if (System.getenv("LUMEN_PROBE") == "1") catalog?.let { c -> withContext(Dispatchers.IO) { library.probe(p, c) } }
             // A list read from the cache, from before the account was kept: its state asked alone (end date in Settings).
             catalog?.takeIf { p.type == "xtream" && it.account == null }?.let { c ->
                 runCatching { library.account(p) }.getOrNull()?.let { a ->

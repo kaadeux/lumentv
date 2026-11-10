@@ -1,5 +1,7 @@
 package com.lumentv.desktop
 
+import kotlinx.serialization.json.decodeFromStream
+import kotlinx.serialization.json.encodeToStream
 import com.sun.jna.platform.win32.Crypt32Util
 import com.lumentv.sync.ProfileDoc
 import kotlinx.serialization.Serializable
@@ -47,12 +49,15 @@ object Store {
     fun loadKeys(): StoredKeys? = readSecret("profile.bin")?.let { runCatching { json.decodeFromString<StoredKeys>(it) }.getOrNull() }
     fun saveKeys(k: StoredKeys?) { if (k == null) File(dir, "profile.bin").delete() else writeSecret("profile.bin", json.encodeToString(k)) }
 
+    // Read and written as a stream: the whole list as one text (250 000 titles) ran the PC out of memory (1.9.23).
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     fun loadCatalog(key: String): Catalog? = File(catalogDir, "$key.json.gz").takeIf { it.exists() }?.let { f ->
-        runCatching { json.decodeFromString<Catalog>(GZIPInputStream(f.inputStream()).use { it.readBytes() }.decodeToString()) }.getOrNull()
+        runCatching { GZIPInputStream(f.inputStream().buffered(), 64 * 1024).use { json.decodeFromStream(Catalog.serializer(), it) } }.getOrNull()
     }
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     fun saveCatalog(key: String, c: Catalog) {
         val tmp = File(catalogDir, "$key.tmp")
-        GZIPOutputStream(tmp.outputStream()).use { it.write(json.encodeToString(c).toByteArray()) }
+        GZIPOutputStream(tmp.outputStream(), 64 * 1024).buffered(64 * 1024).use { json.encodeToStream(Catalog.serializer(), c, it) }
         tmp.renameTo(File(catalogDir, "$key.json.gz").also { it.delete() })
     }
 

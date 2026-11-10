@@ -77,6 +77,58 @@ class Library(private val http: OkHttpClient) {
     private fun xtream(p: SyncPlaylist) = XtreamApi(http.asHttp(), XtreamCredentials(p.source, p.username, p.password), p.ua.ifBlank { null })
 
     /** [step]: "Chargement des films · 12 000" and how far along (0..1, null: not known), for the bar at the top. */
+    /**
+     * Diagnosis (LUMEN_PROBE=1): asks a live channel of [p] in several ways and writes only the answer codes to the
+     * playback log, so a provider refusing every stream (HTTP 513) can be told apart. No address nor login is written.
+     */
+    fun probe(p: SyncPlaylist, c: Catalog) {
+        if (p.type != "xtream") return
+        val ch = c.channels.firstOrNull { it.name.contains("TF1", true) && it.streamId > 0 } ?: c.channels.firstOrNull { it.streamId > 0 } ?: return
+        val base = com.lumentv.data.xtream.XtreamApi.normalizeServer(p.source)
+        val u = com.lumentv.core.urlEncode(p.username); val pw = com.lumentv.core.urlEncode(p.password)
+        val plain = OkHttpClient.Builder().followRedirects(true).build()
+        fun code(url: String, ua: String?): String = runCatching {
+            val b = Request.Builder().url(url).header("Range", "bytes=0-1023")
+            if (ua != null) b.header("User-Agent", ua)
+            plain.newCall(b.build()).execute().use { r -> "${r.code}" + (r.request.url.host.let { h -> if (h == java.net.URI(base).host) "" else " (redirigé ailleurs)" }) }
+        }.getOrElse { "erreur ${it::class.simpleName}" }
+        val info = runCatching {
+            plain.newCall(Request.Builder().url("$base/player_api.php?username=$u&password=$pw").build()).execute().use { r ->
+                val o = kotlinx.serialization.json.Json.parseToJsonElement(r.body!!.string()) as kotlinx.serialization.json.JsonObject
+                val s = o["server_info"] as? kotlinx.serialization.json.JsonObject
+                val ui = o["user_info"] as? kotlinx.serialization.json.JsonObject
+                val host = s?.get("url")?.toString()?.trim('"')
+                Triple(host, s?.get("port")?.toString()?.trim('"'), "${ui?.get("allowed_output_formats")}, connexions en cours ${ui?.get("active_cons")} / ${ui?.get("max_connections")}")
+            }
+        }.getOrNull()
+        PlaybackLog.line("diagnostic « ${ch.name} » : serveur annoncé ${if (info?.first == null) "?" else if (info.first == java.net.URI(base).host) "= adresse de la liste" else "≠ adresse de la liste"}, port ${info?.second}, formats ${info?.third}")
+        val path = "live/$u/$pw/${ch.streamId}"
+        listOf(
+            "ts, lecteur par défaut" to ("$base/$path.ts" to null),
+            "m3u8" to ("$base/$path.m3u8" to null),
+            "sans /live" to ("$base/$u/$pw/${ch.streamId}" to null),
+            "ts, UA VLC" to ("$base/$path.ts" to "VLC/3.0.20 LibVLC/3.0.20"),
+            "ts, UA IPTV Smarters" to ("$base/$path.ts" to "IPTVSmartersPlayer"),
+            "ts, UA navigateur" to ("$base/$path.ts" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"),
+            "ts, UA Lumen" to ("$base/$path.ts" to p.ua.ifBlank { null }),
+        ).forEach { (label, req) -> PlaybackLog.line("diagnostic $label : ${code(req.first, req.second)}"); Thread.sleep(1500) }
+        // The same server over HTTPS (the port it announces), as some players use it.
+        runCatching {
+            plain.newCall(Request.Builder().url("$base/player_api.php?username=$u&password=$pw").build()).execute().use { r ->
+                val o = kotlinx.serialization.json.Json.parseToJsonElement(r.body!!.string()) as kotlinx.serialization.json.JsonObject
+                val s = o["server_info"] as? kotlinx.serialization.json.JsonObject
+                val hp = s?.get("https_port")?.toString()?.trim('"')
+                PlaybackLog.line("diagnostic protocole annoncé ${s?.get("server_protocol")}, port https $hp")
+                val host = java.net.URI(base).host
+                PlaybackLog.line("diagnostic https, ts : ${code("https://$host${hp?.takeIf { it.isNotBlank() && it != "443" }?.let { ":$it" }.orEmpty()}/$path.ts", null)}")
+            }
+        }.onFailure { PlaybackLog.line("diagnostic https : erreur ${it::class.simpleName}") }
+        info?.first?.takeIf { it != java.net.URI(base).host }?.let { h ->
+            val alt = "http://$h${info.second?.let { ":$it" }.orEmpty()}"
+            PlaybackLog.line("diagnostic serveur annoncé, ts : ${code("$alt/$path.ts", null)}")
+        }
+    }
+
     /** The account's state alone (status, end date, connections), for a list read from the cache. */
     suspend fun account(p: SyncPlaylist): String? = withContext(Dispatchers.IO) { xtream(p).authenticate().summary().ifBlank { null } }
 

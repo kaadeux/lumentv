@@ -10,7 +10,7 @@ plugins {
     id("org.jetbrains.compose")
 }
 
-val appVersion = "1.9.23"
+val appVersion = "1.9.24"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -38,7 +38,8 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.lumentv.desktop.MainKt"
-        jvmArgs += listOf("-Xmx1200m", "-Dfile.encoding=UTF-8")
+        // 2 GB at most: a list of 250 000 titles, the one shown and the one being reloaded at once.
+        jvmArgs += listOf("-Xmx2g", "-Dfile.encoding=UTF-8")
         buildTypes.release.proguard { isEnabled.set(false) }
         nativeDistributions {
             targetFormats(TargetFormat.Msi)
