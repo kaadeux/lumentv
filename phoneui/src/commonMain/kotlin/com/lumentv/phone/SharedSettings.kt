@@ -89,12 +89,18 @@ private class CoreSettingsModel(
     override fun editList(key: String) = launch { list(key)?.let { edit(it.id, it.type) } }
     override fun useList(key: String) = launch { key.toLongOrNull()?.let { core.settings.set(Keys.activePlaylist, it) } }
     override fun reloadList(key: String) = launch { key.toLongOrNull()?.let { if (core.playlists.refresh(it).ok) core.epg.refresh(it) } }
-    override fun deleteList(key: String) = launch {
-        val id = key.toLongOrNull() ?: return@launch
-        val next = core.playlists.all().firstOrNull { it.id != id }
+    override fun deleteList(key: String) = launch { deleteList(key, null) }
+    override suspend fun historyCount(key: String): Int = key.toLongOrNull()?.let { core.historyTransfer.count(it) } ?: 0
+    override suspend fun deleteList(key: String, moveTo: String?): String? {
+        val id = key.toLongOrNull() ?: return null
+        val to = moveTo?.toLongOrNull()
+        // Its history first: into the list chosen, what is not found there kept aside (as with no list chosen).
+        val report = to?.let { t -> runCatching { core.historyTransfer.move(id, t) }.getOrNull()?.let { r -> core.playlists.get(t)?.name?.let { r.text(it) } } }
+        val next = to?.let { core.playlists.get(it) } ?: core.playlists.all().firstOrNull { it.id != id }
         if (core.settings.current().activePlaylistId == id && next != null) core.settings.set(Keys.activePlaylist, next.id)
         core.playlists.delete(id)
         core.resolver.forget()
+        return report
     }
     override fun setReloadHours(key: String, hours: Int) = launch { list(key)?.let { core.playlists.save(it.copy(refreshHours = hours)) } }
     override suspend fun encryptList(key: String): Boolean {

@@ -69,6 +69,13 @@ interface SettingsModel {
     fun useList(key: String)
     fun reloadList(key: String)
     fun deleteList(key: String)
+    /** The films and episodes watched in a list: what moving its history would keep (0: nothing to ask). */
+    suspend fun historyCount(key: String): Int = 0
+    /**
+     * Removes a list; its history goes into [moveTo] (another list's key) for the titles found there, the rest is kept
+     * aside for a list added later. The report to show, or null.
+     */
+    suspend fun deleteList(key: String, moveTo: String?): String? { deleteList(key); return null }
     fun setReloadHours(key: String, hours: Int)
     /** Encrypts a list's login again; true when it is encrypted now. */
     suspend fun encryptList(key: String): Boolean
@@ -113,6 +120,8 @@ fun SettingsPage(model: SettingsModel, modifier: Modifier = Modifier, maxWidth: 
     val s = model.state()
     val scope = rememberCoroutineScope()
     var notice by remember { mutableStateOf<String?>(null) }
+    /** What became of a removed list's history: found in the other list, kept aside. */
+    var report by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf<String?>(null) }
     var listMenu by remember { mutableStateOf<SettingsList?>(null) }
     var deleting by remember { mutableStateOf<SettingsList?>(null) }
@@ -264,8 +273,27 @@ fun SettingsPage(model: SettingsModel, modifier: Modifier = Modifier, maxWidth: 
         ), { listMenu = null }, if (l.isXtream) "Compte Xtream" else "Playlist M3U")
     }
     deleting?.let { l ->
-        KitConfirm("Supprimer « ${l.name} » ?", "Ses chaînes, films, séries, son guide et son historique sont retirés de ${model.deviceWord}.", "Supprimer",
-            onConfirm = { model.deleteList(l.key) }, onDismiss = { deleting = null }, danger = true)
+        // Its history can follow into another list; the titles not found there (or with no other list) are kept
+        // aside and looked for in the next list added.
+        val others = s.lists.filter { it.key != l.key }
+        val watched by androidx.compose.runtime.produceState<Int?>(null, l.key) { value = runCatching { model.historyCount(l.key) }.getOrDefault(0) }
+        val n = watched
+        fun remove(to: SettingsList?) {
+            deleting = null
+            notice = if (to != null) "Transfert de l'historique…" else null
+            scope.launch { val r = model.deleteList(l.key, to?.key); notice = null; report = r }
+        }
+        when {
+            n == null -> {}
+            n == 0 || others.isEmpty() -> KitConfirm("Supprimer « ${l.name} » ?",
+                "Ses chaînes, films, séries et son guide sont retirés de ${model.deviceWord}." +
+                    (if (n > 0) " Son historique ($n titres) est gardé de côté : il reviendra avec la prochaine liste qui a ces titres." else ""),
+                "Supprimer", onConfirm = { remove(null) }, onDismiss = { deleting = null }, danger = true)
+            else -> KitMenu("Supprimer « ${l.name} » ?", others.map { o ->
+                KitOption("Garder son historique ($n titres) dans « ${o.name} »") { remove(o) }
+            } + KitOption("Supprimer sans transférer", danger = true) { remove(null) }, { deleting = null },
+                "Ses chaînes, films, séries et son guide sont retirés. Les titres introuvables restent gardés de côté pour une prochaine liste.")
+        }
     }
     // One press used to sign out: asked first, as the name and the passphrase are needed to come back.
     if (signingOut) KitConfirm("Se déconnecter du profil ?", "Les favoris, l'historique et les notes ne se synchroniseront plus. Il faudra le nom du profil et sa phrase secrète pour le retrouver.",
@@ -302,6 +330,7 @@ fun SettingsPage(model: SettingsModel, modifier: Modifier = Modifier, maxWidth: 
             }
         }
     }
+    report?.let { KitTextDialog("Historique", it, { report = null }) }
     notice?.let { n -> KitDialog(n, { notice = null }, buttons = { KitButton("OK", primary = true, modifier = Modifier.fillMaxWidth()) { notice = null } }) }
     LaunchedEffect(s.lists.size) { if (listMenu != null && s.lists.none { it.key == listMenu?.key }) listMenu = null }
 }

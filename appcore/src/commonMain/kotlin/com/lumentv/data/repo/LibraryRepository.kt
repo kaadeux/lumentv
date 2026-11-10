@@ -13,6 +13,7 @@ import com.lumentv.data.db.PrefKind
 import com.lumentv.data.db.ProgramEntity
 import com.lumentv.data.db.SeriesRow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -189,7 +190,9 @@ class LibraryRepository(private val db: AppDatabase) {
 
     // ---- History -------------------------------------------------------------------------------------------
 
+    /** What was watched, newest first; not the lines kept aside (HistoryTransfer.RESERVE), which no list shows. */
     fun observeHistory(limit: Int = 100) = db.history().observeRecent(limit)
+        .map { list -> list.filter { it.playlistId != HistoryTransfer.RESERVE } }
 
     suspend fun history(key: String) = withContext(IoDispatcher) { db.history().get(key) }
 

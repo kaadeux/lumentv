@@ -69,7 +69,16 @@ class PlaylistRepository(
     suspend fun save(p: PlaylistEntity): Long =
         if (p.id == 0L) db.playlists().insert(p) else { db.playlists().update(p); p.id }
 
+    /** A list loaded for the first time: the history kept aside is looked for in it (set by AppCore). */
+    var onFirstLoad: (suspend (Long) -> Unit)? = null
+
     suspend fun delete(id: Long) = db.transaction {
+        // Its films and episodes watched are kept aside (no list shows them), for a list added later (HistoryTransfer).
+        db.history().everything().filter { it.playlistId == id && (it.kind == com.lumentv.data.db.HistoryKind.MOVIE || it.kind == com.lumentv.data.db.HistoryKind.EPISODE) }.forEach { h ->
+            val key = LibraryRepository.key(h.kind, HistoryTransfer.RESERVE, h.uid)
+            val there = db.history().get(key)
+            if (there == null || there.watchedAt < h.watchedAt) db.history().upsert(h.copy(key = key, playlistId = HistoryTransfer.RESERVE))
+        }
         db.channels().deleteFor(id)
         db.vod().deleteMovies(id)
         db.vod().deleteSeries(id)
@@ -97,6 +106,7 @@ class PlaylistRepository(
                     PlaylistType.XTREAM -> refreshXtream(p)
                     else -> refreshM3u(p)
                 }
+                if (p.lastRefresh == 0L) runCatching { onFirstLoad?.invoke(id) }
                 RefreshOutcome(true, summary)
             } catch (t: Throwable) {
                 logWarn(TAG, "refresh failed: ${Redact.text(t.toString())}")

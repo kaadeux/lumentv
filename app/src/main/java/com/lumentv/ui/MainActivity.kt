@@ -112,6 +112,9 @@ class MainActivity : ComponentActivity() {
                         } else AppShell(vm, firstLaunch)
                         if (!phone) MiniPlayerHost(vm.graph)
                         UpdateHost(vm)
+                        // A new list found the history kept aside: what came back, what did not.
+                        val historyNotice by vm.graph.core.historyNotice.collectAsStateWithLifecycle()
+                        historyNotice?.let { com.lumentv.ui.kit.KitTextDialog("Historique", it, { vm.graph.core.historyNotice.value = null }) }
                     }
                 }
             }

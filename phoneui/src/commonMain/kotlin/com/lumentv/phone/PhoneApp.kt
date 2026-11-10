@@ -124,6 +124,9 @@ fun LumenPhoneApp(core: AppCore, player: VideoPlayer, access: AccessGate? = null
     val settings by core.settings.flow.collectAsState(null)
     val list = playlists
     val s = settings
+    // A new list found the history kept aside: what came back, what did not.
+    val historyNotice by core.historyNotice.collectAsState()
+    historyNotice?.let { com.lumentv.ui.kit.KitTextDialog("Historique", it, { core.historyNotice.value = null }) }
     Box(Modifier.fillMaxSize().background(Palette.Background)) {
         when {
             access != null && !access.unlocked -> AccessScreen(access)
