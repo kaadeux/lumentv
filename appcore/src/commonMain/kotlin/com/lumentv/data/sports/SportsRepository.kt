@@ -145,5 +145,9 @@ class SportsRepository(
         runCatching { games(pid, SportPrefs.of(settings.current())) }
     }
 
+    /** Every club and nation of the chosen competitions, for the team filter (even those not playing in the period). */
+    suspend fun teams(prefs: SportPrefs): List<TeamEntry> =
+        runCatching { fixtures.teams(SportsFunnel.effectiveLeagues(prefs.sports, prefs.leagues)) }.getOrDefault(emptyList())
+
     suspend fun save(prefs: SportPrefs) = settings.setSports(prefs)
 }

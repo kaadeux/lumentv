@@ -104,8 +104,11 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
         vm.graph.sports.save(SportPrefs(s, prefs.competitions, t, d, l))
     }
     val all = games.orEmpty()
-    val clubs = remember(all) { funnel.clubs(all.map { it.fixture }) }
-    val shownFixtures = remember(all, prefs.teams) { funnel.byClubs(all.map { it.fixture }, prefs.teams).toSet() }
+    // Every club and nation of the chosen competitions, even those not playing in the period (international break).
+    val known by produceState(emptyList<com.lumentv.data.sports.TeamEntry>(), loadKey) { value = vm.graph.sports.teams(prefs) }
+    val teams = remember(all, known) { funnel.teamEntries(all.map { it.fixture }, known) }
+    val clubs = remember(teams) { teams.map { it.name }.distinct() }
+    val shownFixtures = remember(all, prefs.teams, known) { funnel.byClubs(all.map { it.fixture }, prefs.teams, known).toSet() }
     val shown = all.filter { it.fixture in shownFixtures }
     val leagues = funnel.leaguesOf(sports)
     var picker by remember { mutableStateOf<String?>(null) }
@@ -159,9 +162,19 @@ private fun OfficialSports(vm: MainViewModel, pid: Long, prefs: SportPrefs) {
             leagues.map { l -> l.id to ((if (sports.size > 1) SportsCatalog.byId(l.sport)?.emoji?.let { "$it  " } else null).orEmpty() + l.label) },
             prefs.leagues, onToggle = { id -> save(l = if (id in prefs.leagues) prefs.leagues - id else prefs.leagues + id) },
             onClear = { save(l = prefs.leagues - leagues.map { it.id }.toSet()) }, onDismiss = { picker = null })
-        "clubs" -> PickDialog("Équipes", "Aucune cochée = tous les matchs", (clubs + prefs.teams.filter { it !in clubs }).map { it to it },
-            prefs.teams.toSet(), onToggle = { c -> save(t = if (c in prefs.teams) prefs.teams - c else prefs.teams + c) },
-            onClear = { save(t = emptyList()) }, onDismiss = { picker = null })
+        // Clubs and nations apart: all of them in one list was too long.
+        "clubs" -> com.lumentv.ui.kit.KitMenu("Équipes", listOf(
+            com.lumentv.ui.kit.KitOption("Tous les matchs", prefs.teams.none { it in clubs }) { save(t = emptyList()) },
+            com.lumentv.ui.kit.KitOption(funnel.teamCategory(teams, prefs.teams, false)) { picker = "clubs:club" },
+            com.lumentv.ui.kit.KitOption(funnel.teamCategory(teams, prefs.teams, true)) { picker = "clubs:nation" },
+        ), { picker = null }, "Aucune cochée = tous les matchs", rootModifier = Modifier.ignoreHeldOk())
+        "clubs:club", "clubs:nation" -> {
+            val nation = picker == "clubs:nation"
+            val names = teams.filter { it.nation == nation }.map { it.name }.distinct()
+            PickDialog(if (nation) "Nations" else "Clubs", "Aucun coché = tous les matchs", names.map { it to it },
+                prefs.teams.toSet(), onToggle = { c -> save(t = if (c in prefs.teams) prefs.teams - c else prefs.teams + c) },
+                onClear = { save(t = prefs.teams - names.toSet()) }, onDismiss = { picker = "clubs" })
+        }
         "days" -> OptionsDialog("Période", funnel.DAY_CHOICES.map { n -> MenuOption("$n jours", n == days) { if (n != days) save(d = n) } }, onDismiss = { picker = null })
     }
 }
@@ -183,7 +196,7 @@ private fun MenuButton(title: String, value: String, active: Boolean, onClick: (
 private fun PickDialog(title: String, subtitle: String, items: List<Pair<String, String>>, selected: Set<String>,
                        onToggle: (String) -> Unit, onClear: () -> Unit, onDismiss: () -> Unit) {
     val none = items.none { it.first in selected }
-    com.lumentv.ui.kit.KitMenu(title, listOf(com.lumentv.ui.kit.KitOption(if (title == "Équipes") "Tous les matchs" else "Toutes", none, onClick = onClear)) +
+    com.lumentv.ui.kit.KitMenu(title, listOf(com.lumentv.ui.kit.KitOption(when (title) { "Équipes" -> "Tous les matchs"; "Clubs" -> "Tous les clubs"; "Nations" -> "Toutes les nations"; else -> "Toutes" }, none, onClick = onClear)) +
         items.map { (id, label) -> com.lumentv.ui.kit.KitOption(label, id in selected) { onToggle(id) } },
         onDismiss, subtitle, closeOnPick = false, rootModifier = Modifier.ignoreHeldOk())
 }

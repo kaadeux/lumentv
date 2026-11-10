@@ -95,8 +95,13 @@ fun SportsScreen(state: AppState) {
     }
     fun save(key: String, values: Collection<String>) = state.setSetting(key, values.sorted().joinToString("\n"))
     val all = games.orEmpty()
-    val clubs = remember(all) { funnel.clubs(all.map { it.f }) }
-    val kept = remember(all, teams) { funnel.byClubs(all.map { it.f }, teams).toSet() }
+    // Every club and nation of the chosen competitions, even those not playing in the period (international break).
+    val known by produceState(emptyList<com.lumentv.data.sports.TeamEntry>(), chosen) {
+        value = runCatching { state.fixtures.teams(chosen.mapNotNull { FixtureClient.league(it) }) }.getOrDefault(emptyList())
+    }
+    val teamList = remember(all, known) { funnel.teamEntries(all.map { it.f }, known) }
+    val clubs = remember(teamList) { teamList.map { it.name }.distinct() }
+    val kept = remember(all, teams, known) { funnel.byClubs(all.map { it.f }, teams, known).toSet() }
     val shown = all.filter { it.f in kept }
     val leagueList = funnel.leaguesOf(sports)
     var picker by remember { mutableStateOf<String?>(null) }
@@ -127,9 +132,15 @@ fun SportsScreen(state: AppState) {
                 }
                 if (clubs.isNotEmpty() || picked.isNotEmpty()) Menu("Équipe", funnel.summary(picked, "Toutes", "équipes"), picked.isNotEmpty(), picker == "clubs", { picker = if (it) "clubs" else null }) {
                     MenuEntry(if (picked.isEmpty()) "✓  Tous les matchs" else "     Tous les matchs") { save("sport_teams", emptyList()) }
-                    clubs.forEach { cl ->
-                        val on = cl in teams
-                        MenuEntry((if (on) "✓  " else "     ") + cl) { save("sport_teams", if (on) teams - cl else teams + cl) }
+                    // Clubs and nations apart: all of them in one list was too long.
+                    listOf(false, true).forEach { nation ->
+                        val names = teamList.filter { it.nation == nation }.map { it.name }.distinct()
+                        if (names.isNotEmpty()) Text(if (nation) "NATIONS" else "CLUBS", style = MaterialTheme.typography.labelSmall, color = Pal.dim,
+                            modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 4.dp))
+                        names.forEach { cl ->
+                            val on = cl in teams
+                            MenuEntry((if (on) "✓  " else "     ") + cl) { save("sport_teams", if (on) teams - cl else teams + cl) }
+                        }
                     }
                 }
                 Menu("Période", "$days jours", false, picker == "days", { picker = if (it) "days" else null }) {

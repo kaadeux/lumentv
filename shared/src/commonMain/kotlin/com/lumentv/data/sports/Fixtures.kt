@@ -32,6 +32,9 @@ import kotlinx.datetime.toLocalDateTime
 data class League(val id: String, val sport: String, val label: String, val path: String, val tvFr: String? = null, val sportsDb: Boolean = false,
                   val badgesFrom: String? = null, val lnr: String? = null, val parts: List<Pair<String, String>> = emptyList())
 
+/** A team of the filter: its name as the games show it, its sport, and whether it is a nation (else a club). */
+data class TeamEntry(val name: String, val sport: String, val nation: Boolean)
+
 data class Team(val name: String, val short: String?, val abbr: String?, val logo: String?) {
     /** Names a guide may use for this team, normalised: "Paris Saint-Germain", "PSG", "Le Havre AC" → "le havre", "havre". */
     val aliases: List<String> by lazy {
@@ -283,6 +286,34 @@ class FixtureClient(
         val list = (1..2).firstNotNullOfOrNull { runCatching { load() }.getOrNull() } ?: return synchronized(lock) { cache[key]?.second }.orEmpty()
         synchronized(lock) { cache[key] = nowMillis() to list }
         return list
+    }
+
+    private val teamsCache = HashMap<String, Pair<Long, List<TeamEntry>>>()
+
+    /**
+     * Every club and nation of [leagues], from ESPN's team lists (kept a day): the team filter offers them even when
+     * they do not play in the period (the international break leaves Rennes out of the games). Friendlies are left out:
+     * they list the 198 nations of the world.
+     */
+    suspend fun teams(leagues: Collection<League>): List<TeamEntry> = withContext(IoDispatcher) {
+        val paths = leagues.filter { !it.sportsDb }.flatMap { l ->
+            if (l.parts.isEmpty()) listOf(Triple(l.path, l.sport, false))
+            else l.parts.map { it.first }.filter { "friendly" !in it }.map { Triple(it, l.sport, true) }
+        }.distinct()
+        coroutineScope {
+            paths.map { (path, sport, nation) -> async {
+                synchronized(lock) { teamsCache[path]?.takeIf { nowMillis() - it.first < 86_400_000L }?.second }?.let { return@async it }
+                val list = runCatching { get("https://site.api.espn.com/apis/site/v2/sports/$path/teams?limit=500") }.getOrNull()?.let { body ->
+                    val sports = (json.parseToJsonElement(body) as? JsonObject)?.get("sports") as? JsonArray
+                    val league = ((sports?.firstOrNull() as? JsonObject)?.get("leagues") as? JsonArray)?.firstOrNull() as? JsonObject
+                    (league?.get("teams") as? JsonArray).orEmpty().mapNotNull { t ->
+                        ((t as? JsonObject)?.get("team") as? JsonObject)?.s("displayName")?.let { n -> TeamEntry(Team.country(n) ?: n, sport, nation) }
+                    }
+                } ?: return@async emptyList()
+                synchronized(lock) { teamsCache[path] = nowMillis() to list }
+                list
+            } }.awaitAll().flatten()
+        }
     }
 
     private fun get(url: String, headers: Map<String, String> = emptyMap()): String? =
