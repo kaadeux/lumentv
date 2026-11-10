@@ -12,8 +12,7 @@ class SportsFunnelTest {
     @Test fun competitionsTickedInOneSportKeepTheOtherSportWhole() {
         val leagues = SportsFunnel.effectiveLeagues(setOf("football", "rugby"), setOf("fra1", "ucl")).map { it.id }.toSet()
         val rugby = SportsFunnel.leaguesOf(setOf("rugby")).map { it.id }.toSet()
-        val bleus = SportsFunnel.leaguesOf(setOf("football")).filter { it.national }.map { it.id }.toSet()
-        assertEquals(setOf("fra1", "ucl") + bleus + rugby, leagues)
+        assertEquals(setOf("fra1", "ucl") + rugby, leagues)
     }
 
     @Test fun noCompetitionTickedMeansAllOfThatSport() {

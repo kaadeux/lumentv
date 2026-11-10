@@ -26,9 +26,11 @@ import kotlinx.datetime.toLocalDateTime
  * France, shown when no channel of the playlist announces a game. [badgesFrom]: the same league on TheSportsDB, for the
  * club crests ESPN lacks or gets wrong (it gives Vannes the flag of Vanuatu, Perpignan the one of the USA). [lnr]: the
  * league's own results page (LNR), for the live score and clock TheSportsDB's free key gives late or not at all.
+ * [parts]: several ESPN competitions offered as one filter (the national teams: Nations League, qualifiers, friendlies),
+ * each game labelled with its own ("Équipes nationales (foot) · Ligue des nations").
  */
 data class League(val id: String, val sport: String, val label: String, val path: String, val tvFr: String? = null, val sportsDb: Boolean = false,
-                  val badgesFrom: String? = null, val lnr: String? = null, val national: Boolean = false)
+                  val badgesFrom: String? = null, val lnr: String? = null, val parts: List<Pair<String, String>> = emptyList())
 
 data class Team(val name: String, val short: String?, val abbr: String?, val logo: String?) {
     /** Names a guide may use for this team, normalised: "Paris Saint-Germain", "PSG", "Le Havre AC" → "le havre", "havre". */
@@ -157,11 +159,15 @@ class FixtureClient(
             val crests = leagues.mapNotNull { l -> l.badgesFrom?.let { id -> id to async { rounds(l, id, rounds) } } }.toMap()
             leagues.flatMap { l ->
                 if (l.sportsDb) listOf(async { rounds(l, l.path, rounds).let { list -> if (l.lnr != null) withLnr(list, l.lnr) else list } })
+                else if (l.parts.isNotEmpty()) l.parts.flatMap { (path, label) ->
+                    // The usual broadcaster (TF1, France 2) is the Bleus's: not for Turkey - Georgia.
+                    val part = l.copy(label = "${l.label} · $label", path = path)
+                    compact.map { d -> async { day(part, d).map { f -> if (f.home?.name?.startsWith("France") == true || f.away?.name?.startsWith("France") == true) f
+                        else f.copy(league = part.copy(tvFr = null)) } } }
+                }
                 else compact.map { d -> async { day(l, d).let { list -> l.badgesFrom?.let { id -> withCrests(list, crests.getValue(id).await()) } ?: list } } }
             }.awaitAll().flatten()
-        // National teams: the Bleus' games only, not the 50 others of a Nations League week.
-        }.distinctBy { it.id }.filter { !it.league.national || listOfNotNull(it.home?.name, it.away?.name).any { n -> n.startsWith("France") } }
-            .filter { it.state == "in" || (it.state == "pre" && it.start > now - 3 * 3_600_000L && it.start < end) }
+        }.distinctBy { it.id }.filter { it.state == "in" || (it.state == "pre" && it.start > now - 3 * 3_600_000L && it.start < end) }
             .sortedWith(compareBy({ !it.live }, { it.start }))
     }
 
@@ -425,17 +431,16 @@ class FixtureClient(
             League("esp1", "football", "Liga", "soccer/esp.1", "beIN Sports"),
             League("ita1", "football", "Serie A", "soccer/ita.1", "beIN Sports"),
             League("ger1", "football", "Bundesliga", "soccer/ger.1", "beIN Sports"),
-            // National teams: the Bleus' games were missing.
-            League("unl", "football", "Équipe de France : Ligue des nations", "soccer/uefa.nations", "TF1", national = true),
-            League("euroq", "football", "Équipe de France : qualifications Euro", "soccer/uefa.euroq", "TF1", national = true),
-            League("wcq", "football", "Équipe de France : qualifications Mondial", "soccer/fifa.worldq.uefa", "TF1", national = true),
-            League("friendly", "football", "Équipe de France : matchs amicaux", "soccer/fifa.friendly", "TF1", national = true),
+            // National teams, one filter: the Bleus' games were missing.
+            League("nat_foot", "football", "Équipes nationales (foot)", "soccer/uefa.nations", "TF1", parts = listOf(
+                "soccer/uefa.nations" to "Ligue des nations", "soccer/uefa.euroq" to "Qualifications Euro",
+                "soccer/fifa.worldq.uefa" to "Qualifications Mondial", "soccer/fifa.friendly" to "Match amical")),
             League("top14", "rugby", "Top 14", "rugby/270559", "Canal+", badgesFrom = "4430"),
             League("prod2", "rugby", "Pro D2", "5172", "Canal+", sportsDb = true, lnr = "https://prod2.lnr.fr/calendrier-et-resultats"),
             League("rcc", "rugby", "Champions Cup (rugby)", "rugby/271937", "France Télévisions ou beIN Sports"),
             League("6n", "rugby", "Six Nations", "rugby/180659", "France 2"),
-            League("nations", "rugby", "XV de France : tests de juillet et novembre", "rugby/17567", "France 2", national = true),
-            League("tests", "rugby", "XV de France : tests", "rugby/289234", "France 2", national = true),
+            League("nat_rugby", "rugby", "Équipes nationales (rugby)", "rugby/17567", "France 2", parts = listOf(
+                "rugby/17567" to "Tests de juillet et novembre", "rugby/289234" to "Test international")),
             League("nba", "basket", "NBA", "basketball/nba", "beIN Sports"),
             League("f1", "moteur", "Formule 1", "racing/f1", "Canal+"),
             League("nfl", "nfl", "NFL", "football/nfl"),

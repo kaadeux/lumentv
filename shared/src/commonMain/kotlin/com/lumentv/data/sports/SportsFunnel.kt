@@ -32,11 +32,11 @@ object SportsFunnel {
 
     /**
      * The competitions to load, sport by sport: the ones ticked for that sport, or all of its competitions when none
-     * of them is ticked (ticking Ligue 1 must not hide the rugby). The France teams' games come with their sport always:
-     * a selection made before they were offered must not hide the Bleus.
+     * of them is ticked (ticking Ligue 1 must not hide the rugby). The national teams are one of them ("Équipes
+     * nationales"): ticked, their games come with every nation, which the team filter then narrows (France…).
      */
     fun effectiveLeagues(sports: Set<String>, leagues: Set<String>): List<League> =
-        sports.flatMap { s -> leaguesOf(setOf(s)).let { all -> all.filter { it.id in leagues }.ifEmpty { all } + all.filter { it.national } } }.distinct()
+        sports.flatMap { s -> leaguesOf(setOf(s)).let { all -> all.filter { it.id in leagues }.ifEmpty { all } } }
 
     /** Clubs (or fighters, drivers…) of the listed games, for the third step. */
     fun clubs(games: List<Fixture>): List<String> = games.flatMap { listOfNotNull(it.home?.name, it.away?.name) }.distinct().sorted()

@@ -14,12 +14,16 @@ class NationalTeamsTest {
     }
 
     @Test fun guideFindsTheBleusGame() {
-        val f = Fixture("1", FixtureClient.league("unl")!!, 1_000_000_000L, "pre", "", home = Team("Italie", "Italie", "ITA", null),
+        val f = Fixture("1", FixtureClient.league("nat_foot")!!, 1_000_000_000L, "pre", "", home = Team("Italie", "Italie", "ITA", null),
             away = Team("France", "France", "FRA", null), name = "Italie - France")
         assertTrue(FixtureMatcher.matches(f, "football ligue des nations italie france", 1_000_000_000L))
     }
 
     @Test fun nationalCompetitionsAreFollowed() {
-        listOf("unl", "friendly", "nations").forEach { assertTrue(FixtureClient.league(it) != null, it) }
+        listOf("nat_foot", "nat_rugby").forEach { assertTrue(FixtureClient.league(it)!!.parts.isNotEmpty(), it) }
+        // One filter: national teams only when ticked, like any other competition.
+        val ticked = SportsFunnel.effectiveLeagues(setOf("football"), setOf("fra1")).map { it.id }
+        assertTrue("nat_foot" !in ticked)
+        assertTrue("nat_foot" in SportsFunnel.effectiveLeagues(setOf("football"), setOf("fra1", "nat_foot")).map { it.id })
     }
 }
