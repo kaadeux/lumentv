@@ -137,13 +137,14 @@ object Featured {
     fun shortTitle(name: String): String = untagged(name).substringBefore(" (").substringBefore(" [").trim().ifBlank { name }
 
     /** The tags a provider puts before a copy's title: "4K-SC-HDR - ", "AR-SUBS - ", "FR | ". */
-    private val copyPrefix = Regex("^\\s*([A-Z0-9]{2,4}(?:[-/][A-Z0-9]{2,4}){0,3})\\s*(?:-\\s+|\\|\\s*)")
+    private val copyPrefix = Regex("^\\s*([A-Z0-9+]{2,4}(?:[-/][A-Z0-9+]{2,4}){0,3})\\s*(?:-\\s+|\\|\\s*)")
     private val tagNames = mapOf(
         "FR" to "Français", "EN" to "Anglais", "DE" to "Allemand", "NL" to "Néerlandais", "GR" to "Grec", "SC" to "Scandinave",
         "SE" to "Suédois", "NO" to "Norvégien", "DK" to "Danois", "FI" to "Finnois", "IS" to "Islandais", "AL" to "Albanais",
         "IR" to "Persan", "AR" to "Arabe", "ES" to "Espagnol", "IT" to "Italien", "PT" to "Portugais", "BR" to "Brésilien",
         "TR" to "Turc", "PL" to "Polonais", "RU" to "Russe", "IN" to "Indien", "RO" to "Roumain", "HU" to "Hongrois",
-        "4K" to "4K", "8K" to "8K", "HDR" to "HDR", "TOP" to "Top", "SUBS" to "sous-titré", "SUB" to "sous-titré", "MULTI" to "MULTI",
+        "4K" to "4K", "8K" to "8K", "HDR" to "HDR", "TOP" to "Top",
+        "NF" to "Netflix", "AMZ" to "Prime Video", "A+" to "Apple TV+", "D+" to "Disney+", "MRVL" to "Marvel", "SUBS" to "sous-titré", "SUB" to "sous-titré", "MULTI" to "MULTI",
     )
 
     /**

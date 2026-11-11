@@ -87,4 +87,14 @@ class HistoryNamesTest {
         assertEquals(1, SmartSearch.languageRank("TOP - Heart of the Beast (2026)"))
         assertEquals(0, SmartSearch.languageRank("FR-4K - Squid Game (2021) (KR)"))
     }
+
+    @Test fun streamingCopies() {
+        assertEquals("one piece", Featured.baseTitle("NF - ONE PIECE (2023) (US)"))
+        assertEquals("campus drivers", Featured.baseTitle("AMZ - Campus Drivers (2026) (FR)"))
+        assertEquals("stick", Featured.baseTitle("4K-A+ - Stick (2025) (US)"))
+        assertEquals("Netflix", Featured.versionLabel("NF - ONE PIECE (2023) (US)"))
+        assertEquals("4K · Apple TV+", Featured.versionLabel("4K-A+ - Stick (2025) (US)"))
+        assertEquals("Français", Featured.versionLabel("FR - Stick (2025) (US)"))
+        assertEquals("Anglais", Featured.versionLabel("EN - Stick (2025) (US)"))
+    }
 }

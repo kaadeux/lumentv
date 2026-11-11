@@ -191,7 +191,10 @@ fun MovieDetail(state: AppState, m0: Mv, onBack: () -> Unit) {
 fun SeriesDetail(state: AppState, s0: Se, onBack: () -> Unit) {
     val p = state.active ?: return
     val c = state.catalog ?: return
-    val s = remember(c, s0.uid) { c.series.firstOrNull { it.uid == s0.uid } ?: s0 }
+    // The copy shown: "Version" switches to another one of the same series (French, English, 4K, Netflix's…).
+    val versions = remember(c, s0.uid) { state.vod.versions(c, c.series.firstOrNull { it.uid == s0.uid } ?: s0) }
+    var uid by remember(s0.uid) { mutableStateOf(s0.uid) }
+    val s = versions.firstOrNull { it.uid == uid } ?: c.series.firstOrNull { it.uid == s0.uid } ?: s0
     val data by produceState<Result<Pair<Details?, List<Ep>>>?>(null, s.uid) { value = runCatching { state.library.seriesDetails(p, c, s) } }
     val details = data?.getOrNull()?.first
     val eps = data?.getOrNull()?.second.orEmpty()
@@ -225,10 +228,13 @@ fun SeriesDetail(state: AppState, s0: Se, onBack: () -> Unit) {
                     Text(listOfNotNull(ratingText(t, details?.rating ?: s.rating), (details?.release ?: s.year)?.take(4)?.takeIf { it.isNotBlank() },
                         if (seasons > 0) "$seasons saison" + if (seasons > 1) "s" else "" else null,
                         details?.genre?.takeIf { it.isNotBlank() } ?: s.category).joinToString("  ·  "), color = Pal.text.copy(alpha = 0.85f))
-                    if (target >= 0) Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Pill(targetLabel, { PlayerWindow.open(state, item(target)) }, Icons.Filled.PlayArrow, primary = true)
-                        val e = eps[target]
-                        Text("$targetLabel : S${e.season} E${e.episode} • ${e.title}", color = Pal.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (target >= 0 || versions.size > 1) Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (target >= 0) Pill(targetLabel, { PlayerWindow.open(state, item(target)) }, Icons.Filled.PlayArrow, primary = true)
+                        if (versions.size > 1) MenuPill("Version : ${Featured.versionLabel(s.name)}  ▾", versions.map { v -> Featured.versionLabel(v.name) to { uid = v.uid } })
+                        if (target >= 0) {
+                            val e = eps[target]
+                            Text("$targetLabel : S${e.season} E${e.episode} • ${e.title}", color = Pal.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                     StarRating(state.rating(Kind.SERIES, s.uid)) { state.rate(Kind.SERIES, s.uid, it, s.name, s.cover) }
                     (t?.overview ?: details?.plot ?: s.plot)?.let { Text(it, color = Pal.text.copy(alpha = 0.92f), lineHeight = 22.sp, maxLines = 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.6f)) }

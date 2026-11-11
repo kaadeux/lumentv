@@ -70,8 +70,8 @@ class Vod(private val state: AppState) {
 
     private fun input(series: Boolean, idx: CatalogIndex): DiscoverInput {
         val c = idx.catalog
-        val recent = if (series) c.series.withIndex().sortedByDescending { it.value.updated }.take(200).map { (i, s) -> VodLite(i.toLong(), s.uid, s.name, s.category, s.year, s.rating) }
-        else c.movies.withIndex().filter { !Featured.sport(it.value.category) }.sortedByDescending { it.value.added }.take(200).map { (i, m) -> VodLite(i.toLong(), m.uid, m.name, m.category, m.year, m.rating) }
+        val recent = if (series) c.series.withIndex().sortedByDescending { it.value.updated }.take(1000).map { (i, s) -> VodLite(i.toLong(), s.uid, s.name, s.category, s.year, s.rating) }
+        else c.movies.withIndex().filter { !Featured.sport(it.value.category) }.sortedByDescending { it.value.added }.take(1000).map { (i, m) -> VodLite(i.toLong(), m.uid, m.name, m.category, m.year, m.rating) }
         // uid → how much of it was watched (0..1), newest first; a series: by its episodes seen to the end.
         val watched = LinkedHashMap<String, Double>()
         if (series) state.historyOf(Kind.EPISODE).filter { it.parentUid != null }.groupBy { it.parentUid!! }
@@ -109,6 +109,18 @@ class Vod(private val state: AppState) {
         return c.movies.filter { Featured.baseTitle(it.name) == base && (it == m || !Featured.foreign(it.name, it.category)) }
             .sortedWith(compareBy({ com.lumentv.core.SmartSearch.languageRank(it.name) }, { com.lumentv.core.SmartSearch.qualityRank(it.name) }))
             .ifEmpty { listOf(m) }
+    }
+
+    /** The other copies of a series (FR, EN, 4K, Netflix's…), the given one included: the French ones first. */
+    fun versions(c: Catalog, s: Se): List<Se> {
+        val base = Featured.baseTitle(s.name)
+        if (base.length < 2) return listOf(s)
+        val year = Featured.year(s.year)
+        return c.series.filter { o -> Featured.baseTitle(o.name) == base && (o == s || !Featured.foreign(o.name, o.category)) &&
+                // Not One Piece 2023 among the copies of One Piece 1999.
+                Featured.year(o.year).let { y -> y == null || year == null || kotlin.math.abs(y - year) <= 1 } }
+            .sortedWith(compareBy({ com.lumentv.core.SmartSearch.languageRank(it.name) }, { com.lumentv.core.SmartSearch.qualityRank(it.name) }))
+            .ifEmpty { listOf(s) }
     }
 }
 

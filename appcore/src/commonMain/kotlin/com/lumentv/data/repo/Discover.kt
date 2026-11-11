@@ -60,8 +60,8 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
         // The index is the long part on a big list: built while the rest is read, not after.
         val indexed = kotlinx.coroutines.CoroutineScope(currentCoroutineContext()).async { index.of(pid) }
         val hidden = db.prefs().allOf(pid, if (series) PrefKind.SERIES_CATEGORY else PrefKind.MOVIE_CATEGORY).filter { it.hidden }.mapTo(HashSet()) { it.uid }
-        // 1000 films: the sport replays some lists add by the dozen are left out of the row afterwards.
-        val recent = if (series) db.vod().recentSeries(pid, 200).map { VodLite(it.s.id, it.s.uid, it.s.name, it.s.category, it.s.year, it.s.rating) }
+        // 1000: the sport replays left out of the row afterwards, and the copies of one title, take many of them.
+        val recent = if (series) db.vod().recentSeries(pid, 1000).map { VodLite(it.s.id, it.s.uid, it.s.name, it.s.category, it.s.year, it.s.rating) }
         else db.vod().recentMovies(pid, 1000).map { VodLite(it.m.id, it.m.uid, it.m.name, it.m.category, it.m.year, it.m.rating) }
         // uid → how much of it was watched (0..1), newest first; a series: by its episodes seen to the end.
         val watched = LinkedHashMap<String, Double>()

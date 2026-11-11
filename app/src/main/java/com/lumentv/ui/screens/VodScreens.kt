@@ -373,7 +373,10 @@ fun MovieDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
 }
 
 @Composable
-fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
+fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid0: String) {
+    // The copy shown: "Version" switches to another one of the same series (French, English, 4K, Netflix's…).
+    var uid by remember(uid0) { mutableStateOf(uid0) }
+    var versionMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
@@ -387,6 +390,9 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
             try { vm.graph.playlists.loadXtreamEpisodes(p, uid, s.s.seriesId) }
             catch (t: Throwable) { error = userMessage(t); vm.graph.library.storedEpisodes(playlistId, uid) }
         } else vm.graph.library.storedEpisodes(playlistId, uid)
+    }
+    val versions by produceState(emptyList<SeriesRow>(), playlistId, uid0) {
+        value = vm.graph.library.seriesByUid(playlistId, uid0)?.let { vm.graph.library.seriesVersions(it.s) }.orEmpty()
     }
     val s = series ?: return Loading()
     val eps = episodes
@@ -422,11 +428,15 @@ fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
                 scope.launch { vm.graph.transfers.downloadEpisode(e, series?.s?.name ?: e.title); vm.show("Téléchargement lancé") } })
         }, onDismiss = { epMenu = null }, subtitle = dl?.let { "Téléchargement : " + it.status })
     }
+    if (versionMenu) OptionsDialog("Version", versions.map { v ->
+        MenuOption(com.lumentv.core.Featured.versionLabel(v.s.name) + (com.lumentv.core.Featured.rating(v.s.rating)?.let { "  ·  ★ $it" } ?: ""), checked = v.s.uid == uid) { uid = v.s.uid }
+    }, onDismiss = { versionMenu = false }, subtitle = "La même série en plusieurs langues ou qualités")
+    val onVersions: (() -> Unit)? = if (versions.size > 1) ({ versionMenu = true }) else null
     val phone = com.lumentv.ui.LocalPhone.current
     if (!phone) SeriesDetailTv(vm, playlistId, uid, s, eps, error, seasons, season, { season = it }, progress, ::watched,
-        { l, on -> markWatched(l, on) }, { epMenu = it })
+        { l, on -> markWatched(l, on) }, { epMenu = it }, onVersions)
     else PhoneSeriesDetail(vm, playlistId, uid, s, eps, error, seasons, season, { season = it }, progress, ::watched,
-        { l, on -> markWatched(l, on) }, { epMenu = it })
+        { l, on -> markWatched(l, on) }, { epMenu = it }, onVersions)
 }
 
 fun duration(secs: Int): String = if (secs >= 3600) "${secs / 3600} h ${"%02d".format((secs % 3600) / 60)}" else "${secs / 60} min"
@@ -829,7 +839,7 @@ private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String)
 private fun SeriesDetailTv(
     vm: MainViewModel, playlistId: Long, uid: String, s: SeriesRow, eps: List<EpisodeEntity>?, error: String?, seasons: List<Int>, season: Int,
     onSeason: (Int) -> Unit, progress: Map<String, HistoryEntity>, watched: (EpisodeEntity) -> Boolean, markWatched: (List<EpisodeEntity>, Boolean) -> Unit,
-    onMenu: (EpisodeEntity) -> Unit,
+    onMenu: (EpisodeEntity) -> Unit, onVersions: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -874,6 +884,7 @@ private fun SeriesDetailTv(
                 modifier = (if (next == null) Modifier.focusRequester(focus) else Modifier).remembered(buttons, first = next == null)) {
                 scope.launch { vm.graph.library.toggleFavorite(playlistId, PrefKind.SERIES, uid) }
             }
+            onVersions?.let { HeroButton("Version : ${com.lumentv.core.Featured.versionLabel(s.s.name)}  ▾", modifier = Modifier.remembered(buttons), onClick = it) }
             eps?.filter { it.season == season }?.takeIf { it.isNotEmpty() }?.let { list ->
                 val all = list.all { watched(it) }
                 HeroButton(if (all) "Saison $season : non vue" else "Saison $season vue", modifier = Modifier.remembered(buttons)) { markWatched(list, !all) }

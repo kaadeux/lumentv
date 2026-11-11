@@ -309,7 +309,7 @@ internal fun nextEpisode(eps: List<EpisodeEntity>?, progress: Map<String, Histor
 internal fun PhoneSeriesDetail(
     vm: MainViewModel, playlistId: Long, uid: String, s: SeriesRow, eps: List<EpisodeEntity>?, error: String?, seasons: List<Int>, season: Int,
     onSeason: (Int) -> Unit, progress: Map<String, HistoryEntity>, watched: (EpisodeEntity) -> Boolean, markWatched: (List<EpisodeEntity>, Boolean) -> Unit,
-    onMenu: (EpisodeEntity) -> Unit,
+    onMenu: (EpisodeEntity) -> Unit, onVersions: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -338,6 +338,7 @@ internal fun PhoneSeriesDetail(
                         val all = inSeason.all { watched(it) }
                         IconAction(if (all) "✓" else "○", if (all) "Saison vue" else "Saison $season vue") { markWatched(inSeason, !all) }
                     }
+                    onVersions?.let { IconAction("⇄", com.lumentv.core.Featured.versionLabel(s.s.name), it) }
                 }
             }
         }

@@ -120,6 +120,20 @@ class LibraryRepository(private val db: AppDatabase) {
             .sortedWith(compareBy({ com.lumentv.core.SmartSearch.languageRank(it.m.name) }, { it.m.number }))
     }
 
+    /**
+     * The other copies of a series (French, English, 4K, Netflix's…), the given one included, the French ones first.
+     * Not those of another year: One Piece 2023 is not a copy of One Piece 1999.
+     */
+    suspend fun seriesVersions(s: com.lumentv.data.db.SeriesEntity): List<SeriesRow> = withContext(IoDispatcher) {
+        val base = com.lumentv.core.Featured.baseTitle(s.name)
+        if (base.length < 2) return@withContext emptyList()
+        val year = com.lumentv.core.Featured.yearOf(s.year, s.name)
+        db.vod().searchSeries(base, 80).filter { o -> o.s.playlistId == s.playlistId && com.lumentv.core.Featured.baseTitle(o.s.name) == base &&
+                (o.s.id == s.id || !com.lumentv.core.Featured.foreign(o.s.name, o.s.category)) &&
+                com.lumentv.core.Featured.yearOf(o.s.year, o.s.name).let { y -> y == null || year == null || kotlin.math.abs(y - year) <= 1 } }
+            .sortedWith(compareBy({ com.lumentv.core.SmartSearch.languageRank(it.s.name) }, { com.lumentv.core.SmartSearch.qualityRank(it.s.name) }))
+    }
+
     /** A category's films or series for a row of the Films / Séries home: one per title, newest first. */
     suspend fun categoryMovies(pid: Long, category: String) = withContext(IoDispatcher) {
         com.lumentv.core.Featured.clean(db.vod().movies(pid, category).sortedByDescending { it.m.addedAt }, { it.m.name }, { it.m.category })

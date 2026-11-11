@@ -199,6 +199,20 @@ private fun nextEpisode(eps: List<EpisodeEntity>?, progress: Map<String, History
 
 @Composable
 internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player: VideoPlayer) {
+    // The copy shown: "Version" switches to another one of the same series (French, English, 4K, Netflix's…).
+    val versions by produceState(emptyList<SeriesRow>(), row.s.id) { value = core.library.seriesVersions(row.s) }
+    var picked by remember(row.s.id) { mutableStateOf(row) }
+    var versionMenu by remember { mutableStateOf(false) }
+    androidx.compose.runtime.key(picked.s.uid) {
+        SeriesCopy(core, p, picked, player, if (versions.size > 1) ({ versionMenu = true }) else null)
+    }
+    if (versionMenu) Options("Version", "La même série en plusieurs langues ou qualités", versions.map { v ->
+        Option(Featured.versionLabel(v.s.name) + (Featured.rating(v.s.rating)?.let { "  ·  ★ $it" } ?: ""), checked = v.s.uid == picked.s.uid) { picked = v }
+    }) { versionMenu = false }
+}
+
+@Composable
+private fun SeriesCopy(core: AppCore, p: PlaylistEntity, row: SeriesRow, player: VideoPlayer, onVersions: (() -> Unit)?) {
     val changes by core.library.changes.collectAsState()
     val series by produceState(row, row.s.uid, changes) { value = core.library.seriesByUid(row.s.playlistId, row.s.uid) ?: row }
     val s = series.s
@@ -295,6 +309,7 @@ internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player
                         val all = inSeason.all { watched(it) }
                         IconAction(if (all) "✓" else "○", if (all) "Saison vue" else "Saison $season vue") { markWatched(inSeason, !all) }
                     }
+                    onVersions?.let { IconAction("⇄", Featured.versionLabel(s.name), it) }
                 }
             }
         }
