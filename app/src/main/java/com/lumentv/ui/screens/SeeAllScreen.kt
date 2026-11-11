@@ -105,7 +105,7 @@ internal fun <T> SeeAllPage(vm: MainViewModel, open: OpenSeeAll<T>, tile: @Compo
 @Composable
 private fun SortPill(label: String, selected: Boolean, onClick: () -> Unit) {
     FocusSurface(onClick, shape = RoundedCornerShape(20.dp), container = if (selected) Palette.Accent else Palette.PanelHigh, focusedScale = 1.06f) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) Palette.OnFocus else Palette.Text, maxLines = 1,
+        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) Palette.OnFocus else androidx.tv.material3.LocalContentColor.current, maxLines = 1,
             modifier = Modifier.padding(horizontal = if (com.lumentv.ui.LocalPhone.current) 13.dp else 18.dp, vertical = 8.dp))
     }
 }
