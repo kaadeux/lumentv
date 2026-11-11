@@ -20,7 +20,10 @@ import com.lumentv.core.query
 class Tmdb(private val http: Http, private val key: String) {
     /** A film or series of a TMDB list. */
     class Item(val id: String, val title: String, val original: String, val year: Int?, val rating: Double, val votes: Int,
-               val popularity: Double, val genres: List<Int>)
+               val popularity: Double, val genres: List<Int>) {
+        /** The English title, when the list was asked with English titles too (see [list]). */
+        var english: String = ""
+    }
 
     /** What makes a title like another: for the recommendations. */
     class Details(
@@ -39,11 +42,21 @@ class Tmdb(private val http: Http, private val key: String) {
     val enabled get() = key.isNotBlank()
 
     /** [path]: "trending/movie/week", "movie/popular", "discover/movie"… [pages] pages of 20, merged. */
-    fun list(path: String, pages: Int = 1, vararg params: Pair<String, String>): List<Item> {
+    fun list(path: String, pages: Int = 1, vararg params: Pair<String, String>): List<Item> = list(path, pages, false, *params)
+
+    /**
+     * [english]: the same pages asked in English too, so each item knows its English title ([Item.english]): a list
+     * names a Swedish series "A Couple of Lies", TMDB in French "Trouble échange" (original "Bytet").
+     */
+    fun list(path: String, pages: Int, english: Boolean, vararg params: Pair<String, String>): List<Item> {
         if (!enabled) return emptyList()
-        return (1..pages).flatMap { p ->
-            get("https://api.themoviedb.org/3/$path", "page" to "$p", "language" to "fr-FR", *params)?.let { items(it) } ?: return@flatMap emptyList()
-        }.distinctBy { it.id }
+        fun page(p: Int, lang: String) = get("https://api.themoviedb.org/3/$path", "page" to "$p", "language" to lang, *params)?.let { items(it) }
+        val all = (1..pages).flatMap { p -> page(p, "fr-FR") ?: return@flatMap emptyList() }.distinctBy { it.id }
+        if (english && all.isNotEmpty()) {
+            val names = (1..pages).flatMap { p -> page(p, "en-US").orEmpty() }.associate { it.id to it.title }
+            all.forEach { it.english = names[it.id].orEmpty() }
+        }
+        return all
     }
 
     /** The films of a saga (TMDB collection), in their order of release: "Harry Potter", "Mission Impossible"… */

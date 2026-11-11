@@ -102,7 +102,7 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
 
             val taste = coroutineScope {
                 val trending = async { limited { tmdb.list("trending/$type/week", 5) } }
-                val fresh = async { limited { tmdb.list(if (series) "tv/on_the_air" else "movie/now_playing", 5, *region) } }
+                val fresh = async { limited { tmdb.list(if (series) "tv/on_the_air" else "movie/now_playing", 5, true, *region) } }
                 val popular = async { limited { tmdb.list("$type/popular", 5, *region) } }
                 val top = async { limited { tmdb.list("$type/top_rated", 6) } }
                 val details = seeds.map { s -> async { s to limited { tmdb.details(series, s.tmdbId) } } }.awaitAll()
@@ -176,15 +176,16 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
                     async {
                         val where = arrayOf("with_watch_providers" to "$id", "watch_region" to "FR", "with_watch_monetization_types" to "flatrate", "vote_count.gte" to "10")
                         if (series) Row("Nouveaux épisodes sur $name", pick(limited {
-                            tmdb.list("discover/tv", 5, *where, "air_date.gte" to since, "air_date.lte" to today, "sort_by" to "popularity.desc",
+                            tmdb.list("discover/tv", 5, true, *where, "air_date.gte" to since, "air_date.lte" to today, "sort_by" to "popularity.desc",
                                 "without_genres" to "10763,10764,10766,10767")
                         }))
                         else Row("Sur $name · sorties récentes", pick(limited {
-                            tmdb.list("discover/movie", 5, *where, "sort_by" to "$releaseKey.desc", "$releaseKey.lte" to today)
+                            tmdb.list("discover/movie", 5, true, *where, "sort_by" to "$releaseKey.desc", "$releaseKey.lte" to today)
                         }))
                     }
                 }
-                (g + p).awaitAll()
+                // The streaming services first (what is new), then the genres.
+                (p + g).awaitAll()
             }
             emit(local + taste + extra)
             if (tmdb.failures == failed || ++attempt > RETRIES) break

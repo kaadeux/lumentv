@@ -26,15 +26,17 @@ open class TitleIndex(movies: List<VodLite>, series: List<VodLite>) {
     private val seriesByTitle = this.series.groupBy({ it.compact }, { it.item })
 
     /** The playlist's copy of a TMDB title (in French when there is one, then subtitled, then other languages; the best quality first), or null. */
-    fun find(series: Boolean, title: String, original: String, year: Int?): VodLite? {
+    fun find(series: Boolean, title: String, original: String, year: Int?, english: String = ""): VodLite? {
         val map = if (series) seriesByTitle else moviesByTitle
-        val candidates = (map[key(title)].orEmpty() + map[key(original)].orEmpty()).distinctBy { it.id }
+        val candidates = (map[key(title)].orEmpty() + map[key(original)].orEmpty() +
+            (if (english.isBlank()) emptyList() else map[key(english)].orEmpty())).distinctBy { it.id }
         if (candidates.isEmpty()) return null
         val sameYear = candidates.filter { c -> val y = Featured.yearOf(c.year, c.name); y == null || year == null || kotlin.math.abs(y - year) <= 1 }
         return sameYear.minWithOrNull(compareBy({ SmartSearch.languageRank(it.name) }, { SmartSearch.qualityRank(it.name) }))
     }
 
-    fun find(series: Boolean, item: Tmdb.Item) = find(series, item.title, item.original, item.year)
+    /** Also by its English title, when known: lists often name foreign titles in English ("A Couple of Lies" = "Bytet"). */
+    fun find(series: Boolean, item: Tmdb.Item) = find(series, item.title, item.original, item.year, item.english)
 
     companion object {
         /** "Spider-Man : No Way Home (2021) 4K" and "Spider-Man: No Way Home" → "spidermannowayhome". */
