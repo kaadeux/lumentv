@@ -16,6 +16,7 @@ import com.lumentv.data.discover.DiscoverEngine
 import com.lumentv.data.discover.DiscoverInput
 import com.lumentv.data.discover.Rated
 import com.lumentv.data.discover.Row
+import com.lumentv.data.discover.SeeAll
 import com.lumentv.data.discover.VodLite
 import com.lumentv.data.repo.LibraryRepository.Shelf
 import kotlinx.coroutines.async
@@ -38,17 +39,21 @@ class Discover(private val db: AppDatabase, private val tmdb: Tmdb, private val 
     fun movies(pid: Long, history: List<HistoryEntity>, ratings: List<RatingEntity>): Flow<List<Shelf<MovieRow>>> =
         rows(false, pid, history, ratings).map { rows ->
             val all = rows.flatMap { r -> r.items.map { it.id } }.distinct().chunked(500).flatMap { db.vod().moviesByIds(it) }.associateBy { it.m.id }
-            shelves(rows) { all[it.id] }
+            shelves(rows, { all[it.id] }) { l -> val byId = db.vod().moviesByIds(l.map { it.id }).associateBy { it.m.id }; l.mapNotNull { byId[it.id] } }
         }
 
     fun series(pid: Long, history: List<HistoryEntity>, ratings: List<RatingEntity>): Flow<List<Shelf<SeriesRow>>> =
         rows(true, pid, history, ratings).map { rows ->
             val all = rows.flatMap { r -> r.items.map { it.id } }.distinct().chunked(500).flatMap { db.vod().seriesByIds(it) }.associateBy { it.s.id }
-            shelves(rows) { all[it.id] }
+            shelves(rows, { all[it.id] }) { l -> val byId = db.vod().seriesByIds(l.map { it.id }).associateBy { it.s.id }; l.mapNotNull { byId[it.id] } }
         }
 
-    private fun <T : Any> shelves(rows: List<Row>, full: (VodLite) -> T?): List<Shelf<T>> =
-        rows.map { r -> Shelf(r.title, r.items.mapNotNull(full).take(DiscoverEngine.ROW), r.badges) }.filter { DiscoverEngine.keep(it.title, it.items.size) }
+    /** [fetch]: the titles of a "Tout voir" page read from the database, in their order. */
+    private fun <T : Any> shelves(rows: List<Row>, full: (VodLite) -> T?, fetch: suspend (List<VodLite>) -> List<T>): List<Shelf<T>> =
+        rows.map { r ->
+            val all = r.items.mapNotNull(full)
+            Shelf(r.title, all.take(DiscoverEngine.ROW), r.badges, (r.more ?: SeeAll(emptyList(), r.items)).map({ fetch(it) }, all))
+        }.filter { DiscoverEngine.keep(it.title, it.items.size) }
 
     private fun rows(series: Boolean, pid: Long, history: List<HistoryEntity>, ratings: List<RatingEntity>): Flow<List<Row>> = flow {
         val kind = if (series) "se" else HistoryKind.MOVIE

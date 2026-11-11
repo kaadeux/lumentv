@@ -59,6 +59,21 @@ class Tmdb(private val http: Http, private val key: String) {
         return all
     }
 
+    /** One page of a list, and how many the list has: for "Tout voir", which goes on page after page. Null: no answer. */
+    class Page(val items: List<Item>, val total: Int)
+
+    fun page(path: String, page: Int, english: Boolean, vararg params: Pair<String, String>): Page? {
+        if (!enabled) return null
+        val o = get("https://api.themoviedb.org/3/$path", "page" to "$page", "language" to "fr-FR", *params) ?: return null
+        val items = items(o)
+        if (english && items.isNotEmpty()) {
+            val names = get("https://api.themoviedb.org/3/$path", "page" to "$page", "language" to "en-US", *params)?.let { items(it) }.orEmpty().associate { it.id to it.title }
+            items.forEach { it.english = names[it.id].orEmpty() }
+        }
+        // TMDB serves 500 pages at most.
+        return Page(items, ((o["total_pages"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() ?: 1).coerceAtMost(500))
+    }
+
     /** The films of a saga (TMDB collection), in their order of release: "Harry Potter", "Mission Impossible"… */
     fun collection(id: Int): List<Item> {
         if (!enabled) return emptyList()

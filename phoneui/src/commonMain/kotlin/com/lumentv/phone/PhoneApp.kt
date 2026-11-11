@@ -104,6 +104,7 @@ private fun titleOf(r: Route): String = when (r) {
     is Route.Movie -> "Film"
     is Route.Series -> "Série"
     is Route.Categories -> if (r.series) "Séries" else "Films"
+    is SeeAllRoute -> if (r.movies != null) "Films" else "Séries"
     Route.Favorites -> "Favoris"
     Route.Guide -> "Guide TV"
     is Route.GuideChannel -> r.channel.ch.name
@@ -232,6 +233,7 @@ private fun MainScreen(core: AppCore, p: PlaylistEntity, player: VideoPlayer) {
                 Route.Downloads -> DownloadsPage(core, player)
                 Route.History -> HistoryPage(core, player, open)
                 is Route.Categories -> if (r.series) SeriesCategories(core, p, open) else MovieCategories(core, p, open)
+                is SeeAllRoute -> SeeAllPage(core, r, open)
                 null -> when (tab) {
                     Tab.MOVIES -> MoviesHome(core, p, player, open)
                     Tab.SERIES -> SeriesHome(core, p, player, open)

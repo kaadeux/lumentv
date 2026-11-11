@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -114,18 +115,19 @@ private fun VodLayout(content: @Composable () -> Unit) {
 
 /** As many posters a row as fit: about 7 on the TV, 3 on an upright phone, 6 sideways. */
 @Composable
-private fun posterCells(): GridCells = if (com.lumentv.ui.LocalPhone.current) GridCells.Adaptive(104.dp) else GridCells.Adaptive(118.dp)
+internal fun posterCells(): GridCells = if (com.lumentv.ui.LocalPhone.current) GridCells.Adaptive(104.dp) else GridCells.Adaptive(118.dp)
 @Composable
-private fun gridGap() = if (com.lumentv.ui.LocalPhone.current) 10.dp else 14.dp
+internal fun gridGap() = if (com.lumentv.ui.LocalPhone.current) 10.dp else 14.dp
 
 @Composable
-private fun PosterTile(title: String, image: String?, subtitle: String?, progress: Float?, favorite: Boolean, onClick: () -> Unit, onLong: () -> Unit,
-                       modifier: Modifier = Modifier, search: com.lumentv.ui.components.PosterSearch? = null) {
+internal fun PosterTile(title: String, image: String?, subtitle: String?, progress: Float?, favorite: Boolean, onClick: () -> Unit, onLong: () -> Unit,
+                       modifier: Modifier = Modifier, search: com.lumentv.ui.components.PosterSearch? = null, badge: String? = null) {
     Column {
         FocusSurface(onClick, modifier.fillMaxWidth().aspectRatio(2f / 3f), onLongClick = onLong, focusedScale = 1.06f, shape = RoundedCornerShape(8.dp)) {
             Poster(image, title, Modifier.fillMaxSize(), search)
             if (favorite) Text("★", color = Palette.Gold, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp))
             if (progress != null && progress > 0f) ProgressLine(progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp))
+            badge?.let { com.lumentv.ui.kit.KitBadge(it, Modifier.align(Alignment.TopStart).padding(5.dp)) }
         }
         Text(com.lumentv.ui.components.frenchCaption(title, search), style = MaterialTheme.typography.bodySmall, color = Palette.Text, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
         if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -162,10 +164,35 @@ fun MoviesScreen(vm: MainViewModel) {
     val shelves = memoFlow(vm, "shelves:m:${p.id}", p.id, p.lastRefresh, changes, lastMovie, ratings) { vm.graph.discover.movies(p.id, history, ratings) }
     val featured = cat == RECENT && filter.isBlank()
     val phone = com.lumentv.ui.LocalPhone.current
+    // "Tout voir" of a row, kept while a film is open from it.
+    val seeKey = "seeall:m:${p.id}"
+    @Suppress("UNCHECKED_CAST") var open by remember(p.id) { mutableStateOf(vm.memo[seeKey] as? OpenSeeAll<MovieRow>) }
+    fun openSeeAll(sh: LibraryRepository.Shelf<MovieRow>) {
+        val o = OpenSeeAll(sh.title, com.lumentv.data.discover.SeeAllState(sh.seeAll ?: return, vm.viewModelScope) { it.m.id })
+        vm.memo[seeKey] = o; open = o
+    }
+    fun closeSeeAll() { open?.let { vm.returnKey = seeAllKey(it.title) }; vm.memo.remove(seeKey); open = null }
     // TV: a category's grid goes back to the home with Back.
-    androidx.compose.runtime.DisposableEffect(phone, cat) {
-        vm.backHook = if (cat != RECENT) ({ cat = RECENT; vm.movieCategory = RECENT; true }) else null
+    androidx.compose.runtime.DisposableEffect(phone, cat, open) {
+        vm.backHook = when {
+            open != null -> ({ closeSeeAll(); true })
+            cat != RECENT -> ({ cat = RECENT; vm.movieCategory = RECENT; true })
+            else -> null
+        }
         onDispose { vm.backHook = null }
+    }
+    // The home keeps its place (rows scrolled, the "Tout voir" tile) while the page is open.
+    val pages = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    open?.let { o ->
+        pages.SaveableStateProvider("seeall") { SeeAllPage(vm, o) { r, mod ->
+            val h = progress[r.m.uid]?.takeIf { it.playlistId == p.id }
+            PosterTile(com.lumentv.core.Featured.shortTitle(r.m.name), r.m.poster, com.lumentv.core.Featured.posterLine(r.m.year, r.m.rating, r.m.name),
+                h?.let { if (it.durationMs > 0) it.positionMs.toFloat() / it.durationMs else null }, r.isFavorite,
+                onClick = { vm.openFrom("m:" + r.m.uid, Screen.MovieDetail(p.id, r.m.uid)) },
+                onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.MOVIE, r.m.uid); vm.show(if (f) "Ajouté aux favoris" else "Retiré des favoris") } },
+                modifier = mod.returnFocus(vm, "m:" + r.m.uid), search = com.lumentv.ui.components.PosterSearch(false, r.m.name, null, com.lumentv.core.Featured.yearOf(r.m.year, r.m.name)))
+        } }
+        return
     }
     if (featured) {
         var picker by remember { mutableStateOf(false) }
@@ -173,17 +200,20 @@ fun MoviesScreen(vm: MainViewModel) {
         val catRows = cats.orEmpty().filter { !com.lumentv.core.Featured.foreign("", it.category) }.take(10)
         val rows = buildList {
             if (resume.isNotEmpty()) add(HomeRow("resume", "Reprendre la lecture", resume.map { r -> resumeTile(vm, r, false) { forget = r } }))
-            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { movieTile(vm, "f:" + sh.title, it, progress[it.m.uid]?.takeIf { h -> h.durationMs > 0 && com.lumentv.core.Resume.movieToResume(h.positionMs, h.durationMs) }?.let { h -> h.positionMs.toFloat() / h.durationMs }) })) }
+            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { movieTile(vm, "f:" + sh.title, it, progress[it.m.uid]?.takeIf { h -> h.durationMs > 0 && com.lumentv.core.Resume.movieToResume(h.positionMs, h.durationMs) }?.let { h -> h.positionMs.toFloat() / h.durationMs }) },
+                if (sh.canSeeAll()) ({ openSeeAll(sh) }) else null)) }
             catRows.forEach { c ->
                 val items = memoState(vm, "cat:m:${p.id}:${c.category}", p.id, p.lastRefresh, changes, c.category) { vm.graph.library.categoryMovies(p.id, c.category) }
-                add(HomeRow("cat:" + c.category, c.category, items.map { movieTile(vm, "c:" + c.category, it, null) }))
+                add(HomeRow("cat:" + c.category, c.category, items.map { movieTile(vm, "c:" + c.category, it, null) }) { cat = c.category; vm.movieCategory = c.category })
             }
         }
-        if (phone) PhoneVodHome(vm, "hero:m:${p.id}", rows, listOf(
-            PhoneAction("Catégories  ▾") { picker = true }, PhoneAction("Tous les films") { cat = ALL; vm.movieCategory = ALL }))
-        else VodHome(vm, "hero:m:${p.id}", rows) {
-            HeroButton("Catégories  ▾") { picker = true }
-            HeroButton("Tous les films") { cat = ALL; vm.movieCategory = ALL }
+        pages.SaveableStateProvider("home") {
+            if (phone) PhoneVodHome(vm, "hero:m:${p.id}", rows, listOf(
+                PhoneAction("Catégories  ▾") { picker = true }, PhoneAction("Tous les films") { cat = ALL; vm.movieCategory = ALL }))
+            else VodHome(vm, "hero:m:${p.id}", rows) {
+                HeroButton("Catégories  ▾") { picker = true }
+                HeroButton("Tous les films") { cat = ALL; vm.movieCategory = ALL }
+            }
         }
         if (picker) OptionsDialog("Films", listOf(MenuOption("Tous les films") { cat = ALL; vm.movieCategory = ALL }) +
             cats.orEmpty().map { c -> MenuOption("${c.category}  ·  ${c.count}") { cat = c.category; vm.movieCategory = c.category } }, onDismiss = { picker = false })
@@ -251,9 +281,34 @@ fun SeriesScreen(vm: MainViewModel) {
     val shelves = memoFlow(vm, "shelves:s:${p.id}", p.id, p.lastRefresh, changes, lastSeries, ratings) { vm.graph.discover.series(p.id, history, ratings) }
     val featured = cat == ALL && filter.isBlank()
     val phone = com.lumentv.ui.LocalPhone.current
-    androidx.compose.runtime.DisposableEffect(phone, cat) {
-        vm.backHook = if (cat != ALL) ({ cat = ALL; vm.seriesCategory = ALL; true }) else null
+    val seeKey = "seeall:s:${p.id}"
+    @Suppress("UNCHECKED_CAST") var open by remember(p.id) { mutableStateOf(vm.memo[seeKey] as? OpenSeeAll<SeriesRow>) }
+    var openBadges by remember(p.id) { mutableStateOf(emptyMap<Long, String>()) }
+    fun openSeeAll(sh: LibraryRepository.Shelf<SeriesRow>) {
+        val o = OpenSeeAll(sh.title, com.lumentv.data.discover.SeeAllState(sh.seeAll ?: return, vm.viewModelScope) { it.s.id })
+        vm.memo[seeKey] = o; open = o; openBadges = sh.badges
+    }
+    fun closeSeeAll() { open?.let { vm.returnKey = seeAllKey(it.title) }; vm.memo.remove(seeKey); open = null }
+    androidx.compose.runtime.DisposableEffect(phone, cat, open) {
+        vm.backHook = when {
+            open != null -> ({ closeSeeAll(); true })
+            cat != ALL -> ({ cat = ALL; vm.seriesCategory = ALL; true })
+            else -> null
+        }
         onDispose { vm.backHook = null }
+    }
+    val pages = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    open?.let { o ->
+        // The badges of the row it came from ("Nouvelle saison"), when it is still the one shown.
+        val badges = shelves.firstOrNull { it.title == o.title }?.badges ?: openBadges
+        pages.SaveableStateProvider("seeall") { SeeAllPage(vm, o) { r, mod ->
+            PosterTile(com.lumentv.core.Featured.shortTitle(r.s.name), r.s.cover, com.lumentv.core.Featured.posterLine(r.s.year, r.s.rating, null), null, r.isFavorite,
+                onClick = { vm.openFrom("s:" + r.s.uid, Screen.SeriesDetail(p.id, r.s.uid)) },
+                onLong = { scope.launch { val f = vm.graph.library.toggleFavorite(p.id, PrefKind.SERIES, r.s.uid); vm.show(if (f) "Ajoutée aux favoris" else "Retirée des favoris") } },
+                modifier = mod.returnFocus(vm, "s:" + r.s.uid), search = com.lumentv.ui.components.PosterSearch(true, r.s.name, r.s.tmdb, com.lumentv.core.Featured.year(r.s.year)),
+                badge = badges[r.s.id])
+        } }
+        return
     }
     if (featured) {
         var picker by remember { mutableStateOf(false) }
@@ -261,17 +316,20 @@ fun SeriesScreen(vm: MainViewModel) {
         val catRows = cats.orEmpty().filter { !com.lumentv.core.Featured.foreign("", it.category) }.take(10)
         val rows = buildList {
             if (resume.isNotEmpty()) add(HomeRow("resume", "Reprendre la lecture", resume.map { r -> resumeTile(vm, r, true) { forget = r } }))
-            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { seriesTile(vm, "f:" + sh.title, it, sh.badges[it.s.id]) })) }
+            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { seriesTile(vm, "f:" + sh.title, it, sh.badges[it.s.id]) },
+                if (sh.canSeeAll()) ({ openSeeAll(sh) }) else null)) }
             catRows.forEach { c ->
                 val items = memoState(vm, "cat:s:${p.id}:${c.category}", p.id, p.lastRefresh, changes, c.category) { vm.graph.library.categorySeries(p.id, c.category) }
-                add(HomeRow("cat:" + c.category, c.category, items.map { seriesTile(vm, "c:" + c.category, it) }))
+                add(HomeRow("cat:" + c.category, c.category, items.map { seriesTile(vm, "c:" + c.category, it) }) { cat = c.category; vm.seriesCategory = c.category })
             }
         }
-        if (phone) PhoneVodHome(vm, "hero:s:${p.id}", rows, listOf(PhoneAction("Catégories  ▾") { picker = true },
-            PhoneAction("Toutes les séries") { cat = RECENT2; vm.seriesCategory = RECENT2 }, PhoneAction("Ajoutées récemment") { cat = RECENT; vm.seriesCategory = RECENT }))
-        else VodHome(vm, "hero:s:${p.id}", rows) {
-            HeroButton("Catégories  ▾") { picker = true }
-            HeroButton("Ajoutées récemment") { cat = RECENT; vm.seriesCategory = RECENT }
+        pages.SaveableStateProvider("home") {
+            if (phone) PhoneVodHome(vm, "hero:s:${p.id}", rows, listOf(PhoneAction("Catégories  ▾") { picker = true },
+                PhoneAction("Toutes les séries") { cat = RECENT2; vm.seriesCategory = RECENT2 }, PhoneAction("Ajoutées récemment") { cat = RECENT; vm.seriesCategory = RECENT }))
+            else VodHome(vm, "hero:s:${p.id}", rows) {
+                HeroButton("Catégories  ▾") { picker = true }
+                HeroButton("Ajoutées récemment") { cat = RECENT; vm.seriesCategory = RECENT }
+            }
         }
         if (picker) OptionsDialog("Séries", listOf(MenuOption("Toutes les séries") { cat = RECENT2; vm.seriesCategory = RECENT2 }, MenuOption("Ajoutées récemment") { cat = RECENT; vm.seriesCategory = RECENT }) +
             cats.orEmpty().map { c -> MenuOption("${c.category}  ·  ${c.count}") { cat = c.category; vm.seriesCategory = c.category } }, onDismiss = { picker = false })
@@ -508,7 +566,11 @@ internal class HomeTile(val key: String, val title: String, val image: String?, 
     val search get() = com.lumentv.ui.components.PosterSearch(hero.series, hero.title, hero.tmdb, hero.year)
 }
 
-internal class HomeRow(val key: String, val title: String, val tiles: List<HomeTile>)
+/** [onSeeAll]: opens the row's "Tout voir" page (a tile at its end on the TV, a link by its title on the phone). */
+internal class HomeRow(val key: String, val title: String, val tiles: List<HomeTile>, val onSeeAll: (() -> Unit)? = null)
+
+/** A row of the home has more to show than its posters: its "Tout voir" page is worth opening. */
+internal fun <T> LibraryRepository.Shelf<T>.canSeeAll() = seeAll?.let { it.load != null || it.all.size > items.size } == true
 
 /** "★ 7,3", "2025", "2 h 09", "Action, Aventure" */
 internal fun metaOf(rating: String?, year: String?, vararg more: String?): List<String> =
@@ -603,6 +665,7 @@ private fun VodHome(vm: MainViewModel, memoKey: String, rows: List<HomeRow>, act
                             itemsIndexed(row.tiles, key = { _, t -> t.key }) { i, t ->
                                 HomePoster(vm, t, Modifier.remembered(mem, first = i == 0)) { focus.pending = t.hero; focus.row = rowIndex }
                             }
+                            row.onSeeAll?.let { see -> item(key = "seeall") { SeeAllTile(vm, row.title, see) } }
                         }
                         }
                     }

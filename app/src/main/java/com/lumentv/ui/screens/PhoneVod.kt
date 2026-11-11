@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -181,10 +182,17 @@ private fun PhoneHero(vm: MainViewModel, heroes: List<HomeTile>, ready: Boolean)
 private fun PhoneRow(row: HomeRow) {
     val resume = row.key == "resume"
     Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
-        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(horizontal = 4.dp)) {
+        // The title opens the row's "Tout voir" page when it has one ("Tout voir ›" on the right).
+        val see = row.onSeeAll
+        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth().then(if (see != null) Modifier.clickable(onClick = see) else Modifier).padding(horizontal = 4.dp)) {
             Text(row.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Palette.Text,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             if (resume) Text("  Appui long pour retirer", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1)
+            if (see != null) {
+                Spacer(Modifier.weight(1f))
+                Text("Tout voir ›", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = Palette.Accent, maxLines = 1,
+                    modifier = Modifier.padding(start = 12.dp, end = 4.dp))
+            }
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)) {
             items(row.tiles, key = { it.key }) { t ->

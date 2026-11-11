@@ -53,6 +53,7 @@ import com.lumentv.data.db.PlaylistEntity
 import com.lumentv.data.db.SeriesRow
 import com.lumentv.data.repo.LibraryRepository
 import com.lumentv.data.repo.LibraryRepository.Shelf
+import com.lumentv.data.discover.SeeAllState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -95,7 +96,7 @@ internal fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
         val ratings = core.library.observeRatings().first()
         core.discover.movies(p.id, history, ratings).collect { list ->
             val rows = withContext(kotlinx.coroutines.Dispatchers.Default) {
-                list.map { Shelf(it.title, oneEach(it.items, { m -> m.m.name }, { m -> m.m.category })) }.filter { it.items.isNotEmpty() }
+                list.map { Shelf(it.title, oneEach(it.items, { m -> m.m.name }, { m -> m.m.category }), seeAll = it.seeAll) }.filter { it.items.isNotEmpty() }
             }
             // The playlist's rows come first, TMDB's after: a shorter first answer does not replace a fuller page.
             if (rows.size >= (shelves?.size ?: 0)) { shelves = rows; HomeCache.rows[key] = rows }
@@ -108,6 +109,7 @@ internal fun MoviesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
             Featured.posterLine(m.m.year, m.m.rating, m.m.name), play = { playMovie(core, player, scope, m) }) { open(Route.Movie(m)) }
     }
     HomeList(core, "Films", heroes, shelves, onCategories = { open(Route.Categories(false)) },
+        onSeeAll = { s -> s.seeAll?.let { open(SeeAllRoute(s.title, SeeAllState(it, core.scope) { m -> m.m.id }, null)) } },
         resume = { ResumeRow(core, p, HistoryKind.MOVIE) { h -> scope.launch { core.library.movieByUid(p.id, h.uid)?.let { open(Route.Movie(it)) } } } },
         row = { items -> items(items, key = { it.m.id }) { m -> Box(Modifier.width(104.dp)) { Poster(m.m.poster, Featured.shortTitle(m.m.name), french = core.frenchOf(m)) { open(Route.Movie(m)) } } } })
 }
@@ -123,7 +125,7 @@ internal fun SeriesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
         val ratings = core.library.observeRatings().first()
         core.discover.series(p.id, history, ratings).collect { list ->
             val rows = withContext(kotlinx.coroutines.Dispatchers.Default) {
-                list.map { Shelf(it.title, oneEach(it.items, { s -> s.s.name }, { s -> s.s.category }), it.badges) }.filter { it.items.isNotEmpty() }
+                list.map { Shelf(it.title, oneEach(it.items, { s -> s.s.name }, { s -> s.s.category }), it.badges, it.seeAll) }.filter { it.items.isNotEmpty() }
             }
             if (rows.size >= (shelves?.size ?: 0)) { shelves = rows; HomeCache.rows[key] = rows }
         }
@@ -136,6 +138,7 @@ internal fun SeriesHome(core: AppCore, p: PlaylistEntity, player: VideoPlayer, o
             Featured.posterLine(s.s.year, s.s.rating, null), play = null) { open(Route.Series(s)) }
     }
     HomeList(core, "Séries", heroes, shelves, onCategories = { open(Route.Categories(true)) },
+        onSeeAll = { s -> s.seeAll?.let { open(SeeAllRoute(s.title, null, SeeAllState(it, core.scope) { x -> x.s.id }, s.badges)) } },
         resume = { ResumeRow(core, p, HistoryKind.EPISODE) { h -> scope.launch { h.parentUid?.let { core.library.seriesByUid(p.id, it) }?.let { open(Route.Series(it)) } } } },
         row = { items -> items(items, key = { it.s.id }) { s -> Box(Modifier.width(104.dp)) {
             Poster(s.s.cover, Featured.shortTitle(s.s.name), french = core.frenchOf(s)) { open(Route.Series(s)) }
@@ -160,7 +163,7 @@ internal fun playMovie(core: AppCore, player: VideoPlayer, scope: kotlinx.corout
 
 @Composable
 private fun <T> HomeList(
-    core: AppCore, title: String, heroes: List<Hero>, shelves: List<Shelf<T>>?, onCategories: () -> Unit,
+    core: AppCore, title: String, heroes: List<Hero>, shelves: List<Shelf<T>>?, onCategories: () -> Unit, onSeeAll: (Shelf<T>) -> Unit,
     resume: @Composable () -> Unit, row: androidx.compose.foundation.lazy.LazyListScope.(List<T>) -> Unit,
 ) = LazyColumn(state = rememberList("home:$title", ready = shelves != null), contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)) {
     if (shelves == null) item { Box(Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
@@ -175,8 +178,17 @@ private fun <T> HomeList(
     item { resume() }
     shelves.orEmpty().forEach { s ->
         item(key = "t:" + s.title) {
-            Text(s.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 16.dp, top = 14.dp))
+            // A row with more than it shows: its title opens "Tout voir" ("Tout voir ›" on the right).
+            val more = s.seeAll?.let { it.load != null || it.all.size > s.items.size } == true
+            androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().then(if (more) Modifier.clickable { onSeeAll(s) } else Modifier)
+                .padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalAlignment = Alignment.Bottom) {
+                Text(s.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false))
+                if (more) {
+                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                    Text("Tout voir ›", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Palette.Accent, maxLines = 1, modifier = Modifier.padding(start = 12.dp))
+                }
+            }
         }
         item(key = "r:" + s.title) {
             LazyRow(state = rememberList("row:$title:${s.title}"), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),

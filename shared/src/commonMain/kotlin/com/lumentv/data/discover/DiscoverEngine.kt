@@ -14,8 +14,11 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-/** A row of the Films / Séries home; [badges]: what a poster says on top of it ("Nouvelle saison"), by title id. */
-class Row(val title: String, val items: List<VodLite>, val badges: Map<Long, String> = emptyMap())
+/**
+ * A row of the Films / Séries home; [badges]: what a poster says on top of it ("Nouvelle saison"), by title id;
+ * [more]: its "Tout voir" page when it can show more than [items] (a TMDB list, page after page).
+ */
+class Row(val title: String, val items: List<VodLite>, val badges: Map<Long, String> = emptyMap(), val more: SeeAll<VodLite>? = null)
 
 /** What the poster of a series followed says when something new came out. */
 object NewEpisodes {
@@ -100,6 +103,40 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
             fun pick(items: List<Tmdb.Item>, skip: Set<Long> = emptySet()) =
                 one(items.mapNotNull { idx.find(series, it) }.filter { ok(it) && it.uid !in seen && it.id !in skip })
 
+            /**
+             * A row from a TMDB list, with its "Tout voir": the pages after the [used] first ones (the row's order), or
+             * from the first in another of the [sorts] (what each one changes in the request).
+             */
+            fun listRow(title: String, items: List<Tmdb.Item>, path: String, used: Int, english: Boolean, base: List<Pair<String, String>>,
+                        sorts: List<Pair<String, List<Pair<String, String>>>> = emptyList(), skip: Set<Long> = emptySet()): Row {
+                val shown = pick(items, skip)
+                return Row(title, shown, more = SeeAll(sorts.map { it.first }, shown, used + 1) { sort, from ->
+                    val params = LinkedHashMap<String, String>().apply {
+                        base.forEach { put(it.first, it.second) }
+                        sorts.getOrNull(sort)?.second?.forEach { put(it.first, it.second) }
+                    }.map { it.key to it.value }.toTypedArray()
+                    // Most of a TMDB page is not in the list: pages are read until a screenful is found.
+                    val found = ArrayList<VodLite>()
+                    var page = from
+                    var total = Int.MAX_VALUE
+                    var asked = 0
+                    // Four pages at a time: a sort where few titles are in the list ("Plus récents") still comes quickly.
+                    while (found.size < 24 && page <= total && asked < 16) {
+                        val first = page
+                        val answers = coroutineScope {
+                            (first until minOf(first + 4, total + 1)).map { p -> async { limited { tmdb.page(path, p, english, *params) } } }.awaitAll()
+                        }
+                        if (answers.all { it == null }) break
+                        answers.filterNotNull().forEach { a ->
+                            total = a.total
+                            found += a.items.mapNotNull { idx.find(series, it) }.filter { ok(it) && it.uid !in seen }
+                        }
+                        asked += answers.size; page = first + answers.size
+                    }
+                    Batch(found.distinctBy { it.id }, if (page > total) null else page)
+                })
+            }
+
             val taste = coroutineScope {
                 val trending = async { limited { tmdb.list("trending/$type/week", 5) } }
                 val fresh = async { limited { tmdb.list(if (series) "tv/on_the_air" else "movie/now_playing", 5, true, *region) } }
@@ -142,6 +179,7 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
                     Row((if (s.rated) "Parce que vous avez aimé " else "Parce que vous avez regardé ") + s.title, pick(d.recommendations + d.similar, shown))
                 }
                 val genreNames = genres.mapNotNull { Tmdb.GENRE_NAMES[it] }
+                val regionList = region.toList()
                 // Films: the next film of each saga the viewer watched (the first one of it not seen yet).
                 val sagas = if (series) emptyList() else details.mapNotNull { (_, d) -> d.collection }.distinct().take(8)
                     .map { c -> async { limited { tmdb.collection(c) } } }.awaitAll()
@@ -149,14 +187,14 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
                 listOfNotNull(
                     if (series) null else Row(SAGAS, pick(sagas)),
                     Row("Recommandé pour vous", forYou.take(ROW)),
-                    Row("Tendances du moment", pick(trendingList)),
+                    listRow("Tendances du moment", trendingList, "trending/$type/week", 5, false, emptyList()),
                     because,
-                    Row(if (series) "Nouveautés séries" else "Nouveautés cinéma", pick(fresh.await())),
+                    listRow(if (series) "Nouveautés séries" else "Nouveautés cinéma", fresh.await(), if (series) "tv/on_the_air" else "movie/now_playing", 5, true, regionList),
                     if (genreNames.isEmpty()) null else Row("Dans vos genres préférés · " + genreNames.joinToString(", "),
                         pick(genreItems.flatten().filter { profile.genreFit(it.genres) >= 0 }.sortedByDescending { it.popularity }, shown)),
-                    Row(if (series) "Séries populaires" else "Films populaires", pick(popular.await())),
+                    listRow(if (series) "Séries populaires" else "Films populaires", popular.await(), "$type/popular", 5, false, regionList),
                     gems?.let { g -> Row("À découvrir", pick(g.await().filter { profile.genreFit(it.genres) >= 0 }, shown)) },
-                    Row(if (series) "Séries les mieux notées" else "Films les mieux notés", pick(top.await())),
+                    listRow(if (series) "Séries les mieux notées" else "Films les mieux notés", top.await(), "$type/top_rated", 6, false, emptyList()),
                     Row("Vous pourriez aussi aimer", forYou.drop(ROW)),
                 )
             }
@@ -165,8 +203,15 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
             // 3. Genres and streaming services
             val releaseKey = if (series) "first_air_date" else "primary_release_date"
             val extra = coroutineScope {
+                val byPopularity = "Populaires" to listOf("sort_by" to "popularity.desc")
+                val byDate = "Plus récents" to listOf("sort_by" to "$releaseKey.desc", "$releaseKey.lte" to today)
+                val byRating = "Mieux notés" to listOf("sort_by" to "vote_average.desc", "vote_count.gte" to "300")
                 val g = (if (series) Tmdb.TV_GENRES else Tmdb.MOVIE_GENRES).map { (name, id) ->
-                    async { Row(name, pick(limited { tmdb.list("discover/$type", 4, "with_genres" to "$id", "sort_by" to "popularity.desc", "vote_count.gte" to "50") })) }
+                    async {
+                        val base = listOf("with_genres" to "$id", "sort_by" to "popularity.desc", "vote_count.gte" to "50")
+                        listRow(name, limited { tmdb.list("discover/$type", 4, *base.toTypedArray()) }, "discover/$type", 4, false, base,
+                            listOf(byPopularity, byDate, byRating))
+                    }
                 }
                 // TMDB knows where a title can be watched in France, not since when. Films: the latest released ("sorties
                 // récentes"). Series: those with an episode aired in the last 60 days, most popular first, so a new season of
@@ -174,14 +219,17 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
                 val since = isoDay(com.lumentv.core.nowMillis() - 60 * 86_400_000L)
                 val p = Tmdb.PLATFORMS.map { (name, id) ->
                     async {
-                        val where = arrayOf("with_watch_providers" to "$id", "watch_region" to "FR", "with_watch_monetization_types" to "flatrate", "vote_count.gte" to "10")
-                        if (series) Row("Nouveaux épisodes sur $name", pick(limited {
-                            tmdb.list("discover/tv", 5, true, *where, "air_date.gte" to since, "air_date.lte" to today, "sort_by" to "popularity.desc",
-                                "without_genres" to "10763,10764,10766,10767")
-                        }))
-                        else Row("Sur $name · sorties récentes", pick(limited {
-                            tmdb.list("discover/movie", 5, true, *where, "sort_by" to "$releaseKey.desc", "$releaseKey.lte" to today)
-                        }))
+                        val where = listOf("with_watch_providers" to "$id", "watch_region" to "FR", "with_watch_monetization_types" to "flatrate", "vote_count.gte" to "10")
+                        val rated = "Mieux notés" to listOf("sort_by" to "vote_average.desc", "vote_count.gte" to "50")
+                        if (series) {
+                            val base = where + listOf("air_date.gte" to since, "air_date.lte" to today, "sort_by" to "popularity.desc", "without_genres" to "10763,10764,10766,10767")
+                            listRow("Nouveaux épisodes sur $name", limited { tmdb.list("discover/tv", 5, true, *base.toTypedArray()) }, "discover/tv", 5, true, base,
+                                listOf(byPopularity, "Plus récents" to listOf("sort_by" to "first_air_date.desc"), rated))
+                        } else {
+                            val base = where + listOf("sort_by" to "$releaseKey.desc", "$releaseKey.lte" to today)
+                            listRow("Sur $name · sorties récentes", limited { tmdb.list("discover/movie", 5, true, *base.toTypedArray()) }, "discover/movie", 5, true, base,
+                                listOf("Plus récents" to listOf("sort_by" to "$releaseKey.desc"), byPopularity, rated))
+                        }
                     }
                 }
                 // The streaming services first (what is new), then the genres.

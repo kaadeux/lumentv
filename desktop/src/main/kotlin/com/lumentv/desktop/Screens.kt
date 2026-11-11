@@ -291,7 +291,18 @@ fun MoviesScreen(state: AppState) {
     val shelves = rememberShelves(c, lastMovie, rated) { state.vod.movieRows(c) }
     val resume = resumeMovies(state)
     var forget by remember { mutableStateOf<ResumeItem?>(null) }
+    // A row's "Tout voir": over the home, kept while a film is open from it.
+    var seeAll by remember { mutableStateOf<OpenSeeAll<Mv>?>(null) }
     open?.let { m -> MovieDetail(state, m) { open = null }; return }
+    seeAll?.let { o ->
+        pages.SaveableStateProvider("seeall:" + o.title) {
+            SeeAllPage(o, { it.uid }, { seeAll = null }) { m ->
+                Poster(Featured.shortTitle(m.name), m.poster, Featured.posterLine(m.year, m.rating, m.name), ratio(state.progress(Kind.MOVIE, m.uid)),
+                    state.isFavorite(Kind.MOVIE, m.uid), altImage = state.posterOf(m), altTitle = state.frenchOf(m)) { open = m }
+            }
+        }
+        return
+    }
     val cats = c.movies.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" + if (state.parental.isHidden(PcParental.Kind.MOVIE_CATEGORY, g)) " · masquée" else "" }
     if (cat == HOME) {
         val catRows = remember(c) { categoryRows(c.movies, { it.name }, { it.category }, { it.added }) }
@@ -303,8 +314,9 @@ fun MoviesScreen(state: AppState) {
                     // The poster opens the film's page; "Reprendre" of the banner plays.
                     base.hero.playing("Reprendre") { scope.launch { r.play() } }, { open = m }, onRemove = { forget = r }, altTitle = base.altTitle)
             }))
-            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { state.movieTile("f:" + sh.title, it) { m -> open = m } })) }
-            catRows.forEach { (name, list) -> add(HomeRow("cat:$name", name, list.map { state.movieTile("c:$name", it) { m -> open = m } })) }
+            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { state.movieTile("f:" + sh.title, it) { m -> open = m } },
+                sh.seeAll?.takeIf { sh.canSeeAll }?.let { s -> { seeAll = OpenSeeAll(sh.title, com.lumentv.data.discover.SeeAllState(s, scope) { m -> m.uid }) } })) }
+            catRows.forEach { (name, list) -> add(HomeRow("cat:$name", name, list.map { state.movieTile("c:$name", it) { m -> open = m } }) { cat = name }) }
         }
         pages.SaveableStateProvider("home") {
             VodHome(state, rows, androidx.compose.foundation.lazy.rememberLazyListState()) {
@@ -361,7 +373,16 @@ fun SeriesScreen(state: AppState) {
     val shelves = rememberShelves(c, lastSeries, rated) { state.vod.seriesRows(c) }
     val resume = resumeSeries(state) { open = it }
     var forget by remember { mutableStateOf<ResumeItem?>(null) }
+    var seeAll by remember { mutableStateOf<OpenSeeAll<Se>?>(null) }
     open?.let { s -> SeriesDetail(state, s) { open = null }; return }
+    seeAll?.let { o ->
+        pages.SaveableStateProvider("seeall:" + o.title) {
+            SeeAllPage(o, { it.uid }, { seeAll = null }) { s ->
+                Poster(Featured.shortTitle(s.name), s.cover, Featured.posterLine(s.year, s.rating, null), null, state.isFavorite(Kind.SERIES, s.uid), altImage = state.posterOf(s), altTitle = state.frenchOf(s)) { open = s }
+            }
+        }
+        return
+    }
     val cats = c.series.groupBy { it.category }.map { (g, l) -> g to "$g  (${l.size})" + if (state.parental.isHidden(PcParental.Kind.SERIES_CATEGORY, g)) " · masquée" else "" }
     if (cat == HOME) {
         val catRows = remember(c) { categoryRows(c.series, { it.name }, { it.category }, { it.updated }) }
@@ -373,8 +394,9 @@ fun SeriesScreen(state: AppState) {
                     // The poster opens the series' page; "Reprendre" of the banner plays.
                     base.hero.playing("Reprendre") { scope.launch { r.play() } }, { open = s }, onRemove = { forget = r }, altTitle = base.altTitle)
             }))
-            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { state.seriesTile("f:" + sh.title, it) { s -> open = s } })) }
-            catRows.forEach { (name, list) -> add(HomeRow("cat:$name", name, list.map { state.seriesTile("c:$name", it) { s -> open = s } })) }
+            shelves.distinctBy { it.title }.forEach { sh -> add(HomeRow("shelf:" + sh.title, sh.title, sh.items.map { state.seriesTile("f:" + sh.title, it) { s -> open = s } },
+                sh.seeAll?.takeIf { sh.canSeeAll }?.let { x -> { seeAll = OpenSeeAll(sh.title, com.lumentv.data.discover.SeeAllState(x, scope) { s -> s.uid }) } })) }
+            catRows.forEach { (name, list) -> add(HomeRow("cat:$name", name, list.map { state.seriesTile("c:$name", it) { s -> open = s } }) { cat = name }) }
         }
         pages.SaveableStateProvider("home") {
             VodHome(state, rows, androidx.compose.foundation.lazy.rememberLazyListState()) {

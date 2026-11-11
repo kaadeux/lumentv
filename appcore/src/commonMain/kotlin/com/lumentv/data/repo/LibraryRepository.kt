@@ -130,7 +130,9 @@ class LibraryRepository(private val db: AppDatabase) {
 
     /** A row of the Films / Séries home ("Tendances du moment", a category…). */
     /** A row of the Films / Séries home; [badges]: a poster's pill ("Nouvelle saison"), by title id. */
-    class Shelf<T>(val title: String, val items: List<T>, val badges: Map<Long, String> = emptyMap())
+    /** [seeAll]: its "Tout voir" page (every title, more pages of a TMDB list); null: the row shows all it has. */
+    class Shelf<T>(val title: String, val items: List<T>, val badges: Map<Long, String> = emptyMap(),
+                   val seeAll: com.lumentv.data.discover.SeeAll<T>? = null)
 
     suspend fun seriesByUid(pid: Long, uid: String) = withContext(IoDispatcher) { db.vod().seriesByUid(pid, uid) }
     suspend fun storedEpisodes(pid: Long, seriesUid: String) = withContext(IoDispatcher) { db.vod().episodes(pid, seriesUid) }

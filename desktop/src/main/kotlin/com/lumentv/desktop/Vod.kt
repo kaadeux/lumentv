@@ -30,7 +30,11 @@ class CatalogIndex(val catalog: Catalog) {
 }
 
 /** A row of the Films / Séries home on the PC. */
-class Shelf<T>(val title: String, val items: List<T>)
+/** [seeAll]: its "Tout voir" page (every title, more pages of a TMDB list). */
+class Shelf<T>(val title: String, val items: List<T>, val seeAll: com.lumentv.data.discover.SeeAll<T>? = null) {
+    /** More to show than the row's posters. */
+    val canSeeAll get() = seeAll?.let { it.load != null || it.all.size > items.size } == true
+}
 
 /**
  * TMDB on the PC, as on the TV: the rows of the homes (same engine), logos, ratings, French summaries and cast,
@@ -51,12 +55,17 @@ class Vod(private val state: AppState) {
 
     fun movieRows(c: Catalog): Flow<List<Shelf<Mv>>> {
         val idx = index(c)
-        return engine.rows(input(false, idx)).map { rows -> rows.map { r -> Shelf(r.title, r.items.mapNotNull(idx::movie).take(DiscoverEngine.ROW)) }.filter { DiscoverEngine.keep(it.title, it.items.size) } }
+        return engine.rows(input(false, idx)).map { rows -> rows.map { r -> shelf(r) { l -> l.mapNotNull(idx::movie) } }.filter { DiscoverEngine.keep(it.title, it.items.size) } }
     }
 
     fun seriesRows(c: Catalog): Flow<List<Shelf<Se>>> {
         val idx = index(c)
-        return engine.rows(input(true, idx)).map { rows -> rows.map { r -> Shelf(r.title, r.items.mapNotNull(idx::series).take(DiscoverEngine.ROW)) }.filter { DiscoverEngine.keep(it.title, it.items.size) } }
+        return engine.rows(input(true, idx)).map { rows -> rows.map { r -> shelf(r) { l -> l.mapNotNull(idx::series) } }.filter { DiscoverEngine.keep(it.title, it.items.size) } }
+    }
+
+    private fun <T> shelf(r: com.lumentv.data.discover.Row, full: (List<VodLite>) -> List<T>): Shelf<T> {
+        val all = full(r.items)
+        return Shelf(r.title, all.take(DiscoverEngine.ROW), (r.more ?: com.lumentv.data.discover.SeeAll(emptyList(), r.items)).map({ full(it) }, all))
     }
 
     private fun input(series: Boolean, idx: CatalogIndex): DiscoverInput {

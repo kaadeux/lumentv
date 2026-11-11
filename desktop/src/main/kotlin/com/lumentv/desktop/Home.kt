@@ -39,6 +39,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -144,7 +146,8 @@ class HomeTile(val key: String, val title: String, val image: String?, val capti
                /** The title it has in France (TMDB). */
                val altTitle: (suspend () -> String?)? = null)
 
-class HomeRow(val key: String, val title: String, val tiles: List<HomeTile>)
+/** [onSeeAll]: opens the row's "Tout voir" page (its title, "Tout voir ›" shown when the mouse is over the row). */
+class HomeRow(val key: String, val title: String, val tiles: List<HomeTile>, val onSeeAll: (() -> Unit)? = null)
 
 /**
  * The home of Films or Séries, as on the TV: a banner with the title under the mouse over its picture (Lecture,
@@ -173,9 +176,15 @@ fun VodHome(state: AppState, rows: List<HomeRow>, list: LazyListState, actions: 
             if (shown.isEmpty()) Text("Chargement des rangées…", color = Pal.dim, modifier = Modifier.padding(8.dp))
             LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize().onPointerEvent(PointerEventType.Scroll) { scrolled = true }) {
                 items(shown, key = { it.key }) { row ->
-                    Column {
-                        Text(row.title, style = MaterialTheme.typography.titleMedium, color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+                    var over by remember { mutableStateOf(false) }
+                    Column(Modifier.onPointerEvent(PointerEventType.Enter) { over = true }.onPointerEvent(PointerEventType.Exit) { over = false }) {
+                        val see = row.onSeeAll
+                        Row(Modifier.padding(start = 4.dp, top = 8.dp).then(if (see != null) Modifier.clickable(onClick = see)
+                            .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand) else Modifier), verticalAlignment = Alignment.CenterVertically) {
+                            Text(row.title, style = MaterialTheme.typography.titleMedium, color = Pal.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (see != null) Text("  Tout voir ›", style = MaterialTheme.typography.labelLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                color = Pal.accent.copy(alpha = if (over) 1f else 0f), maxLines = 1)
+                        }
                         ScrollRow(Modifier.padding(vertical = 8.dp)) {
                             items(row.tiles, key = { it.key }) { t -> HomePoster(t) { pending = t.hero } }
                         }
