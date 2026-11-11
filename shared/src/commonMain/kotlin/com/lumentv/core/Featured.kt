@@ -102,6 +102,18 @@ object Featured {
     private val arPrefix = Regex("^\\s*AR\\s*[|:·-]")
     private val arCategory = Regex("\\b(SUBT?|DUB)[\\s-]*AR\\b|\\bARAB(E|ES|Y|IC|IQUE|IQUES)?\\b", RegexOption.IGNORE_CASE)
 
+    /**
+     * A category of sport replays, not films: "SOCCER BASKETBALL", "FR - F1", "EN - UFC", "NORDIC SPORT"… Their
+     * matches come without a picture, and TMDB has none either. Not "FR - BOX OFFICE" or "IT - DRAMMA/ROMANCE".
+     */
+    fun sport(category: String): Boolean = sportCategory.containsMatchIn(category)
+
+    private val sportCategory = Regex(
+        "\\b(SPORTS?|SOCCER|FOOT(BALL)?|BASKET(BALL)?|BASEBALL|HOCKEY|RUGBY|TENNIS|GOLF|HANDBALL|CYCLISME|MOTO(GP)?|" +
+            "F1|FORMUL[AE] ?1|NBA|NFL|NHL|MLB|AFL|UFC|MMA|WWE|BOX(E|ING)|WORLD CUP|COUPE DU MONDE)\\b",
+        RegexOption.IGNORE_CASE,
+    )
+
     fun rating(r: String?): Double? = r?.replace(',', '.')?.toDoubleOrNull()?.takeIf { it > 0 }
     fun year(y: String?): Int? = y?.take(4)?.toIntOrNull()
 

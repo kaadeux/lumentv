@@ -82,7 +82,8 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
         fun ok(v: VodLite) = v.category !in input.hidden && !Featured.foreign(v.name, v.category) && !Featured.otherLanguage(v.name)
 
         // 1. The playlist alone; the series followed with new episodes as soon as they are known (the list may be asked).
-        val recentRow = Row(if (series) "Ajoutées récemment" else "Ajoutés récemment", one(input.recent.filter(::ok)))
+        // Without the sport replays some lists file among the films: dozens of matches a day, no picture.
+        val recentRow = Row(if (series) "Ajoutées récemment" else "Ajoutés récemment", one(input.recent.filter { ok(it) && !Featured.sport(it.category) }))
         emit(listOf(recentRow))
         val followed = input.newEpisodes?.let { f -> runCatching { f() }.getOrDefault(emptyList()) }.orEmpty().filter { ok(it.first) }
         val local = listOfNotNull(if (followed.isEmpty()) null else Row(NEW_EPISODES, followed.map { it.first }.distinctBy { it.id }, followed.associate { it.first.id to it.second }), recentRow)

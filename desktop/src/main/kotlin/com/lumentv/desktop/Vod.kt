@@ -71,7 +71,7 @@ class Vod(private val state: AppState) {
     private fun input(series: Boolean, idx: CatalogIndex): DiscoverInput {
         val c = idx.catalog
         val recent = if (series) c.series.withIndex().sortedByDescending { it.value.updated }.take(200).map { (i, s) -> VodLite(i.toLong(), s.uid, s.name, s.category, s.year, s.rating) }
-        else c.movies.withIndex().sortedByDescending { it.value.added }.take(200).map { (i, m) -> VodLite(i.toLong(), m.uid, m.name, m.category, m.year, m.rating) }
+        else c.movies.withIndex().filter { !Featured.sport(it.value.category) }.sortedByDescending { it.value.added }.take(200).map { (i, m) -> VodLite(i.toLong(), m.uid, m.name, m.category, m.year, m.rating) }
         // uid → how much of it was watched (0..1), newest first; a series: by its episodes seen to the end.
         val watched = LinkedHashMap<String, Double>()
         if (series) state.historyOf(Kind.EPISODE).filter { it.parentUid != null }.groupBy { it.parentUid!! }
