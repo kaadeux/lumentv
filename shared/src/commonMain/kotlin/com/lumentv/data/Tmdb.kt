@@ -78,9 +78,12 @@ class Tmdb(private val http: Http, private val key: String) {
     fun collection(id: Int): List<Item> {
         if (!enabled) return emptyList()
         val o = get("https://api.themoviedb.org/3/collection/$id", "language" to "fr-FR") ?: return emptyList()
+        val english = get("https://api.themoviedb.org/3/collection/$id", "language" to "en-US")?.let { e ->
+            (e["parts"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::item) }.associate { it.id to it.title }
+        }.orEmpty()
         return (o["parts"] as? JsonArray).orEmpty().mapNotNull { p -> (p as? JsonObject)?.let { it to item(it) } }
             .filter { (o, it) -> it != null && !o.s("release_date").isNullOrBlank() }
-            .sortedBy { (o, _) -> o.s("release_date") }.mapNotNull { it.second }
+            .sortedBy { (o, _) -> o.s("release_date") }.mapNotNull { it.second }.onEach { it.english = english[it.id].orEmpty() }
     }
 
     /** Titles TMDB recommends to who liked this one (its users' viewing), best first. */
@@ -101,6 +104,10 @@ class Tmdb(private val http: Http, private val key: String) {
         else (credits?.get("crew") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.filter { it.s("job") == "Director" }
             .mapNotNull { c -> c.s("id")?.toIntOrNull()?.also { names[it] = c.s("name").orEmpty() } }
         val kw = (d["keywords"] as? JsonObject)?.let { (it["keywords"] ?: it["results"]) as? JsonArray }.orEmpty().mapNotNull { (it as? JsonObject)?.s("id")?.toIntOrNull() }
+        // The recommendations' English titles: lists often name foreign films in English ("Howl's Moving Castle").
+        val englishNames = get("https://api.themoviedb.org/3/$kind/$id", "language" to "en-US", "append_to_response" to "recommendations,similar")?.let { e ->
+            listOf("recommendations", "similar").flatMap { k -> (e[k] as? JsonObject)?.let { items(it) }.orEmpty() }.associate { it.id to it.title }
+        }.orEmpty()
         val alt = (d["alternative_titles"] as? JsonObject)?.let { (it["titles"] ?: it["results"]) as? JsonArray }.orEmpty()
             .mapNotNull { (it as? JsonObject)?.s("title") }
         return Details(
@@ -111,17 +118,20 @@ class Tmdb(private val http: Http, private val key: String) {
             genres = (d["genres"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.s("id")?.toIntOrNull() },
             cast = cast, directors = directors, keywords = kw,
             collection = (d["belongs_to_collection"] as? JsonObject)?.s("id")?.toIntOrNull(),
-            recommendations = (d["recommendations"] as? JsonObject)?.let { items(it) }.orEmpty(),
-            similar = (d["similar"] as? JsonObject)?.let { items(it) }.orEmpty(),
+            recommendations = (d["recommendations"] as? JsonObject)?.let { items(it) }.orEmpty().onEach { it.english = englishNames[it.id].orEmpty() },
+            similar = (d["similar"] as? JsonObject)?.let { items(it) }.orEmpty().onEach { it.english = englishNames[it.id].orEmpty() },
             otherTitles = alt, names = names,
         )
     }
 
     /** The films or series a person played in or directed, most popular first. */
     fun credits(series: Boolean, person: Int): List<Item> {
-        val o = get("https://api.themoviedb.org/3/person/$person/" + (if (series) "tv_credits" else "movie_credits"), "language" to "fr-FR") ?: return emptyList()
-        return (listOf(o["cast"], o["crew"])).flatMap { (it as? JsonArray).orEmpty() }.mapNotNull { (it as? JsonObject)?.let(::item) }
-            .distinctBy { it.id }.sortedByDescending { it.popularity }
+        val path = "https://api.themoviedb.org/3/person/$person/" + (if (series) "tv_credits" else "movie_credits")
+        fun all(o: JsonObject) = (listOf(o["cast"], o["crew"])).flatMap { (it as? JsonArray).orEmpty() }.mapNotNull { (it as? JsonObject)?.let(::item) }
+        val o = get(path, "language" to "fr-FR") ?: return emptyList()
+        // Their English titles too (see [list]).
+        val english = get(path, "language" to "en-US")?.let { all(it) }.orEmpty().associate { it.id to it.title }
+        return all(o).distinctBy { it.id }.sortedByDescending { it.popularity }.onEach { it.english = english[it.id].orEmpty() }
     }
 
     /** A person TMDB knows: [department] is what they are known for ("Acting", "Directing", "Writing"…). */

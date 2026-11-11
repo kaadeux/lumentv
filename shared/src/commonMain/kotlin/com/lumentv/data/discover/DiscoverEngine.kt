@@ -139,19 +139,19 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
             }
 
             val taste = coroutineScope {
-                val trending = async { limited { tmdb.list("trending/$type/week", 5) } }
+                val trending = async { limited { tmdb.list("trending/$type/week", 5, true) } }
                 val fresh = async { limited { tmdb.list(if (series) "tv/on_the_air" else "movie/now_playing", 5, true, *region) } }
-                val popular = async { limited { tmdb.list("$type/popular", 5, *region) } }
-                val top = async { limited { tmdb.list("$type/top_rated", 6) } }
+                val popular = async { limited { tmdb.list("$type/popular", 5, true, *region) } }
+                val top = async { limited { tmdb.list("$type/top_rated", 6, true) } }
                 val details = seeds.map { s -> async { s to limited { tmdb.details(series, s.tmdbId) } } }.awaitAll()
                     .mapNotNull { (s, d) -> d?.let { s to it } }
                 val profile = Profile(details)
                 // The people the viewer likes most: their other titles join the candidates.
                 val people = profile.topPeople(3).map { (person, w) -> async { limited { tmdb.credits(series, person) } to w } }
                 val genres = profile.topGenres(2)
-                val genreLists = genres.map { g -> async { limited { tmdb.list("discover/$type", 3, "with_genres" to "$g", "sort_by" to "popularity.desc", "vote_count.gte" to "150") } } }
+                val genreLists = genres.map { g -> async { limited { tmdb.list("discover/$type", 3, true, "with_genres" to "$g", "sort_by" to "popularity.desc", "vote_count.gte" to "150") } } }
                 val gems = if (genres.isEmpty()) null else async {
-                    limited { tmdb.list("discover/$type", 3, "with_genres" to genres.joinToString("|"), "sort_by" to "vote_average.desc", "vote_count.gte" to "200", "vote_count.lte" to "4000") }
+                    limited { tmdb.list("discover/$type", 3, true, "with_genres" to genres.joinToString("|"), "sort_by" to "vote_average.desc", "vote_count.gte" to "200", "vote_count.lte" to "4000") }
                 }
 
                 // Candidates: recommendations and similar titles of what was liked, the liked people's titles, the favourite genres.
@@ -188,14 +188,14 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
                 listOfNotNull(
                     if (series) null else Row(SAGAS, pick(sagas)),
                     Row("Recommandé pour vous", forYou.take(ROW)),
-                    listRow("Tendances du moment", trendingList, "trending/$type/week", 5, false, emptyList()),
+                    listRow("Tendances du moment", trendingList, "trending/$type/week", 5, true, emptyList()),
                     because,
                     listRow(if (series) "Nouveautés séries" else "Nouveautés cinéma", fresh.await(), if (series) "tv/on_the_air" else "movie/now_playing", 5, true, regionList),
                     if (genreNames.isEmpty()) null else Row("Dans vos genres préférés · " + genreNames.joinToString(", "),
                         pick(genreItems.flatten().filter { profile.genreFit(it.genres) >= 0 }.sortedByDescending { it.popularity }, shown)),
-                    listRow(if (series) "Séries populaires" else "Films populaires", popular.await(), "$type/popular", 5, false, regionList),
+                    listRow(if (series) "Séries populaires" else "Films populaires", popular.await(), "$type/popular", 5, true, regionList),
                     gems?.let { g -> Row("À découvrir", pick(g.await().filter { profile.genreFit(it.genres) >= 0 }, shown)) },
-                    listRow(if (series) "Séries les mieux notées" else "Films les mieux notés", top.await(), "$type/top_rated", 6, false, emptyList()),
+                    listRow(if (series) "Séries les mieux notées" else "Films les mieux notés", top.await(), "$type/top_rated", 6, true, emptyList()),
                     Row("Vous pourriez aussi aimer", forYou.drop(ROW)),
                 )
             }
@@ -210,7 +210,7 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
                 val g = (if (series) Tmdb.TV_GENRES else Tmdb.MOVIE_GENRES).map { (name, id) ->
                     async {
                         val base = listOf("with_genres" to "$id", "sort_by" to "popularity.desc", "vote_count.gte" to "50")
-                        listRow(name, limited { tmdb.list("discover/$type", 4, *base.toTypedArray()) }, "discover/$type", 4, false, base,
+                        listRow(name, limited { tmdb.list("discover/$type", 4, true, *base.toTypedArray()) }, "discover/$type", 4, true, base,
                             listOf(byPopularity, byDate, byRating))
                     }
                 }
