@@ -110,7 +110,8 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
             fun listRow(title: String, items: List<Tmdb.Item>, path: String, used: Int, english: Boolean, base: List<Pair<String, String>>,
                         sorts: List<Pair<String, List<Pair<String, String>>>> = emptyList(), skip: Set<Long> = emptySet()): Row {
                 val shown = pick(items, skip)
-                return Row(title, shown, more = SeeAll(sorts.map { it.first }, shown, used + 1) { sort, from ->
+                // Asked from a screen (its main thread): the requests go off it.
+                return Row(title, shown, more = SeeAll(sorts.map { it.first }, shown, used + 1) { sort, from -> kotlinx.coroutines.withContext(IoDispatcher) {
                     val params = LinkedHashMap<String, String>().apply {
                         base.forEach { put(it.first, it.second) }
                         sorts.getOrNull(sort)?.second?.forEach { put(it.first, it.second) }
@@ -118,7 +119,7 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
                     // Most of a TMDB page is not in the list: pages are read until a screenful is found.
                     val found = ArrayList<VodLite>()
                     var page = from
-                    var total = Int.MAX_VALUE
+                    var total = 500 // TMDB's most, until its first answer says how many
                     var asked = 0
                     // Four pages at a time: a sort where few titles are in the list ("Plus récents") still comes quickly.
                     while (found.size < 24 && page <= total && asked < 16) {
@@ -134,7 +135,7 @@ class DiscoverEngine(private val tmdb: Tmdb, private val retryMs: Long = 30_000)
                         asked += answers.size; page = first + answers.size
                     }
                     Batch(found.distinctBy { it.id }, if (page > total) null else page)
-                })
+                } })
             }
 
             val taste = coroutineScope {

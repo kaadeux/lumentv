@@ -83,7 +83,7 @@ internal fun <T> SeeAllPage(vm: MainViewModel, open: OpenSeeAll<T>, tile: @Compo
     Column(Modifier.fillMaxSize().padding(start = if (phone) 8.dp else 20.dp, end = if (phone) 8.dp else 20.dp, top = if (phone) 6.dp else 14.dp)) {
         Text(open.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.dp))
-        if (state.sorts.size > 1) LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp)) {
+        if (state.sorts.size > 1) LazyRow(horizontalArrangement = Arrangement.spacedBy(if (phone) 8.dp else 10.dp), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp)) {
             rowItemsIndexed(state.sorts) { i, label -> SortPill(label, i == sort) { state.select(i) } }
         }
         when {
@@ -105,8 +105,8 @@ internal fun <T> SeeAllPage(vm: MainViewModel, open: OpenSeeAll<T>, tile: @Compo
 @Composable
 private fun SortPill(label: String, selected: Boolean, onClick: () -> Unit) {
     FocusSurface(onClick, shape = RoundedCornerShape(20.dp), container = if (selected) Palette.Accent else Palette.PanelHigh, focusedScale = 1.06f) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) Palette.OnFocus else Palette.Text,
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) Palette.OnFocus else Palette.Text, maxLines = 1,
+            modifier = Modifier.padding(horizontal = if (com.lumentv.ui.LocalPhone.current) 13.dp else 18.dp, vertical = 8.dp))
     }
 }
 

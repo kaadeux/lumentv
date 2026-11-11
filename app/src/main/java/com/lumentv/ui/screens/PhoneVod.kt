@@ -184,12 +184,11 @@ private fun PhoneRow(row: HomeRow) {
     Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
         // The title opens the row's "Tout voir" page when it has one ("Tout voir ›" on the right).
         val see = row.onSeeAll
-        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth().then(if (see != null) Modifier.clickable(onClick = see) else Modifier).padding(horizontal = 4.dp)) {
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth().then(if (see != null) Modifier.clickable(onClick = see) else Modifier).padding(horizontal = 4.dp)) {
             Text(row.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Palette.Text,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             if (resume) Text("  Appui long pour retirer", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 1)
             if (see != null) {
-                Spacer(Modifier.weight(1f))
                 Text("Tout voir ›", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = Palette.Accent, maxLines = 1,
                     modifier = Modifier.padding(start = 12.dp, end = 4.dp))
             }

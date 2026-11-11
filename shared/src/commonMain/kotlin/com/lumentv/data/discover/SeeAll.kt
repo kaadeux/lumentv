@@ -55,7 +55,9 @@ class SeeAllState<T>(private val seeAll: SeeAll<T>, private val scope: Coroutine
         job = scope.launch {
             val b = runCatching { load(sort, from) }.getOrNull()
             if (sort != _sort.value) return@launch
-            // No answer (no network): stays where it was, the next scroll asks again.
+            // No answer (no network): stays where it was, asked again a moment later (not in a loop).
+            if (b == null || (b.items.isEmpty() && b.next == from)) kotlinx.coroutines.delay(RETRY_MS)
+            if (sort != _sort.value) return@launch
             if (b != null) {
                 val seen = _items.value.mapTo(HashSet(), key)
                 _items.value = _items.value + b.items.filter { seen.add(key(it)) }
@@ -64,6 +66,8 @@ class SeeAllState<T>(private val seeAll: SeeAll<T>, private val scope: Coroutine
             _loading.value = false
         }
     }
+
+    companion object { const val RETRY_MS = 3_000L }
 
     fun select(sort: Int) {
         if (sort == _sort.value || sort !in seeAll.sorts.indices) return

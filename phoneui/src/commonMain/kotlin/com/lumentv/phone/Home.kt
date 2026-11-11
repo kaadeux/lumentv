@@ -181,11 +181,10 @@ private fun <T> HomeList(
             // A row with more than it shows: its title opens "Tout voir" ("Tout voir ›" on the right).
             val more = s.seeAll?.let { it.load != null || it.all.size > s.items.size } == true
             androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().then(if (more) Modifier.clickable { onSeeAll(s) } else Modifier)
-                .padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalAlignment = Alignment.Bottom) {
+                .padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(s.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false))
                 if (more) {
-                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                     Text("Tout voir ›", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Palette.Accent, maxLines = 1, modifier = Modifier.padding(start = 12.dp))
                 }
             }
