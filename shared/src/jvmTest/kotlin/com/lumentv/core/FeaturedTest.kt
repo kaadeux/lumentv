@@ -69,8 +69,8 @@ class LanguageTagTest {
 
     @Test fun frenchCopyFirst() {
         org.junit.Assert.assertEquals(0, SmartSearch.languageRank("FR - Heart of the Beast (2026)"))
-        org.junit.Assert.assertEquals(1, SmartSearch.languageRank("EN - Heart of the Beast (2026)"))
-        org.junit.Assert.assertEquals(2, SmartSearch.languageRank("DE - Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals(3, SmartSearch.languageRank("EN - Heart of the Beast (2026)"))
+        org.junit.Assert.assertEquals(3, SmartSearch.languageRank("DE - Heart of the Beast (2026)"))
         org.junit.Assert.assertEquals(0, SmartSearch.languageRank("Heart of the Beast (2026) MULTI"))
         val copies = listOf("DE - Heart of the Beast (2026)", "EN - Heart of the Beast (2026)", "FR - Heart of the Beast (2026)")
             .mapIndexed { i, n -> com.lumentv.data.discover.VodLite(i.toLong(), "x:$i", n, "Films", null, null) }

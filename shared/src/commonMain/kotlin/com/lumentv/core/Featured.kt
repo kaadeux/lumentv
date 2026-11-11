@@ -14,7 +14,7 @@ object Featured {
      * The language some providers put before every title: "FR - Heart of the Beast (2026)", "IN-EN - The Highest Stakes",
      * "AR | The Greatest". Two letters, then a dash between spaces or a bar: "LOL - Qui rit sort" keeps its name.
      */
-    private val langTag = Regex("^\\s*(?:[48]K[-/])?([A-Z]{2})(?:[-/][A-Z]{2,4}){0,2}\\s*(?:-\\s+|\\|\\s*)")
+    private val langTag = Regex("^\\s*(?:[48]K[-/])?([A-Z]{2})(?:[-/][A-Z0-9]{2,4}){0,2}\\s*(?:-\\s+|\\|\\s*)")
 
     /**
      * The tags of a copy written for another language than French or English ("DE - …", "IT|…"). A list, not "every

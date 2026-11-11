@@ -82,8 +82,8 @@ class LibraryIndex(private val db: AppDatabase) {
     }
 
     private companion object {
-        /** Raised when the titles are prepared differently: the stored ones are prepared again (2: "EN - …" is English). */
-        const val PREPARED = 2L
+        /** Raised when the titles are prepared differently: the stored ones are prepared again (4: "FR-4K - …" is French). */
+        const val PREPARED = 4L
     }
 
     private fun TitleEntity.entry() =

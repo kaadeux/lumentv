@@ -33,11 +33,14 @@ object TitleSearch {
         val otherSeries = async { if (online) kotlinx.coroutines.withTimeoutOrNull(ONLINE_MS) { runCatching { tmdb.search(true, query).take(8).mapNotNull { idx.find(true, it) } }.getOrDefault(emptyList()) }.orEmpty() else emptyList() }
         fun merge(local: List<VodLite>, alt: List<VodLite>) = sameTitleOnce((local + alt).distinctBy { it.id }).take(limit)
         Results(
-            merge(SmartSearch.search(sq, idx.movies, limit * 2), otherMovies.await()),
-            merge(SmartSearch.search(sq, idx.series, limit * 2), otherSeries.await()),
+            merge(SmartSearch.search(sq, idx.movies, limit * 2, ::frenchFirst), otherMovies.await()),
+            merge(SmartSearch.search(sq, idx.series, limit * 2, ::frenchFirst), otherSeries.await()),
             people.await(),
         )
     }
+
+    /** Among copies of a title found as well (same score), the French one first: a few points, less than a level. */
+    private fun frenchFirst(v: VodLite) = 3 - SmartSearch.languageRank(v.name)
 
     /**
      * One copy per title: the first (best) one. Two titles of the same name years apart stay both ("One Piece" 1999,

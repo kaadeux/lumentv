@@ -14,10 +14,13 @@ object SmartSearch {
      * Made from the title, or given as stored (the TV keeps its titles prepared: 234 000 took 11 s at each start).
      */
     class Entry<T>(val item: T, val norm: String, val otherLanguage: Boolean, val english: Boolean) {
+        // "FR - One Piece (2023) (US)" is French: "(US)" after the title is where the series comes from. Taken for
+        // English, it tied with Netflix's English copy "NF - ONE PIECE (2023) (US)", which came first.
         constructor(item: T, title: String) : this(item, Featured.baseTitle(title).ifBlank { normalize(title) },
-            otherLang.containsMatchIn(title),
+            Featured.langTag(title) != "FR" && otherLang.containsMatchIn(title),
             // "EN - One Piece" too: tied with "FR - One Piece (1999) (JP)", the English copy came first and hid the French one.
-            Featured.langTag(title) == "EN" || otherLang.containsMatchIn(title) && !otherLang.containsMatchIn(title.replace(englishMark, "")))
+            Featured.langTag(title) != "FR" && (Featured.langTag(title) == "EN" ||
+                otherLang.containsMatchIn(title) && !otherLang.containsMatchIn(title.replace(englishMark, ""))))
         val compact: String = norm.replace(" ", "")
         val words: List<String> = norm.split(' ').filter { it.isNotEmpty() }
         private val wordCompacts = words.map { it }
@@ -37,18 +40,28 @@ object SmartSearch {
 
     private val vost = Regex("\\bVOST(FR)?\\b", RegexOption.IGNORE_CASE)
 
-    /** For choosing a copy of a title: French or multi-language first (0), then subtitled (1), then other languages (2). */
-    fun languageRank(name: String): Int = when (Featured.langTag(name)) {
-        null, "FR" -> untaggedRank(name)
-        "EN" -> maxOf(1, untaggedRank(name))
-        else -> 2
+    /**
+     * For choosing a copy of a title: marked French first (0, "FR - …", "4K-FR-HDR - …", "FR - … (US)": made in the US),
+     * then copies that say no language ("TOP - …", "NF - …", "4K-AMZ - …", often the original version) or say
+     * French in another way (1), subtitled (2), English and other languages (3). Unmarked copies came level with the
+     * French ones, and first in the list, put forward 1 190 English films out of 2 733 a list had in French too.
+     */
+    fun languageRank(name: String): Int = when (val tag = Featured.langTag(name)) {
+        "FR" -> if (vost.containsMatchIn(name)) 2 else 0
+        "EN" -> 3
+        null -> untaggedRank(name)
+        else -> if (tag in Featured.foreignTags) 3 else untaggedRank(name)
     }
 
+    /** No language tag in front: French by a word ("MULTI", "VF", "TRUEFRENCH": 0), else as marked after the title. */
     private fun untaggedRank(name: String): Int = when {
-        otherLang.containsMatchIn(name) -> 2
-        vost.containsMatchIn(name) -> 1
-        else -> 0
+        frenchMark.containsMatchIn(name) -> 0
+        vost.containsMatchIn(name) -> 2
+        otherLang.containsMatchIn(name) -> 3
+        else -> 1
     }
+
+    private val frenchMark = Regex("\\b(MULTI|VFF?|VFQ|VOF|FRENCH|TRUEFRENCH)\\b", RegexOption.IGNORE_CASE)
 
     /** Among copies in the same language: FHD (0), HD (1), 4K (2, heavy for a small connection), unmarked (3), SD (4). */
     fun qualityRank(name: String): Int {

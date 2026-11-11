@@ -78,4 +78,13 @@ class HistoryNamesTest {
         ))
         assertEquals(listOf(1L, 3L), kept.map { it.id })
     }
+
+    @Test fun frenchCopyMadeInUs() {
+        val names = listOf("NF - ONE PIECE (2023) (US)", "EN - ONE PIECE (2023) (US)", "FR - One Piece (2023) (US)")
+        assertEquals("FR - One Piece (2023) (US)", SmartSearch.search(SmartSearch.Query("one piece"), names.map { SmartSearch.Entry(it, it) }, 10).first())
+        assertEquals("FR - One Piece (2023) (US)", names.minBy { SmartSearch.languageRank(it) })
+        assertEquals(2, SmartSearch.languageRank("FR - Breach (2026) VOSTFR"))
+        assertEquals(1, SmartSearch.languageRank("TOP - Heart of the Beast (2026)"))
+        assertEquals(0, SmartSearch.languageRank("FR-4K - Squid Game (2021) (KR)"))
+    }
 }

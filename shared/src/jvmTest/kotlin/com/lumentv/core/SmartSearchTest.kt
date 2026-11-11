@@ -74,8 +74,8 @@ class SmartSearchTest {
 
     @Test fun frenchCopyFirst() {
         assertEquals(0, SmartSearch.languageRank("Avengers: Endgame (2019) FHD MULTI"))
-        assertEquals(1, SmartSearch.languageRank("Avengers: Endgame Vostfr"))
-        assertEquals(2, SmartSearch.languageRank("Avengers: Endgame (IT)"))
+        assertEquals(2, SmartSearch.languageRank("Avengers: Endgame Vostfr"))
+        assertEquals(3, SmartSearch.languageRank("Avengers: Endgame (IT)"))
         assertEquals(0, SmartSearch.qualityRank("Avengers: Endgame (2019) FHD MULTI"))
         assertEquals(4, SmartSearch.qualityRank("Avengers: Endgame SD"))
         assertEquals(1, SmartSearch.qualityRank("Spider-Man: No Way Home (HD VF)"))
