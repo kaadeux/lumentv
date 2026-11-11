@@ -217,7 +217,9 @@ private fun PhoneRow(row: HomeRow) {
 internal fun PhoneMovieDetail(vm: MainViewModel, playlistId: Long, startUid: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var uid by androidx.compose.runtime.saveable.rememberSaveable(startUid) { mutableStateOf(startUid) }
+    // The French copy at first, whichever copy was clicked; "Version" switches.
+    var uid by androidx.compose.runtime.saveable.rememberSaveable(startUid) { mutableStateOf("") }
+    androidx.compose.runtime.LaunchedEffect(startUid) { if (uid.isEmpty()) uid = vm.graph.library.frenchMovie(playlistId, startUid) }
     val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
     val history by vm.graph.library.observeHistory(300).collectAsStateWithLifecycle(emptyList())
     val movie by produceState<MovieRow?>(null, playlistId, uid, changes) { value = vm.graph.library.movieByUid(playlistId, uid) }

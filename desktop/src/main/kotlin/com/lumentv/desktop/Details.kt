@@ -144,7 +144,7 @@ fun MovieDetail(state: AppState, m0: Mv, onBack: () -> Unit) {
     val c = state.catalog ?: return
     // The copy shown: "Version" switches to another one of the same film (4K, VF, VOSTFR…).
     val versions = remember(c, m0.uid) { state.vod.versions(c, m0) }
-    var uid by remember(m0.uid) { mutableStateOf(m0.uid) }
+    var uid by remember(m0.uid) { mutableStateOf(versions.firstOrNull()?.uid ?: m0.uid) } // the French copy at first
     val m = versions.firstOrNull { it.uid == uid } ?: m0
     val details by produceState(state.library.cachedMovieDetails(m), m.uid) { value = runCatching { state.library.movieDetails(p, m) }.getOrNull() }
     val year = Featured.yearOf(m.year ?: details?.release, m.name)
@@ -193,7 +193,7 @@ fun SeriesDetail(state: AppState, s0: Se, onBack: () -> Unit) {
     val c = state.catalog ?: return
     // The copy shown: "Version" switches to another one of the same series (French, English, 4K, Netflix's…).
     val versions = remember(c, s0.uid) { state.vod.versions(c, c.series.firstOrNull { it.uid == s0.uid } ?: s0) }
-    var uid by remember(s0.uid) { mutableStateOf(s0.uid) }
+    var uid by remember(s0.uid) { mutableStateOf(versions.firstOrNull()?.uid ?: s0.uid) } // the French copy at first
     val s = versions.firstOrNull { it.uid == uid } ?: c.series.firstOrNull { it.uid == s0.uid } ?: s0
     val data by produceState<Result<Pair<Details?, List<Ep>>>?>(null, s.uid) { value = runCatching { state.library.seriesDetails(p, c, s) } }
     val details = data?.getOrNull()?.first

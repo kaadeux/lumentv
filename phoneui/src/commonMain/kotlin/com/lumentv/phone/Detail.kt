@@ -98,9 +98,8 @@ internal fun MoviePage(core: AppCore, row: MovieRow, player: VideoPlayer) {
         value = core.library.versions(row.m).filter { !Featured.foreign(it.m.name, it.m.category) }.ifEmpty { listOf(row) }
     }
     var picked by remember(row.m.id) { mutableStateOf<String?>(null) }
-    val watchedCopy = versions.mapNotNull { v -> history.firstOrNull { it.key == LibraryRepository.key(HistoryKind.MOVIE, v.m.playlistId, v.m.uid) } }
-        .maxByOrNull { it.watchedAt }
-    val uid = picked ?: watchedCopy?.uid ?: row.m.uid
+    // The French copy at first (the versions come French first), whichever copy was clicked.
+    val uid = picked ?: versions.firstOrNull()?.m?.uid ?: row.m.uid
     val current by produceState(versions.firstOrNull { it.m.uid == uid } ?: row, uid, changes, versions) {
         value = core.library.movieByUid(row.m.playlistId, uid) ?: versions.firstOrNull { it.m.uid == uid } ?: row
     }
@@ -200,14 +199,17 @@ private fun nextEpisode(eps: List<EpisodeEntity>?, progress: Map<String, History
 @Composable
 internal fun SeriesPage(core: AppCore, p: PlaylistEntity, row: SeriesRow, player: VideoPlayer) {
     // The copy shown: "Version" switches to another one of the same series (French, English, 4K, Netflix's…).
-    val versions by produceState(emptyList<SeriesRow>(), row.s.id) { value = core.library.seriesVersions(row.s) }
-    var picked by remember(row.s.id) { mutableStateOf(row) }
+    // The French copy at first, whichever copy was clicked: nothing shown the moment the copies are read.
+    val versions by produceState<List<SeriesRow>?>(null, row.s.id) { value = core.library.seriesVersions(row.s) }
+    var chosen by remember(row.s.id) { mutableStateOf<SeriesRow?>(null) }
     var versionMenu by remember { mutableStateOf(false) }
+    val all = versions ?: return
+    val picked = chosen ?: all.firstOrNull() ?: row
     androidx.compose.runtime.key(picked.s.uid) {
-        SeriesCopy(core, p, picked, player, if (versions.size > 1) ({ versionMenu = true }) else null)
+        SeriesCopy(core, p, picked, player, if (all.size > 1) ({ versionMenu = true }) else null)
     }
-    if (versionMenu) Options("Version", "La même série en plusieurs langues ou qualités", versions.map { v ->
-        Option(Featured.versionLabel(v.s.name) + (Featured.rating(v.s.rating)?.let { "  ·  ★ $it" } ?: ""), checked = v.s.uid == picked.s.uid) { picked = v }
+    if (versionMenu) Options("Version", "La même série en plusieurs langues ou qualités", all.map { v ->
+        Option(Featured.versionLabel(v.s.name) + (Featured.rating(v.s.rating)?.let { "  ·  ★ $it" } ?: ""), checked = v.s.uid == picked.s.uid) { chosen = v }
     }) { versionMenu = false }
 }
 

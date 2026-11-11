@@ -120,6 +120,12 @@ class LibraryRepository(private val db: AppDatabase) {
             .sortedWith(compareBy({ com.lumentv.core.SmartSearch.languageRank(it.m.name) }, { it.m.number }))
     }
 
+    /** The copy a film's page opens on: its French one when the list has it, whichever copy was clicked. */
+    suspend fun frenchMovie(pid: Long, uid: String): String = movieByUid(pid, uid)?.let { versions(it.m).firstOrNull()?.m?.uid } ?: uid
+
+    /** The copy a series' page opens on: its French one when the list has it. */
+    suspend fun frenchSeries(pid: Long, uid: String): String = seriesByUid(pid, uid)?.let { seriesVersions(it.s).firstOrNull()?.s?.uid } ?: uid
+
     /**
      * The other copies of a series (French, English, 4K, Netflix's…), the given one included, the French ones first.
      * Not those of another year: One Piece 2023 is not a copy of One Piece 1999.

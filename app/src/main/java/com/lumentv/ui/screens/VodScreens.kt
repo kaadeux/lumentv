@@ -375,7 +375,9 @@ fun MovieDetailScreen(vm: MainViewModel, playlistId: Long, uid: String) {
 @Composable
 fun SeriesDetailScreen(vm: MainViewModel, playlistId: Long, uid0: String) {
     // The copy shown: "Version" switches to another one of the same series (French, English, 4K, Netflix's…).
-    var uid by remember(uid0) { mutableStateOf(uid0) }
+    // Opened on the French copy when there is one, whichever copy was clicked.
+    var uid by androidx.compose.runtime.saveable.rememberSaveable(uid0) { mutableStateOf("") }
+    LaunchedEffect(uid0) { if (uid.isEmpty()) uid = vm.graph.library.frenchSeries(playlistId, uid0) }
     var versionMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -759,8 +761,9 @@ private fun HomePoster(vm: MainViewModel, t: HomeTile, modifier: Modifier = Modi
 private fun MovieDetailTv(vm: MainViewModel, playlistId: Long, startUid: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // The copy shown: "Version" switches to another one of the same film (4K, VF, VOSTFR…).
-    var uid by androidx.compose.runtime.saveable.rememberSaveable(startUid) { mutableStateOf(startUid) }
+    // The copy shown: "Version" switches to another one of the same film (4K, VF, VOSTFR…); the French one at first.
+    var uid by androidx.compose.runtime.saveable.rememberSaveable(startUid) { mutableStateOf("") }
+    LaunchedEffect(startUid) { if (uid.isEmpty()) uid = vm.graph.library.frenchMovie(playlistId, startUid) }
     val changes by vm.graph.library.changes.collectAsStateWithLifecycle()
     val history by vm.graph.library.observeHistory(300).collectAsStateWithLifecycle(emptyList())
     val movie by produceState<MovieRow?>(null, playlistId, uid, changes) { value = vm.graph.library.movieByUid(playlistId, uid) }
