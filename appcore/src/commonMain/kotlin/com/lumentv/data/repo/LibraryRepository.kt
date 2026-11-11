@@ -236,7 +236,7 @@ class LibraryRepository(private val db: AppDatabase) {
         }
         val movieIds = found?.movies?.map { it.id }
         val seriesIds = found?.series?.map { it.id }
-        val channelIds = idx?.let { com.lumentv.core.SmartSearch.search(sq, it.channels, SEARCH_LIMIT) }?.map { it.id }
+        val channelIds = idx?.let { com.lumentv.core.SmartSearch.search(sq, it.channels(), SEARCH_LIMIT) }?.map { it.id }
         lap("channels")
         val programs = db.epg().search(q, nowMillis(), SEARCH_LIMIT).also { lap("programmes") }
         // The channel of each programme: only those rows are read (all 56 000 of a big list were, at every search).
@@ -261,7 +261,7 @@ class LibraryRepository(private val db: AppDatabase) {
      * Done at the first search, they took 8 s of the 9 the box needed for it on a list of 56 000 channels.
      */
     suspend fun prewarmSearch(pid: Long, epg: EpgRepository, index: LibraryIndex) = withContext(IoDispatcher) {
-        runCatching { index.of(pid).channels.size }
+        runCatching { index.of(pid).channels().size }
         runCatching { channelOfKey(pid, epg) }
     }
 

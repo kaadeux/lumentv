@@ -67,7 +67,10 @@ class AppCore(val db: AppDatabase, val settings: SettingsStore, val platform: Pl
     val historyTransfer = com.lumentv.data.repo.HistoryTransfer(db, playlists, index)
     /** What the history kept aside became when a new list was loaded, for the screens to tell. */
     val historyNotice = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-    init { playlists.onFirstLoad = { id -> historyTransfer.adopt(id)?.let { historyNotice.value = it } } }
+    init {
+        playlists.onFirstLoad = { id -> historyTransfer.adopt(id)?.let { historyNotice.value = it } }
+        playlists.onRefreshed = { id -> index.of(id) }
+    }
     /** Which French channel shows each game, days ahead (xmltvfr.fr, sports channels only, twice a day at most). */
     val frenchGuide = FrenchTvGuide(platform.http, TextFile(platform.cacheDir + "/sports_tv.json"), platform.utf8XmlReader)
     val sports = SportsRepository(db, settings, epg, library, FixtureClient(platform.fixtureHttp), frenchGuide)

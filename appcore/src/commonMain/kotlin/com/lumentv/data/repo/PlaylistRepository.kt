@@ -87,6 +87,7 @@ class PlaylistRepository(
         db.epg().deletePrograms(id)
         db.epg().deleteChannels(id)
         db.history().deleteFor(id)
+        db.titles().deleteFor(id)
         db.playlists().delete(id)
     }
 
@@ -96,10 +97,17 @@ class PlaylistRepository(
 
     suspend fun userAgentFor(p: PlaylistEntity): String? = p.userAgent.ifBlank { defaultUserAgent() }.ifBlank { null }
 
+    /** A list loaded again: its index prepared and kept for the next starts (set by AppCore). */
+    var onRefreshed: (suspend (Long) -> Unit)? = null
+
     suspend fun refresh(id: Long): RefreshOutcome = withContext(IoDispatcher) {
+        loadNow(id).also { if (it.ok) runCatching { onRefreshed?.invoke(id) } }
+    }
+
+    private suspend fun loadNow(id: Long): RefreshOutcome {
         val lock = synchronized(locksLock) { locks.getOrPut(id) { Mutex() } }
-        lock.withLock {
-            val p = db.playlists().get(id) ?: return@withContext RefreshOutcome(false, "Playlist introuvable.")
+        return lock.withLock {
+            val p = db.playlists().get(id) ?: return RefreshOutcome(false, "Playlist introuvable.")
             _busy.value = _busy.value + id
             try {
                 val summary = when (p.type) {
@@ -151,22 +159,23 @@ class PlaylistRepository(
 
     private suspend fun refreshXtream(p: PlaylistEntity) : String {
         val api = xtream(p)
+        val times = Timings()
         step(p.id, "Connexion au serveur", 0.02f)
-        val account = api.authenticate()
-        val liveCats = api.liveCategories()
-        val live = ArrayList<XLive>(); counter(p.id, "Chargement des chaînes", 0.05f, 0.25f).let { c -> api.liveStreams { live += it; c(live.size) } }
-        val vodCats = runCatching { api.vodCategories() }.getOrDefault(emptyMap())
-        val movies = ArrayList<XMovie>(); counter(p.id, "Chargement des films", 0.25f, 0.55f).let { c -> runCatching { api.vodStreams { movies += it; c(movies.size) } } }
-        val seriesCats = runCatching { api.seriesCategories() }.getOrDefault(emptyMap())
-        val series = ArrayList<XSeries>(); counter(p.id, "Chargement des séries", 0.55f, 0.75f).let { c -> runCatching { api.series { series += it; c(series.size) } } }
+        val account = times("connexion") { api.authenticate() }
+        val liveCats = times("catégories chaînes") { api.liveCategories() }
+        val live = ArrayList<XLive>(); times("chaînes") { counter(p.id, "Chargement des chaînes", 0.05f, 0.25f).let { c -> api.liveStreams { live += it; c(live.size) } } }
+        val vodCats = times("catégories films") { runCatching { api.vodCategories() }.getOrDefault(emptyMap()) }
+        val movies = ArrayList<XMovie>(); times("films") { counter(p.id, "Chargement des films", 0.25f, 0.55f).let { c -> runCatching { api.vodStreams { movies += it; c(movies.size) } } } }
+        val seriesCats = times("catégories séries") { runCatching { api.seriesCategories() }.getOrDefault(emptyMap()) }
+        val series = ArrayList<XSeries>(); times("séries") { counter(p.id, "Chargement des séries", 0.55f, 0.75f).let { c -> runCatching { api.series { series += it; c(series.size) } } } }
         if (live.isEmpty() && movies.isEmpty() && series.isEmpty()) {
             throw FormatException("Le serveur Xtream n'a renvoyé aucune chaîne, aucun film et aucune série.")
         }
-        val chRows = XtreamImport.channels(p.id, live, liveCats)
-        val mvRows = XtreamImport.movies(p.id, movies, vodCats)
-        val seRows = XtreamImport.series(p.id, series, seriesCats)
+        val (chRows, mvRows, seRows) = times("préparation") {
+            Triple(XtreamImport.channels(p.id, live, liveCats), XtreamImport.movies(p.id, movies, vodCats), XtreamImport.series(p.id, series, seriesCats))
+        }
         step(p.id, "Enregistrement", 0.8f)
-        db.transaction {
+        times("enregistrement") { db.transaction {
             db.channels().deleteFor(p.id)
             db.vod().deleteMovies(p.id)
             db.vod().deleteSeries(p.id)
@@ -182,7 +191,8 @@ class PlaylistRepository(
                     accountInfo = account.summary().ifBlank { null }, serverTimeZone = account.timeZone,
                 )
             )
-        }
+        } }
+        logWarn(TAG, "chargement ${chRows.size}/${mvRows.size}/${seRows.size} : $times")
         return summary(chRows.size, mvRows.size, seRows.size)
     }
 
@@ -226,6 +236,17 @@ class PlaylistRepository(
     private fun summary(ch: Int, mv: Int, se: Int) =
         listOfNotNull("$ch chaîne" + (if (ch > 1) "s" else ""), mv.takeIf { it > 0 }?.let { "$it film" + if (it > 1) "s" else "" },
             se.takeIf { it > 0 }?.let { "$it série" + if (it > 1) "s" else "" }).joinToString(" · ")
+
+    /** How long each step of a load took, for the log: "connexion 0,4 s · chaînes 3,1 s…". */
+    private class Timings {
+        private val parts = ArrayList<Pair<String, Long>>()
+        private val start = nowMillis()
+        inline operator fun <T> invoke(label: String, block: () -> T): T {
+            val t = nowMillis()
+            try { return block() } finally { parts += label to (nowMillis() - t) }
+        }
+        override fun toString() = (parts + ("total" to (nowMillis() - start))).joinToString(" · ") { (l, ms) -> "$l ${ms / 100 / 10.0} s" }
+    }
 
     companion object {
         private const val TAG = "Playlists"

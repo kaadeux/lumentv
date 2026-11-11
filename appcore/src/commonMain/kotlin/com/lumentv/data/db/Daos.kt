@@ -365,3 +365,15 @@ interface RatingDao {
     @Upsert
     suspend fun saveLink(l: TmdbLinkEntity)
 }
+
+@Dao
+interface TitleDao {
+    @Query("SELECT * FROM titles WHERE playlistId = :pid AND stamp = :stamp ORDER BY seq")
+    suspend fun of(pid: Long, stamp: Long): List<TitleEntity>
+
+    @Insert
+    suspend fun insert(items: List<TitleEntity>)
+
+    @Query("DELETE FROM titles WHERE playlistId = :pid")
+    suspend fun deleteFor(pid: Long)
+}

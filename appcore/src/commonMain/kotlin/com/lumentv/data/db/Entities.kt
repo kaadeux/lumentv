@@ -276,3 +276,26 @@ data class ChannelGuideKey(val id: Long, val name: String, val epgId: String?, v
 
 /** A channel's name and group only, to pick the French ones before reading their full rows. */
 data class ChannelNameGroup(val id: Long, val name: String, val groupName: String)
+
+/**
+ * A film or series of a playlist as the index keeps it (TitleIndex): only the titles it keeps, already cleaned. Written
+ * after each refresh of the list; [stamp] is the playlist's lastRefresh then (other rows are stale). Read at each start
+ * instead of preparing every title again: 20 s on a TV before the Films rows could show.
+ */
+@Entity(tableName = "titles", indices = [Index("playlistId", "stamp")])
+data class TitleEntity(
+    @PrimaryKey(autoGenerate = true) val seq: Long = 0,
+    val playlistId: Long,
+    val stamp: Long,
+    val series: Boolean,
+    /** The row of the movies or series table. */
+    val vodId: Long,
+    val uid: String,
+    val name: String,
+    val category: String,
+    val year: String?,
+    val rating: String?,
+    val norm: String,
+    val otherLanguage: Boolean,
+    val english: Boolean,
+)
