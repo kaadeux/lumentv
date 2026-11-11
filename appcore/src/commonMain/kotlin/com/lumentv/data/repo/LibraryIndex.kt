@@ -37,7 +37,7 @@ class LibraryIndex(private val db: AppDatabase) {
 
     /** The index of [pid], built again after a refresh of the playlist. */
     suspend fun of(pid: Long): Index = lock.withLock {
-        val stamp = db.playlists().get(pid)?.lastRefresh ?: 0
+        val stamp = (db.playlists().get(pid)?.lastRefresh ?: 0) + PREPARED
         built[pid]?.let { (s, i) -> if (s == stamp) return@withLock i }
         val t0 = nowMillis()
         val stored = withContext(IoDispatcher) { db.titles().of(pid, stamp) }
@@ -79,6 +79,11 @@ class LibraryIndex(private val db: AppDatabase) {
                 (rows(p.movies, false) + rows(p.series, true)).chunked(500).forEach { db.titles().insert(it) }
             }
         }.onFailure { logWarn("Playlists", "index non gardé : ${it::class.simpleName}") }
+    }
+
+    private companion object {
+        /** Raised when the titles are prepared differently: the stored ones are prepared again (2: "EN - …" is English). */
+        const val PREPARED = 2L
     }
 
     private fun TitleEntity.entry() =

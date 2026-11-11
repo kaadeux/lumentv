@@ -31,12 +31,25 @@ object TitleSearch {
         // Other titles: TMDB's French and original titles of what the query means ("seigneur des anneaux" → "The Lord of the Rings").
         val otherMovies = async { if (online) kotlinx.coroutines.withTimeoutOrNull(ONLINE_MS) { runCatching { tmdb.search(false, query).take(8).mapNotNull { idx.find(false, it) } }.getOrDefault(emptyList()) }.orEmpty() else emptyList() }
         val otherSeries = async { if (online) kotlinx.coroutines.withTimeoutOrNull(ONLINE_MS) { runCatching { tmdb.search(true, query).take(8).mapNotNull { idx.find(true, it) } }.getOrDefault(emptyList()) }.orEmpty() else emptyList() }
-        fun merge(local: List<VodLite>, alt: List<VodLite>) = (local + alt).distinctBy { it.id }.distinctBy { Featured.baseTitle(it.name) }.take(limit)
+        fun merge(local: List<VodLite>, alt: List<VodLite>) = sameTitleOnce((local + alt).distinctBy { it.id }).take(limit)
         Results(
             merge(SmartSearch.search(sq, idx.movies, limit * 2), otherMovies.await()),
             merge(SmartSearch.search(sq, idx.series, limit * 2), otherSeries.await()),
             people.await(),
         )
+    }
+
+    /**
+     * One copy per title: the first (best) one. Two titles of the same name years apart stay both ("One Piece" 1999,
+     * the anime, and 2023, Netflix's); a copy without a year counts as the same title.
+     */
+    fun sameTitleOnce(list: List<VodLite>): List<VodLite> {
+        val kept = HashMap<String, MutableList<Int?>>()
+        return list.filter { v ->
+            val years = kept.getOrPut(Featured.baseTitle(v.name)) { ArrayList() }
+            val y = Featured.yearOf(v.year, v.name)
+            if (years.any { it == null || y == null || kotlin.math.abs(it - y) <= 1 }) false else { years += y; true }
+        }
     }
 
     /** The two best known people whose name is the query, and what they played in / made that the playlist has. */

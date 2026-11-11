@@ -63,4 +63,19 @@ class HistoryNamesTest {
         listOf("FR - BOX OFFICE", "IT - DRAMMA/ROMANCE", "SVENSKA 2020 & GAMMAL", "FR - ACTION", "Films", "")
             .forEach { assertFalse(Featured.sport(it), it) }
     }
+
+    @Test fun frenchCopyBeforeEnglishTag() {
+        val names = listOf("EN - One Piece", "FR - One Piece (1999) (JP)", "FR - One Piece (2023) (US)")
+        val found = SmartSearch.search(SmartSearch.Query("one piece"), names.map { SmartSearch.Entry(it, it) }, 10)
+        assertEquals("FR - One Piece (1999) (JP)", found.first { Featured.baseTitle(it) == "one piece" })
+    }
+
+    @Test fun sameNameOtherYearStays() {
+        fun v(id: Long, name: String, year: String?) = com.lumentv.data.discover.VodLite(id, "u$id", name, "", year, null)
+        val kept = com.lumentv.data.discover.TitleSearch.sameTitleOnce(listOf(
+            v(1, "FR - One Piece (1999) (JP)", "1999"), v(2, "EN - One Piece", "1999"), v(3, "FR - One Piece (2023) (US)", "2023"),
+            v(4, "One Piece", null), v(5, "4K-FR - One Piece (2023) (US)", "2023"),
+        ))
+        assertEquals(listOf(1L, 3L), kept.map { it.id })
+    }
 }

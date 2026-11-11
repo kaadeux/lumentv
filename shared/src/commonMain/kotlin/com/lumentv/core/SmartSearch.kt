@@ -10,12 +10,14 @@ object SmartSearch {
     /** A title prepared once (the index keeps these): its words and its letters without spaces. */
     /**
      * [otherLanguage]: marked for another language than French ("(IT)", "[ES]", "SUBT AR", "ENG"…), goes after the
-     * other copies. [english]: only marked English ("(US)", "(EN)"), understood here, so just after the French copies.
+     * other copies. [english]: only marked English ("(US)", "(EN)", "EN - …"), understood here, so just after the French copies.
      * Made from the title, or given as stored (the TV keeps its titles prepared: 234 000 took 11 s at each start).
      */
     class Entry<T>(val item: T, val norm: String, val otherLanguage: Boolean, val english: Boolean) {
         constructor(item: T, title: String) : this(item, Featured.baseTitle(title).ifBlank { normalize(title) },
-            otherLang.containsMatchIn(title), otherLang.containsMatchIn(title) && !otherLang.containsMatchIn(title.replace(englishMark, "")))
+            otherLang.containsMatchIn(title),
+            // "EN - One Piece" too: tied with "FR - One Piece (1999) (JP)", the English copy came first and hid the French one.
+            Featured.langTag(title) == "EN" || otherLang.containsMatchIn(title) && !otherLang.containsMatchIn(title.replace(englishMark, "")))
         val compact: String = norm.replace(" ", "")
         val words: List<String> = norm.split(' ').filter { it.isNotEmpty() }
         private val wordCompacts = words.map { it }
