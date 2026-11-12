@@ -89,6 +89,8 @@ struct PlayerScreen: View {
     @State private var behind: TimeInterval = 0
     @State private var scrubbing: Double?
     @State private var hide: DispatchWorkItem?
+    /// A menu of the player open (settings, subtitles): the controls, and the menu with them, stay until it closes.
+    @State private var menuOpen = false
     @State private var closed = false
     // Live: stalls seen once it played, and the lower qualities already tried.
     @State private var played = false
@@ -127,7 +129,7 @@ struct PlayerScreen: View {
             subtitles
             // Taps on the picture (the video view itself is UIKit and would keep them).
             Color.clear.contentShape(Rectangle()).ignoresSafeArea()
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { controls.toggle() }; if controls { scheduleHide() } }
+                .onTapGesture { menuOpen = false; withAnimation(.easeInOut(duration: 0.2)) { controls.toggle() }; if controls { scheduleHide() } }
             if loading && !failed { ProgressView().tint(Lumen.accent).scaleEffect(1.6).allowsHitTesting(false) }
             if failed { message("Lecture impossible", why ?? "Vérification de la connexion…") }
             if controls { overlay.transition(.opacity) }
@@ -327,12 +329,14 @@ struct PlayerScreen: View {
     private var subtitleMenu: some View {
         Menu {
             Button { player.subtitleModel.selectedSubtitleInfo = nil } label: { Label("Désactivés", systemImage: player.subtitleModel.selectedSubtitleInfo == nil ? "checkmark" : "") }
+                .onAppear(perform: menuShown).onDisappear(perform: menuGone)
             ForEach(player.subtitleModel.subtitleInfos, id: \.subtitleID) { info in
                 Button { player.subtitleModel.selectedSubtitleInfo = info } label: {
                     Label(info.name, systemImage: player.subtitleModel.selectedSubtitleInfo?.subtitleID == info.subtitleID ? "checkmark" : "")
                 }
             }
         } label: { Image(systemName: "captions.bubble") }
+        .simultaneousGesture(TapGesture().onEnded { menuShown() })
     }
 
     private var settingsMenu: some View {
@@ -342,6 +346,7 @@ struct PlayerScreen: View {
                     Button { fit = f; player.playerLayer?.player.contentMode = f.mode } label: { Label(f.rawValue, systemImage: fit == f ? "checkmark" : "") }
                 }
             }
+            .onAppear(perform: menuShown).onDisappear(perform: menuGone)
             if let tracks = player.playerLayer?.player.tracks(mediaType: .audio), tracks.count > 1 {
                 Section("Langue") {
                     ForEach(tracks, id: \.trackID) { t in
@@ -359,6 +364,7 @@ struct PlayerScreen: View {
                 }
             }
         } label: { Image(systemName: "gearshape") }
+        .simultaneousGesture(TapGesture().onEnded { menuShown() })
     }
 
     private func message(_ title: String, _ text: String) -> some View {
@@ -371,10 +377,13 @@ struct PlayerScreen: View {
 
     // ---- Behaviour -----------------------------------------------------------------------------------------------
 
-    /// The controls go away 4 s after the last touch while the film plays.
+    private func menuShown() { menuOpen = true; hide?.cancel() }
+    private func menuGone() { menuOpen = false; scheduleHide() }
+
+    /// The controls go away 4 s after the last touch while the film plays; not while a menu is open (it went with them).
     private func scheduleHide() {
         hide?.cancel()
-        let work = DispatchWorkItem { if playing && scrubbing == nil && pausedAt == nil { withAnimation(.easeInOut(duration: 0.3)) { controls = false } } }
+        let work = DispatchWorkItem { if playing && scrubbing == nil && pausedAt == nil && !menuOpen { withAnimation(.easeInOut(duration: 0.3)) { controls = false } } }
         hide = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
     }
