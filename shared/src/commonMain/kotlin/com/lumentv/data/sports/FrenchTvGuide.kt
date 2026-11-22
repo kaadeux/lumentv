@@ -127,8 +127,11 @@ class FrenchTvGuide(private val http: Http, private val cacheFile: TextFile, pri
         fun channelKey(name: String): String =
             com.lumentv.core.channelKeyName(name.replace("+", " plus ")).replace(" ", "").replace("[h265]", "").replace("plus", "+")
 
-        /** Of the playlist's copies of one channel, the two best: FHD, then HD, then the rest. */
-        fun <T> best(copies: List<T>, name: (T) -> String): List<T> = copies.sortedBy { c ->
+        /**
+         * Of the playlist's copies of one channel, the two best: FHD, then HD, then the rest. Not the lists' section
+         * titles ("##### LIGUE1+ ⱽᴵᴾ ᴴᴰ ######"): read as "Ligue 1+", one came first and played nothing.
+         */
+        fun <T> best(copies: List<T>, name: (T) -> String): List<T> = copies.filter { !separator(name(it)) }.sortedBy { c ->
             val n = name(c).uppercase()
             when { "FHD" in n -> 0; "HD" in n && "UHD" !in n -> 1; "H265" in n || "HEVC" in n -> 3; "SD" in n -> 4; else -> 2 }
         }.take(2)
@@ -153,10 +156,15 @@ class FrenchTvGuide(private val http: Http, private val cacheFile: TextFile, pri
             "de", "ger", "germany", "deutsch", "pt", "portugal", "br", "brasil", "nl", "tr", "turk", "turkey", "pl", "ru", "en", "eng", "english",
             "latino", "latam", "mx", "mena", "stan", "au", "aus", "australia", "nz", "optus", "kayo", "ca", "canada", "afrika", "africa", "india", "pk", "gr", "ro", "al", "ex yu", "exyu", "kurd", "persian", "iran")
 
-        /** A playlist channel the viewer can use for a French broadcast: no country prefix, or FR. */
+        /** A list's section title, not a channel: "##### LIGUE1+ ⱽᴵᴾ ᴴᴰ ######", "#### PRIME ####". */
+        fun separator(name: String): Boolean = name.trimStart().startsWith("##") || "####" in name
+
+        /** A playlist channel the viewer can use for a French broadcast: no country prefix, or FR ("VIP:" is no country). */
         fun frenchOrPlain(name: String): Boolean {
             val m = countryPrefix.find(name) ?: return true
-            return m.groupValues[1].equals("FR", true)
+            return m.groupValues[1].uppercase() in plainPrefixes
         }
+
+        private val plainPrefixes = setOf("FR", "VIP")
     }
 }

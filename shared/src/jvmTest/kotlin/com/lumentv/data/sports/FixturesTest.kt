@@ -3,6 +3,7 @@ package com.lumentv.data.sports
 import com.lumentv.core.normalize
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -38,6 +39,13 @@ class FixturesTest {
         assertTrue(FrenchTvGuide.channelKey("CANAL+ SPORT360 FHD") == FrenchTvGuide.channelKey("Canal+ Sport 360"))
         assertFalse(FrenchTvGuide.channelKey("CANAL+ SPORT+") == FrenchTvGuide.channelKey("Canal+ Sport"))
         assertTrue(FrenchTvGuide.channelKey("FR | CANAL+ SPORT [H265]") == FrenchTvGuide.channelKey("Canal+ Sport"))
+        // Tags in small raised letters, and "VIP:" in front (no country): the guide's "Ligue 1+ 4" all the same.
+        assertTrue(FrenchTvGuide.channelKey("FR: LIGUE1+ 4 ⱽᴵᴾ ᴴᴰ") == FrenchTvGuide.channelKey("Ligue 1+ 4"))
+        assertTrue(FrenchTvGuide.channelKey("VIP: LIGUE 1+ 4 ᴴᴰ") == FrenchTvGuide.channelKey("Ligue 1+ 4"))
+        assertTrue(FrenchTvGuide.channelKey("FR: LIGUE 1+ ◉ ᴿᴬᵂ") == FrenchTvGuide.channelKey("Ligue 1+"))
+        assertTrue(FrenchTvGuide.frenchOrPlain("VIP: LIGUE 1+ 4 ᴴᴰ"))
+        assertFalse(FrenchTvGuide.frenchOrPlain("UK: LIGUE 1 PPV | MATCH 4"))
+        assertEquals(listOf("FR: LIGUE1+ 4 ⱽᴵᴾ ᴴᴰ"), FrenchTvGuide.best(listOf("##### LIGUE1+ ⱽᴵᴾ ᴴᴰ ######", "FR: LIGUE1+ 4 ⱽᴵᴾ ᴴᴰ")) { it })
         val pro = Fixture("2", FixtureClient.league("prod2")!!, game.start, "pre", "", Team("Colomiers", null, null, null), Team("SU Agen Lot-et-Garonne", null, null, null), "")
         assertTrue(FrenchTvGuide.broadcast(pro, listOf(Listing("Canal+ Sport 360", game.start, normalize("Colomiers / Agen")))) != null)
     }

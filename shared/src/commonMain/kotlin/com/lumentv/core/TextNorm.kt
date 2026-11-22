@@ -18,7 +18,7 @@ fun normalize(text: String): String {
 
 /** Removes the quality / region tags providers add, to compare channel names: "FR| TF1 HD" -> "tf1". */
 fun channelKeyName(name: String): String {
-    val n = normalize(name.replace(countryPrefix, ""))
+    val n = normalize(plainLetters(name).replace(countryPrefix, ""))
     return n.split(' ')
         .filterNot { it in qualityTags }
         .joinToString(" ")
@@ -26,4 +26,21 @@ fun channelKeyName(name: String): String {
 }
 
 private val countryPrefix = Regex("^\\s*[A-Za-z]{2,3}\\s*[|:]\\s*")
-private val qualityTags = setOf("hd", "fhd", "uhd", "sd", "4k", "hevc", "h265", "h264", "1080p", "720p", "hq", "lq", "backup", "vip")
+private val qualityTags = setOf("hd", "fhd", "uhd", "sd", "4k", "hevc", "h265", "h264", "1080p", "720p", "hq", "lq", "backup", "vip", "raw")
+
+/**
+ * Small raised letters some lists write their tags in ("FR: LIGUE1+ 4 ⱽᴵᴾ ᴴᴰ", "ᴿᴬᵂ", "⁴ᴷ") as plain ones: kept as
+ * they were, "LIGUE1+ 4 ⱽᴵᴾ ᴴᴰ" was not the guide's "Ligue 1+ 4" and the game on it could not be played.
+ */
+fun plainLetters(text: String): String {
+    if (text.all { it.code < 128 }) return text
+    val sb = StringBuilder(text.length)
+    for (c in text) {
+        val i = RAISED_FROM.indexOf(c)
+        sb.append(if (i >= 0) RAISED_TO[i] else c)
+    }
+    return sb.toString()
+}
+
+private const val RAISED_FROM = "ᴬᴮᴰᴱᴳᴴᴵᴶᴷᴸᴹᴺᴼᴾᴿᵀᵁⱽᵂᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖʳˢᵗᵘᵛʷˣʸᶻ⁰¹²³⁴⁵⁶⁷⁸⁹"
+private const val RAISED_TO = "ABDEGHIJKLMNOPRTUVWabcdefghijklmnoprstuvwxyz0123456789"
