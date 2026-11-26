@@ -230,7 +230,7 @@ private fun GameCard(state: AppState, g: Game, now: Long) {
             val open = f.channelsOpen(now)
             listOfNotNull(tvNote, f.opensNote.takeUnless { open }).takeIf { it.isNotEmpty() }?.let { Text(it.joinToString("  ·  "), color = Pal.dim, fontSize = 13.sp) }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                g.channels.take(8).forEach { ch -> Pill(ch.name, { if (f.channelsOpen()) state.playChannel(ch) }, Icons.Filled.PlayArrow, primary = f.live, enabled = open) }
+                g.channels.take(16).forEach { ch -> Pill(ch.name, { if (f.channelsOpen()) state.playChannel(ch) }, Icons.Filled.PlayArrow, primary = f.live, enabled = open) }
             }
         }
     }

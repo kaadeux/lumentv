@@ -46,6 +46,9 @@ class FixturesTest {
         assertTrue(FrenchTvGuide.frenchOrPlain("VIP: LIGUE 1+ 4 ᴴᴰ"))
         assertFalse(FrenchTvGuide.frenchOrPlain("UK: LIGUE 1 PPV | MATCH 4"))
         assertEquals(listOf("FR: LIGUE1+ 4 ⱽᴵᴾ ᴴᴰ"), FrenchTvGuide.best(listOf("##### LIGUE1+ ⱽᴵᴾ ᴴᴰ ######", "FR: LIGUE1+ 4 ⱽᴵᴾ ᴴᴰ")) { it })
+        // Every copy, the best first: the 4K one too.
+        assertEquals(listOf("FR: CANAL+ LIVE 2 ᴴᴰ", "FR: CANAL+ FOOT 4K", "FR: CANAL+ FOOT ᴿᴬᵂ", "FR: CANAL+ FOOT HEVC"),
+            FrenchTvGuide.best(listOf("FR: CANAL+ FOOT HEVC", "FR: CANAL+ FOOT 4K", "FR: CANAL+ LIVE 2 ᴴᴰ", "FR: CANAL+ FOOT ᴿᴬᵂ")) { it })
         val pro = Fixture("2", FixtureClient.league("prod2")!!, game.start, "pre", "", Team("Colomiers", null, null, null), Team("SU Agen Lot-et-Garonne", null, null, null), "")
         assertTrue(FrenchTvGuide.broadcast(pro, listOf(Listing("Canal+ Sport 360", game.start, normalize("Colomiers / Agen")))) != null)
     }

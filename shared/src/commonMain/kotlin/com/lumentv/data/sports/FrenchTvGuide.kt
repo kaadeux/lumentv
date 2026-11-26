@@ -128,13 +128,14 @@ class FrenchTvGuide(private val http: Http, private val cacheFile: TextFile, pri
             com.lumentv.core.channelKeyName(name.replace("+", " plus ")).replace(" ", "").replace("[h265]", "").replace("plus", "+")
 
         /**
-         * Of the playlist's copies of one channel, the two best: FHD, then HD, then the rest. Not the lists' section
-         * titles ("##### LIGUE1+ ⱽᴵᴾ ᴴᴰ ######"): read as "Ligue 1+", one came first and played nothing.
+         * The playlist's copies of one channel, the best first: FHD, then HD, then the rest (4K, RAW…), HEVC, SD. All of
+         * them: kept to two, the 4K Canal+ Foot of the list was not offered for the game. Not the lists' section titles
+         * ("##### LIGUE1+ ⱽᴵᴾ ᴴᴰ ######"): read as "Ligue 1+", one came first and played nothing.
          */
         fun <T> best(copies: List<T>, name: (T) -> String): List<T> = copies.filter { !separator(name(it)) }.sortedBy { c ->
-            val n = name(c).uppercase()
+            val n = com.lumentv.core.plainLetters(name(c)).uppercase() // "ᴴᴰ" is HD too
             when { "FHD" in n -> 0; "HD" in n && "UHD" !in n -> 1; "H265" in n || "HEVC" in n -> 3; "SD" in n -> 4; else -> 2 }
-        }.take(2)
+        }
 
         /**
          * A channel in French, for the Sports panel: no country prefix but FR ("AR | beIN", "UK: Sky" are not), no foreign
